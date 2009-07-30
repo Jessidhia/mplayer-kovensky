@@ -2823,6 +2823,14 @@ static int read_keys(void *ctx, int fd)
 }
 
 
+#ifdef PTW32_STATIC_LIB
+static void detach_ptw32(void)
+{
+    pthread_win32_thread_detach_np();
+    pthread_win32_process_detach_np();
+}
+#endif
+
 /* This preprocessor directive is a hack to generate a mplayer-nomain.o object
  * file for some tools to link against. */
 #ifndef DISABLE_MAIN
@@ -2849,6 +2857,12 @@ int i;
         .file_format = DEMUXER_TYPE_UNKNOWN,
         .last_dvb_step = 1,
     };
+
+#ifdef PTW32_STATIC_LIB
+  pthread_win32_process_attach_np();
+  pthread_win32_thread_attach_np();
+  atexit(detach_ptw32);
+#endif
 
   InitTimer();
   srand(GetTimerMS());

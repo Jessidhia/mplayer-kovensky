@@ -358,6 +358,14 @@ static muxer_t* muxer=NULL;
 
 void print_wave_header(WAVEFORMATEX *h, int verbose_level);
 
+#ifdef PTW32_STATIC_LIB
+static void detach_ptw32(void)
+{
+  pthread_win32_thread_detach_np();
+  pthread_win32_process_detach_np();
+}
+#endif
+
 int main(int argc,char* argv[]){
 
 stream_t* stream=NULL;
@@ -404,6 +412,12 @@ ao_data_t ao_data = {0,0,0,0,OUTBURST,-1,0};
 
 audio_encoding_params_t aparams;
 audio_encoder_t *aencoder = NULL;
+
+#ifdef PTW32_STATIC_LIB
+  pthread_win32_process_attach_np();
+  pthread_win32_thread_attach_np();
+  atexit(detach_ptw32);
+#endif
 
   mp_msg_init();
 
