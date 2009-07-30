@@ -674,7 +674,6 @@ void uninit_player(struct MPContext *mpctx, unsigned int mask){
 
 void exit_player_with_rc(struct MPContext *mpctx, exit_reason_t how, int rc)
 {
-  if (mpctx->user_muted && !mpctx->edl_muted) mixer_mute(&mpctx->mixer);
   uninit_player(mpctx, INITIALIZED_ALL);
 #if defined(__MINGW32__) || defined(__CYGWIN__)
   timeEndPeriod(1);
