@@ -79,7 +79,7 @@ const m_option_t lavc_decode_opts_conf[]={
     OPT_STRING("skiploopfilter", lavc_param.skip_loop_filter_str, 0),
     OPT_STRING("skipidct", lavc_param.skip_idct_str, 0),
     OPT_STRING("skipframe", lavc_param.skip_frame_str, 0),
-    OPT_INTRANGE("threads", lavc_param.threads, 0, 1, 8),
+    OPT_INTRANGE("threads", lavc_param.threads, 0, 0, 8),
     OPT_FLAG_CONSTANTS("bitexact", lavc_param.bitexact, 0, 0, CODEC_FLAG_BITEXACT),
     OPT_STRING("o", lavc_param.avopt, 0),
     {NULL, NULL, 0, 0, 0, 0, NULL}
@@ -390,8 +390,38 @@ static int init(sh_video_t *sh){
     if(sh->bih)
         avctx->bits_per_coded_sample= sh->bih->biBitCount;
 
-    if(lavc_param->threads > 1)
+    if ( lavc_param->threads == 0 ) {
+#if __WIN32__
+        lavc_param->threads = pthread_num_processors_np();
+#elif __LINUX__
+        /* Code stolen from x264 :) */
+        unsigned int bit;
+        int np;
+        cpu_set_t p_aff;
+        memset( &p_aff, 0, sizeof(p_aff) );
+        sched_getaffinity( 0, sizeof(p_aff), &p_aff );
+        for( np = 0, bit = 0; bit < sizeof(p_aff); bit++ )
+            np += (((uint8_t *)&p_aff)[bit / 8] >> (bit % 8)) & 1;
+
+        lavc_param->threads = np;
+#else
+        /* TODO: other platforms. For now, just make sure it doesn't break. */
+        lavc_param->threads = 1;
+#endif
+    }
+
+    if ( lavc_codec->id == CODEC_ID_MPEG4 ) { /* Run away from packed b-frames (It is now blocked by ffmpeg-mt itself but show the warning anyway) */
+        mp_msg(MSGT_DECVIDEO, MSGL_WARN, "Multithreading is broken on MPEG-4 ASP, spawning only 1 thread...\n");
+        lavc_param->threads = 1;
+    } else {
+        mp_msg(MSGT_DECVIDEO, MSGL_INFO, "Spawning %d decoding thread%s...\n",
+                        lavc_param->threads, lavc_param->threads == 1 ? "" : "s");
+    }
+	
+    if(lavc_param->threads > 1) {
         avcodec_thread_init(avctx, lavc_param->threads);
+	    mp_msg(MSGT_DECVIDEO, MSGL_WARN, "WARNING: Multithreading is experimental and may break in weird ways.\n");
+	}
     /* open it */
     if (avcodec_open(avctx, lavc_codec) < 0) {
         mp_tmsg(MSGT_DECVIDEO, MSGL_ERR, "Could not open codec.\n");
