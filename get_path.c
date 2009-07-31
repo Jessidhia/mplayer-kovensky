@@ -20,8 +20,12 @@
 #include <unistd.h>
 #elif defined(__MINGW32__)
 #include <windows.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 #elif defined(__CYGWIN__)
 #include <windows.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 #include <sys/cygwin.h>
 #elif defined(__OS2__)
 #define INCL_DOS
@@ -31,7 +35,7 @@
 char *get_path(const char *filename){
 	char *homedir;
 	char *buff;
-#ifdef __MINGW32__
+#ifdef _WIN32
 	static char *config_dir = "/mplayer";
 #else
 	static char *config_dir = "/.mplayer";
@@ -49,16 +53,35 @@ char *get_path(const char *filename){
 	if ((homedir = getenv("MPLAYER_HOME")) != NULL)
 		config_dir = "";
 	else if ((homedir = getenv("HOME")) == NULL)
-#if defined(__MINGW32__) || defined(__CYGWIN__)
+#if _WIN32
 	/* Hack to get fonts etc. loaded outside of Cygwin environment. */
 	{
 		int i,imax=0;
-		char exedir[260];
-		GetModuleFileNameA(NULL, exedir, 260);
+		struct _stat statBuffer;
+		char exedir[MAX_PATH];
+		char config_path[MAX_PATH];
+		char *appdata = getenv("appdata");
+		if (appdata && strcmp(appdata, "")) {
+			strncpy(exedir, appdata, MAX_PATH);
+			exedir[MAX_PATH-1] = '\0';
+		} else {
+			GetModuleFileNameA(NULL, exedir, MAX_PATH);
+		}
 		for (i=0; i< strlen(exedir); i++)
 			if (exedir[i] =='\\')
-				{exedir[i]='/'; imax=i;}
-		exedir[imax]='\0';
+				exedir[i]='/';
+		
+		sprintf(config_path, "%s%s", exedir, config_dir);
+		int stat_res;
+		if ((stat_res = stat(config_path, &statBuffer)) < 0 ||
+				!(statBuffer.st_mode & S_IFDIR)) {
+			GetModuleFileNameA(NULL, exedir, MAX_PATH);
+			for (i=0; i< strlen(exedir); i++)
+				if (exedir[i] =='\\')
+					{exedir[i]='/'; imax=i;}
+			exedir[imax]='\0';
+		}
+		
 		homedir = exedir;
 	}
 #elif defined(__OS2__)
