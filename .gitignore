@@ -2,6 +2,7 @@
 *.a
 *.d
 .depend
+.svn
 
 /ffmpeg
 /config.h
