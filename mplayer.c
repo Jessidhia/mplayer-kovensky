@@ -1044,6 +1044,18 @@ void add_subtitles(struct MPContext *mpctx, char *filename, float fps, int noerr
 #endif
         mp_tmsg(MSGT_CPLAYER, noerr ? MSGL_WARN : MSGL_ERR, "Cannot load subtitles: %s\n",
 		filename_recode(filename));
+#if defined(_WIN32) && !defined(HAVE_NEW_GUI)
+    if(filename) {
+        static char message[MAX_PATH + 1];
+        char *s = strrchr(filename, '\\');
+        if (!s) s = strrchr(filename, '/');
+        if (s) s++; else s = filename; 
+        message[0] = 0;
+        snprintf(message, MAX_PATH, "MPlayer: %s", filename_recode(s));
+        message[MAX_PATH] = 0;
+        SetConsoleTitle(message);
+     }
+#endif
 
 #ifdef CONFIG_ASS
     if (!asst && !subd) return;
