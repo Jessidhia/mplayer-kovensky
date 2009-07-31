@@ -361,6 +361,7 @@ Video output:
   --enable-dhahelper       enable VIDIX dhahelper support
   --enable-svgalib_helper  enable VIDIX svgalib_helper support
   --enable-gl              enable OpenGL video output [autodetect]
+  --enable-matrixview      enable OpenGL MatrixView video outputi [no]
   --enable-dga2            enable DGA 2 support [autodetect]
   --enable-dga1            enable DGA 1 support [autodetect]
   --enable-vesa            enable VESA video output [autodetect]
@@ -580,6 +581,7 @@ _md5sum=yes
 _yuv4mpeg=yes
 _gif=auto
 _gl=auto
+_matrixview=no
 _ggi=auto
 _ggiwmh=auto
 _aa=auto
@@ -939,6 +941,8 @@ for ac_option do
   --disable-gif)	_gif=no		;;
   --enable-gl)		_gl=yes		;;
   --disable-gl)		_gl=no		;;
+  --enable-matrixview)  _matrixview=yes ;;
+  --disable-matrixview) _matrixview=no  ;;
   --enable-ggi)		_ggi=yes	;;
   --disable-ggi)	_ggi=no		;;
   --enable-ggiwmh)	_ggiwmh=yes	;;
@@ -4497,6 +4501,18 @@ else
 fi
 echores "$_gl"
 
+echocheck "MatrixView"
+if test "$_gl" = no ; then
+  _matrixview=no
+fi
+if test "$_matrixview" = yes ; then
+  _vomodules="matrixview $_vomodules"
+  def_matrixview='#define HAVE_MATRIXVIEW 1'
+else
+  _novomodules="matrixview $_novomodules"
+  def_matrixview='#undef HAVE_MATRIXVIEW'
+fi
+echores "$_matrixview"
 
 echocheck "VIDIX"
 def_vidix='#undef CONFIG_VIDIX'
@@ -8148,6 +8164,7 @@ GIF = $_gif
 GGI = $_ggi
 GL = $_gl
 GL_WIN32 = $_gl_win32
+MATRIXVIEW = $_matrixview
 HAVE_POSIX_SELECT = $_posix_select
 HAVE_SYS_MMAN_H = $_mman
 IVTV = $_ivtv
@@ -8654,6 +8671,7 @@ $def_gif_4
 $def_gif_tvt_hack
 $def_gl
 $def_gl_win32
+$def_matrixview
 $def_ivtv
 $def_jpeg
 $def_kva
