@@ -6740,6 +6740,11 @@ Threshold to detect temporal change of a field.
 Default is 128.
 .IPs sad_thres=<n>
 Sum of Absolute Difference threshold, default is 64.
+.IPs vfr=<n>
+If n is nonzero, attempt to output meaningful PTS values, and try to discard
+only frames that are duplicates in telecine sequences. Experimental, should
+be used in mencoder with -noskip, in which case output must be used with
+tcdump filter and an external tool to apply the timestamps to frames.
 .RE
 .
 .TP
