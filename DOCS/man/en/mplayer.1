@@ -7310,6 +7310,14 @@ Larger radius makes for smoother gradients, but also prevents the filter
 from modifying pixels near detailed regions (default: 16).
 .RE
 .
+.TP
+.B tcdump[=filename]
+Dump frame timecodes to a file, in the v2 external timecode file used by
+mkvmerge. With proper post-processing, this could be used to produce VFR
+files with mplayer/mencoder. Note that mencoder does not pass timestamps
+to the filter chain, and will not work with this filter. If none is given,
+the default filename is "timecodesv2.txt".
+.RE
 .
 .
 .SH "GENERAL ENCODING OPTIONS (MENCODER ONLY)"

@@ -1703,6 +1703,9 @@ static const char help_text[]=
 // libmpcodecs/vf_test.c, vf_yuy2.c, vf_yvu9.c
 #define MSGTR_MPCODECS_WarnNextFilterDoesntSupport "%s not supported by next filter/vo :(\n"
 
+// libmpcodecs/vf_tcdump.c
+#define MSGTR_MPCODECS_TCDumpNoPTS "Stream contains frames with no PTS, timecode file not valid (if already written)\n"
+#define MSGTR_MPCODECS_TCDumpOpenFail "Unable to open timecode file: %s\n"
 
 // ================================== LIBASS ====================================
 
