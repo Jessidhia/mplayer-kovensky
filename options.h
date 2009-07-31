@@ -55,6 +55,7 @@ typedef struct MPOpts {
         int skip_top;
         int skip_bottom;
         int fast;
+        int h264fast;
         char *lowres_str;
         char *skip_loop_filter_str;
         char *skip_idct_str;

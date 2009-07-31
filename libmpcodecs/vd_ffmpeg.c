@@ -75,6 +75,7 @@ const m_option_t lavc_decode_opts_conf[]={
     OPT_INTRANGE("st", lavc_param.skip_top, 0, 0, 999),
     OPT_INTRANGE("sb", lavc_param.skip_bottom, 0, 0, 999),
     OPT_FLAG_CONSTANTS("fast", lavc_param.fast, 0, 0, CODEC_FLAG2_FAST),
+    OPT_FLAG_CONSTANTS("h264fast", lavc_param.h264fast, 0, 0, 1), // Automatically enables "fast" if the codec is H.264
     OPT_STRING("lowres", lavc_param.lowres_str, 0),
     OPT_STRING("skiploopfilter", lavc_param.skip_loop_filter_str, 0),
     OPT_STRING("skipidct", lavc_param.skip_idct_str, 0),
@@ -274,7 +275,10 @@ static int init(sh_video_t *sh){
     avctx->workaround_bugs= lavc_param->workaround_bugs;
     avctx->error_recognition= lavc_param->error_resilience;
     if(lavc_param->gray) avctx->flags|= CODEC_FLAG_GRAY;
-    avctx->flags2|= lavc_param->fast;
+    if(lavc_param->h264fast && lavc_codec->id == CODEC_ID_H264)
+        avctx->flags2|= CODEC_FLAG2_FAST;
+    else
+        avctx->flags2|= lavc_param->fast;
     avctx->codec_tag= sh->format;
     avctx->stream_codec_tag= sh->video.fccHandler;
     avctx->idct_algo= lavc_param->idct_algo;
