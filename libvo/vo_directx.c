@@ -534,6 +534,7 @@ static uint32_t Directx_ManageDisplay(void)
     DDOVERLAYFX     ovfx;
     DWORD           dwUpdateFlags=0;
     int width,height;
+    int cw, ch;
 
     if(!vidmode && !vo_fs && WinID!=-1) {
       RECT current_rect = {0, 0, 0, 0};
@@ -570,8 +571,8 @@ static uint32_t Directx_ManageDisplay(void)
       pt.y = 0;
       ClientToScreen(hWnd,&pt);
       GetClientRect(hWnd, &rd);
-	  width=rd.right - rd.left;
-	  height=rd.bottom - rd.top;
+	  width=cw=rd.right - rd.left;
+	  height=ch=rd.bottom - rd.top;
       pt.x -= monitor_rect.left;    /* move coordinates from global to local monitor space */
       pt.y -= monitor_rect.top;
       rd.right -= monitor_rect.left;
@@ -597,6 +598,20 @@ static uint32_t Directx_ManageDisplay(void)
     }
     rd.right=rd.left+width;
     rd.bottom=rd.top+height;
+
+    /* Centering overlay image - disabled if passing geometry */
+    if(!vidmode && !vo_fs && !vo_geometry)
+    {
+        cw=(cw-width)/2;
+        cw+=cw%2;
+        ch=(ch-height)/2;
+        ch+=ch%2;
+    
+        rd.left+=cw;
+        rd.right+=cw;
+        rd.top+=ch;
+        rd.bottom+=ch;
+    }
 
 	/*ok, let's workaround some overlay limitations*/
 	if(!nooverlay)
