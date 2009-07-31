@@ -33,6 +33,8 @@
 #include "font_load.h"
 #include "sub.h"
 
+typedef IDirect3D9 * (WINAPI *imp_Direct3DCreate9)(UINT);
+
 static const vo_info_t info =
 {
     "Direct3D 9 Renderer",
@@ -80,6 +82,8 @@ static struct global_priv {
                                     cannot lock a normal texture. Uses RGBA */
     IDirect3DSurface9 *d3d_backbuf; /**< Video card's back buffer (used to
                                     display next frame) */
+    HANDLE d3d9;                    /**< d3d9 Library HANDLE */
+    imp_Direct3DCreate9 pDirect3DCreate9; /**< pointer to Direct3DCreate9 function */
     int cur_backbuf_width;          /**< Current backbuffer width */
     int cur_backbuf_height;         /**< Current backbuffer height */
     int is_osd_populated;           /**< 1 = OSD texture has something to display,
@@ -441,7 +445,7 @@ static int reconfigure_d3d(void)
     IDirect3D9_Release(priv->d3d_handle);
 
     /* Initialize Direct3D from the beginning */
-    priv->d3d_handle = Direct3DCreate9(D3D_SDK_VERSION);
+    priv->d3d_handle = priv->pDirect3DCreate9(D3D_SDK_VERSION);
     if (!priv->d3d_handle) {
         mp_msg(MSGT_VO, MSGL_ERR, "<vo_direct3d>Initializing Direct3D failed.\n");
         return 0;
@@ -678,7 +682,19 @@ static int preinit(const char *arg)
        > an example of how to use it.
     */
 
-    priv->d3d_handle = Direct3DCreate9(D3D_SDK_VERSION);
+    priv->d3d9 = LoadLibraryA("d3d9.dll");
+    if (!priv->d3d9) {
+        mp_msg(MSGT_VO, MSGL_ERR, "<vo_direct3d>Unable to dynamically load d3d9.dll\n");
+        return -1;
+    }
+
+    priv->pDirect3DCreate9 = (imp_Direct3DCreate9) GetProcAddress(priv->d3d9, "Direct3DCreate9");
+    if (!priv->pDirect3DCreate9) {
+        mp_msg(MSGT_VO, MSGL_ERR, "<vo_direct3d>Unable to find entry point of Direct3DCreate9\n");
+        return -1;
+    }
+
+    priv->d3d_handle = priv->pDirect3DCreate9(D3D_SDK_VERSION);
     if (!priv->d3d_handle) {
         mp_msg(MSGT_VO, MSGL_ERR, "<vo_direct3d>Initializing Direct3D failed.\n");
         return -1;
@@ -859,6 +875,7 @@ static void uninit(void)
 
     uninit_d3d();
     vo_w32_uninit(); /* w32_common framework call */
+    if (priv->d3d9) FreeLibrary(priv->d3d9);
     free(priv);
     priv = NULL;
 }
