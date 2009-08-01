@@ -301,6 +301,39 @@ static void glyph_hash_dtor(void* key, size_t key_size, void* value, size_t valu
 	free(value);
 }
 
+static int glyph_compare(void* key1, void* key2, size_t key_size) {
+	glyph_hash_key_t* a = key1;
+	glyph_hash_key_t* b = key2;
+	return
+		a->font == b->font &&
+		a->size == b->size &&
+		a->ch == b->ch &&
+		a->bold == b->bold &&
+		a->italic == b->italic &&
+		a->scale_x == b->scale_x &&
+		a->scale_y == b->scale_y &&
+		a->advance.x == b->advance.x &&
+		a->advance.y == b->advance.y &&
+		a->outline == b->outline;
+}
+
+static unsigned glyph_hash(void* buf, size_t len)
+{
+	glyph_hash_key_t* g = buf;
+	unsigned hval = FNV1_32A_INIT;
+	hval = fnv_32a_buf(&g->font, sizeof(g->font), hval);
+	hval = fnv_32a_buf(&g->size, sizeof(g->size), hval);
+	hval = fnv_32a_buf(&g->ch, sizeof(g->ch), hval);
+	hval = fnv_32a_buf(&g->bold, sizeof(g->bold), hval);
+	hval = fnv_32a_buf(&g->italic, sizeof(g->italic), hval);
+	hval = fnv_32a_buf(&g->scale_x, sizeof(g->scale_x), hval);
+	hval = fnv_32a_buf(&g->scale_y, sizeof(g->scale_y), hval);
+	hval = fnv_32a_buf(&g->advance.x, sizeof(g->advance.x), hval);
+	hval = fnv_32a_buf(&g->advance.y, sizeof(g->advance.y), hval);
+	hval = fnv_32a_buf(&g->outline, sizeof(g->outline), hval);
+	return hval;
+}
+
 void* cache_add_glyph(glyph_hash_key_t* key, glyph_hash_val_t* val)
 {
 	return hashmap_insert(glyph_cache, key, val);
