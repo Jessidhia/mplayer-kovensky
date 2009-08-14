@@ -44,8 +44,7 @@
 #include "subreader.h"
 #include "libvo/sub.h"
 
-#include "libass/ass.h"
-#include "libass/ass_mp.h"
+#include "ass_mp.h"
 
 #include "libavutil/common.h"
 
@@ -58,7 +57,7 @@
 #endif
 
 #include "libavutil/lzo.h"
-#include "libavutil/intreadwrite.h"
+#include "ffmpeg_files/intreadwrite.h"
 #include "libavutil/avstring.h"
 
 static const unsigned char sipr_swaps[38][2]={

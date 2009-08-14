@@ -119,12 +119,18 @@ static const vf_info_t* const filter_list[]={
     &vf_info_vo,
     &vf_info_format,
     &vf_info_noformat,
+#ifdef CONFIG_LIBSWSCALE_INTERNALS
     &vf_info_yuy2,
+#endif
     &vf_info_flip,
+#ifdef CONFIG_LIBSWSCALE_INTERNALS
     &vf_info_rgb2bgr,
+#endif
     &vf_info_rotate,
     &vf_info_mirror,
+#ifdef CONFIG_LIBSWSCALE_INTERNALS
     &vf_info_palette,
+#endif
     &vf_info_pp7,
 #ifdef CONFIG_LIBAVCODEC
     &vf_info_lavc,
@@ -142,7 +148,9 @@ static const vf_info_t* const filter_list[]={
     &vf_info_eq,
     &vf_info_eq2,
     &vf_info_gradfun,
+#ifdef CONFIG_LIBSWSCALE_INTERNALS
     &vf_info_halfpack,
+#endif
     &vf_info_dint,
     &vf_info_1bpp,
     &vf_info_2xsai,
@@ -236,7 +244,7 @@ void vf_mpi_clear(mp_image_t* mpi,int x0,int y0,int w,int h){
 	    unsigned int* p=(unsigned int*) dst;
 	    int size=(mpi->bpp>>3)*w/4;
 	    int i;
-#ifdef WORDS_BIGENDIAN
+#if HAVE_BIGENDIAN
 #define CLEAR_PACKEDYUV_PATTERN 0x00800080
 #define CLEAR_PACKEDYUV_PATTERN_SWAPPED 0x80008000
 #else

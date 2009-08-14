@@ -16,15 +16,14 @@
 #ifdef CONFIG_TV_TELETEXT
 #include "stream/tv.h"
 #endif
-#include "libavutil/intreadwrite.h"
+#include "ffmpeg_files/intreadwrite.h"
 #include "m_option.h"
 
 double sub_last_pts = -303;
 
 #ifdef CONFIG_ASS
-#include "libass/ass.h"
-#include "libass/ass_mp.h"
-ass_track_t* ass_track = 0; // current track to render
+#include "ass_mp.h"
+ASS_Track *ass_track = 0; // current track to render
 #endif
 
 sub_data* subdata = NULL;

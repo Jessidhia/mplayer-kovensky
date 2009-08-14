@@ -125,15 +125,7 @@ SRCS_COMMON-$(LIBA52_INTERNAL)       += liba52/crc.c \
                                         liba52/imdct.c \
                                         liba52/parse.c \
 
-SRCS_COMMON-$(LIBASS)                += libass/ass.c \
-                                        libass/ass_bitmap.c \
-                                        libass/ass_cache.c \
-                                        libass/ass_font.c \
-                                        libass/ass_fontconfig.c \
-                                        libass/ass_library.c \
-                                        libass/ass_mp.c \
-                                        libass/ass_render.c \
-                                        libass/ass_utils.c \
+SRCS_COMMON-$(LIBASS)                += ass_mp.c \
                                         libmpcodecs/vf_ass.c \
 
 SRCS_COMMON-$(LIBAVCODEC)            += av_opts.c \
@@ -143,15 +135,15 @@ SRCS_COMMON-$(LIBAVCODEC)            += av_opts.c \
                                         libmpcodecs/vf_lavc.c \
                                         libmpcodecs/vf_lavcdeint.c \
                                         libmpcodecs/vf_screenshot.c \
+                                        libmpcodecs/vf_uspp.c \
 
 # These filters use private headers and do not work with shared libavcodec.
-SRCS_COMMON-$(LIBAVCODEC_A)          += libaf/af_lavcac3enc.c \
+SRCS_COMMON-$(LIBAVCODEC_INTERNALS)  += libaf/af_lavcac3enc.c \
                                         libmpcodecs/vf_fspp.c \
                                         libmpcodecs/vf_geq.c \
                                         libmpcodecs/vf_mcdeint.c \
                                         libmpcodecs/vf_qp.c \
                                         libmpcodecs/vf_spp.c \
-                                        libmpcodecs/vf_uspp.c \
 
 SRCS_COMMON-$(LIBAVFORMAT)           += libmpdemux/demux_lavf.c
 SRCS_COMMON-$(LIBBS2B)               += libaf/af_bs2b.c
@@ -192,6 +184,10 @@ SRCS_COMMON-$(LIBNEMESI)             += libmpdemux/demux_nemesi.c \
 SRCS_COMMON-$(LIBNUT)                += libmpdemux/demux_nut.c
 SRCS_COMMON-$(LIBPOSTPROC)           += libmpcodecs/vf_pp.c
 SRCS_COMMON-$(LIBSMBCLIENT)          += stream/stream_smb.c
+SRCS_COMMON-$(LIBSWSCALE_INTERNALS)  += libmpcodecs/vf_halfpack.c \
+                                        libmpcodecs/vf_palette.c \
+                                        libmpcodecs/vf_rgb2bgr.c \
+                                        libmpcodecs/vf_yuy2.c
 SRCS_COMMON-$(LIBTHEORA)             += libmpcodecs/vd_theora.c
 SRCS_COMMON-$(LIVE555)               += libmpdemux/demux_rtp.cpp \
                                         libmpdemux/demux_rtp_codec.cpp \
@@ -429,7 +425,6 @@ SRCS_COMMON = asxparser.c \
               libmpcodecs/vf_format.c \
               libmpcodecs/vf_framestep.c \
               libmpcodecs/vf_gradfun.c \
-              libmpcodecs/vf_halfpack.c \
               libmpcodecs/vf_harddup.c \
               libmpcodecs/vf_hqdn3d.c \
               libmpcodecs/vf_hue.c \
@@ -441,14 +436,12 @@ SRCS_COMMON = asxparser.c \
               libmpcodecs/vf_noformat.c \
               libmpcodecs/vf_noise.c \
               libmpcodecs/vf_ow.c \
-              libmpcodecs/vf_palette.c \
               libmpcodecs/vf_perspective.c \
               libmpcodecs/vf_phase.c \
               libmpcodecs/vf_pp7.c \
               libmpcodecs/vf_pullup.c \
               libmpcodecs/vf_rectangle.c \
               libmpcodecs/vf_remove_logo.c \
-              libmpcodecs/vf_rgb2bgr.c \
               libmpcodecs/vf_rgbtest.c \
               libmpcodecs/vf_rotate.c \
               libmpcodecs/vf_sab.c \
@@ -467,7 +460,6 @@ SRCS_COMMON = asxparser.c \
               libmpcodecs/vf_vo.c \
               libmpcodecs/vf_yadif.c \
               libmpcodecs/vf_yuvcsp.c \
-              libmpcodecs/vf_yuy2.c \
               libmpcodecs/vf_yvu9.c \
               libmpdemux/aac_hdr.c \
               libmpdemux/asfheader.c \
@@ -680,12 +672,6 @@ SRCS_MENCODER = mencoder.c \
                 libmpdemux/muxer_rawvideo.c \
                 $(SRCS_MENCODER-yes)
 
-
-COMMON_LIBS-$(LIBAVFORMAT_A)      += ffmpeg/libavformat/libavformat.a
-COMMON_LIBS-$(LIBAVCODEC_A)       += ffmpeg/libavcodec/libavcodec.a
-COMMON_LIBS-$(LIBAVUTIL_A)        += ffmpeg/libavutil/libavutil.a
-COMMON_LIBS-$(LIBPOSTPROC_A)      += ffmpeg/libpostproc/libpostproc.a
-COMMON_LIBS-$(LIBSWSCALE_A)       += libswscale/libswscale.a
 COMMON_LIBS += $(COMMON_LIBS-yes)
 
 OBJS_COMMON    += $(addsuffix .o, $(basename $(SRCS_COMMON)))
@@ -710,23 +696,6 @@ DIRS =  . \
         libaf \
         libao2 \
         libass \
-        ffmpeg/libavcodec \
-        ffmpeg/libavcodec/alpha \
-        ffmpeg/libavcodec/arm \
-        ffmpeg/libavcodec/bfin \
-        ffmpeg/libavcodec/x86 \
-        ffmpeg/libavcodec/mlib \
-        ffmpeg/libavcodec/ppc \
-        ffmpeg/libavcodec/sh4 \
-        ffmpeg/libavcodec/sparc \
-        ffmpeg/libavformat \
-        ffmpeg/libavutil \
-        ffmpeg/libavutil/arm \
-        ffmpeg/libavutil/bfin \
-        ffmpeg/libavutil/bfin \
-        ffmpeg/libavutil/ppc \
-        ffmpeg/libavutil/sh4 \
-        ffmpeg/libavutil/x86 \
         libdvdcss \
         libdvdnav \
         libdvdnav/vm \
@@ -737,7 +706,6 @@ DIRS =  . \
         libmpcodecs/native \
         libmpdemux \
         libmpeg2 \
-        ffmpeg/libpostproc \
         libswscale \
         libswscale/bfin \
         libswscale/mlib \
@@ -764,17 +732,6 @@ ADDSUFFIXES     = $(foreach suf,$(1),$(addsuffix $(suf),$(2)))
 ADD_ALL_DIRS    = $(call ADDSUFFIXES,$(1),$(DIRS))
 ADD_ALL_EXESUFS = $(1) $(call ADDSUFFIXES,$(EXESUFS_ALL),$(1))
 
-FFMPEGPARTS = ffmpeg/libavcodec \
-              ffmpeg/libavformat \
-              ffmpeg/libavutil \
-              ffmpeg/libpostproc \
-              libswscale \
-
-FFMPEGLIBS  = $(foreach part, $(FFMPEGPARTS), $(part)/$(notdir $(part)).a)
-FFMPEGFILES = $(foreach part, $(FFMPEGPARTS), $(wildcard $(part)/*.[choS] $(part)/*/*.[choS] $(part)/*/*.asm))
-
-
-
 ###### generic rules #######
 
 all: $(ALL_PRG-yes)
@@ -797,15 +754,6 @@ all: $(ALL_PRG-yes)
 checkheaders: $(ALLHEADERS:.h=.ho)
 
 dep depend: $(DEPS)
-	for part in $(FFMPEGPARTS); do $(MAKE) -C $$part depend; done
-
-# dummy to prevent default build rules from being used for FFMPEGFILES
-$(FFMPEGFILES):
-	echo "this shouldn't run"
-
-$(FFMPEGLIBS): $(FFMPEGFILES) config.h
-	$(MAKE) -C $(@D)
-	touch $@
 
 mencoder$(EXESUF): $(MENCODER_DEPS)
 	$(CC) -o $@ $^ $(LDFLAGS_MENCODER)
@@ -814,7 +762,7 @@ mplayer$(EXESUF): $(MPLAYER_DEPS)
 	$(CC) -o $@ $^ $(LDFLAGS_MPLAYER)
 
 codec-cfg$(EXESUF): codec-cfg.c codec-cfg.h help_mp.h
-	$(HOST_CC) -O -DCODECS2HTML -I. -Iffmpeg -o $@ $<
+	$(HOST_CC) -O -DCODECS2HTML -I. -o $@ $<
 
 codecs.conf.h: codec-cfg$(EXESUF) etc/codecs.conf
 	./$^ > $@
@@ -845,6 +793,17 @@ version.h: version.sh
 codec-cfg.d codec-cfg.o: codecs.conf.h
 $(DEPS) $(MENCODER_DEPS) $(MPLAYER_DEPS): help_mp.h
 $(call ADDSUFFIXES,.d .o,mpcommon vobsub stream/stream_cddb stream/network libmpdemux/muxer_avi): version.h
+
+# Files that depend on libswscale internals
+libvo/vo_mga.o libvo/vo_xmga.o libmpcodecs/vf_halfpack.o libmpcodecs/vf_palette.o libmpcodecs/vf_rgb2bgr.o libmpcodecs/vf_yuy2.o: CFLAGS := -I$(FFMPEG_SOURCE_PATH) $(CFLAGS)
+
+# Files that depend on libavcodec internals
+libaf/af_lavcac3enc.o libmpcodecs/vf_fspp.o libmpcodecs/vf_geq.o libmpcodecs/vf_mcdeint.o libmpcodecs/vf_qp.o libmpcodecs/vf_spp.o libvo/jpeg_enc.o: CFLAGS := -I$(FFMPEG_SOURCE_PATH) $(CFLAGS)
+
+# yuv4mpeg has rgb conversion code under #ifdef CONFIG_LIBSWSCALE_INTERNALS
+ifeq ($(LIBSWSCALE_INTERNALS),yes)
+libvo/vo_yuv4mpeg.o: CFLAGS := -I$(FFMPEG_SOURCE_PATH) $(CFLAGS)
+endif
 
 libdvdcss/%:   CFLAGS := -Ilibdvdcss -D__USE_UNIX98 -D_GNU_SOURCE -DVERSION=\"1.2.10\" $(CFLAGS_LIBDVDCSS) $(CFLAGS)
 libdvdnav/%:   CFLAGS := -Ilibdvdnav -D__USE_UNIX98 -D_GNU_SOURCE -DHAVE_CONFIG_H -DVERSION=\"MPlayer-custom\" $(CFLAGS)
