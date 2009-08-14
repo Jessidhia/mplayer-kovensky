@@ -1,0 +1,5 @@
+#!/bin/sh
+set -e
+rm -rf build_libs ffmpeg_build
+MPBUILD_COMMAND='git clean -x -d -f' "`pwd`"/script/foreach_submodule nottop
+make -C .. distclean

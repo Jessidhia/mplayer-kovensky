@@ -2,6 +2,7 @@
 *.a
 *.d
 *.exe
+*~
 .depend
 .svn
 

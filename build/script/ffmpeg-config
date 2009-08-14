@@ -1,0 +1,36 @@
+#!/usr/bin/env python
+
+import os
+from os import path
+from helpers import parse_configfile
+from subprocess import check_call
+
+def main():
+    try:
+        os.mkdir('ffmpeg_build')
+    except:
+        pass
+    mydir = os.getcwd()
+    extra_args = parse_configfile('common_options')
+    extra_args += parse_configfile('ffmpeg_options')
+
+    args = ['--prefix=%s/build_libs' % mydir,
+            '--enable-gpl',
+            '--cpu=native',
+            '--disable-debug',
+            '--enable-pthreads',
+            '--disable-shared', '--enable-static',
+            '--enable-postproc',
+            '--disable-devices', '--disable-protocols', '--disable-ffmpeg',
+            '--disable-ffplay', '--disable-ffserver']
+
+    if os.path.exists('ffmpeg-mt-enabled'):
+        ffmpeg_dir = 'ffmpeg-mt'
+    else:
+        ffmpeg_dir = 'ffmpeg'
+    executable = path.join(mydir, ffmpeg_dir, 'configure')
+
+    os.chdir('ffmpeg_build')
+    check_call([executable] + args + extra_args)
+
+main()

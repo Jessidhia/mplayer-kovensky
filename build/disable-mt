@@ -1,0 +1,11 @@
+#!/bin/sh
+set -e
+rm -f ffmpeg-mt-enabled
+if test -e ffmpeg-mt/.git -a ! -e ffmpeg/.git ; then
+  rmdir ffmpeg
+  mv ffmpeg-mt ffmpeg
+  mkdir ffmpeg-mt
+  git submodule update --no-fetch ffmpeg
+  cd ffmpeg
+  git submodule update --no-fetch
+fi

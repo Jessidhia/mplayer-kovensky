@@ -1,0 +1,23 @@
+#!/usr/bin/env python
+
+from os import path
+from subprocess import check_call
+
+from script.helpers import run_foreach_submodule, GitWrapper
+
+def main():
+    os.chdir('..')
+    git = GitWrapper()
+    check_call('git pull'.split())
+    config = git.get_config()
+    submodules = git.get_submodules()
+    # Update existing submodules, but don't check out new ones
+    for p in submodules:
+        if not 'submodule.%s.url' % p in config:
+            continue
+        if not path.exists(path.join(p, '.git')):
+            continue
+        check_call('git submodule update'.split() + [p])
+    run_foreach_submodule('git submodule update --init', 'nottop')
+
+main()

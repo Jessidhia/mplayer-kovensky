@@ -1,0 +1,9 @@
+[submodule "build/ffmpeg"]
+	path = build/ffmpeg
+	url = git://repo.or.cz/FFMpeg-mirror/mplayer-patches.git
+[submodule "build/libass"]
+	path = build/libass
+	url = git://repo.or.cz/libass.git
+[submodule "build/ffmpeg-mt"]
+	path = build/ffmpeg-mt
+	url = git://repo.or.cz/FFMpeg-mirror/mplayer-patches.git

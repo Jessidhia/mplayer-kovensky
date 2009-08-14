@@ -1,0 +1,8 @@
+*.pyc
+/build_libs
+/common_options
+/ffmpeg_options
+/mplayer_options
+/libass_options
+/ffmpeg_build
+/ffmpeg-mt-enabled
