@@ -12,8 +12,7 @@
 --enable-memalign-hack
 --enable-nonfree
 --enable-avisynth
---enable-libmp3lame
---enable-libschroedinger
+--enable-libdirac
 --enable-libspeex
 --enable-libtheora
 --enable-libvorbis

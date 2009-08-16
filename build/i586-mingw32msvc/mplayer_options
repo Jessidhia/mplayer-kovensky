@@ -13,4 +13,5 @@
 --ar=i586-mingw32msvc-ar
 --windres=i586-mingw32msvc-windres
 --enable-x264
+--enable-matrixview
 --disable-tremor-internal
