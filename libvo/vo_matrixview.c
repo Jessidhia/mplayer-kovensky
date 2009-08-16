@@ -399,7 +399,7 @@ static int preinit(const char *arg)
 }
 
 
-static int control(uint32_t request, void *data, ...)
+static int control(uint32_t request, void *data)
 {
     switch (request) {
     case VOCTRL_PAUSE: return (int_pause=1);
@@ -407,7 +407,7 @@ static int control(uint32_t request, void *data, ...)
     case VOCTRL_QUERY_FORMAT:
         return query_format(*((uint32_t*)data));
     case VOCTRL_ONTOP:
-        vo_ontop();
+        vo_gl_ontop();
         return VO_TRUE;
     case VOCTRL_FULLSCREEN:
         vo_fullscreen();
@@ -420,35 +420,27 @@ static int control(uint32_t request, void *data, ...)
 #endif
     case VOCTRL_GET_EQUALIZER:
         {
-            va_list va;
-            int *value;
-            va_start(va, data);
-            value = va_arg(va, int *);
-            va_end(va);
-            if (strcasecmp(data, "contrast") == 0)
+            struct voctrl_get_equalizer_args *args = data;
+            if (strcasecmp(args->name, "contrast") == 0)
             {
-                *value = eq_contrast;
+                *(args->valueptr) = eq_contrast;
             }
-            else if (strcasecmp(data, "brightness") == 0)
+            else if (strcasecmp(args->name, "brightness") == 0)
             {
-                *value = eq_brightness;
+                *(args->valueptr) = eq_brightness;
             }
         }
         return VO_TRUE;
     case VOCTRL_SET_EQUALIZER:
         {
-            va_list va;
-            int value;
-            va_start(va, data);
-            value = va_arg(va, int);
-            va_end(va);
-            if (strcasecmp(data, "contrast") == 0)
+            struct voctrl_set_equalizer_args *args = data;
+            if (strcasecmp(args->name, "contrast") == 0)
             {
-                contrast_set(value);
+                contrast_set(args->value);
             }
             else if (strcasecmp(data, "brightness") == 0)
             {
-                brightness_set(value);
+                brightness_set(args->value);
             }
         }
         return VO_TRUE;
