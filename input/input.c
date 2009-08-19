@@ -400,15 +400,17 @@ static const mp_cmd_bind_t def_cmd_binds[] = {
   { { KEY_KP6, 0 }, "dvdnav right" },   // right
   { { KEY_KP5, 0 }, "dvdnav menu" },   // menu
   { { KEY_KPENTER, 0 }, "dvdnav select" },   // select
-  { { MOUSE_BTN0, 0 }, "dvdnav mouse" },   //select
+//  { { MOUSE_BTN0, 0 }, "dvdnav mouse" },   //select
   { { KEY_KP7, 0 }, "dvdnav prev" },   // previous menu
 #endif
 
+  { { MOUSE_BTN0, 0 }, "pause" },
+  { { MOUSE_BTN2, 0 }, "vo_fullscreen" },
   { { KEY_RIGHT, 0 }, "seek 10" },
-  { {  KEY_LEFT, 0 }, "seek -10" },
-  { {  KEY_UP, 0 }, "seek 60" },
-  { {  KEY_DOWN, 0 }, "seek -60" },
-  { {  KEY_PAGE_UP, 0 }, "seek 600" },
+  { { KEY_LEFT, 0 }, "seek -10" },
+  { { KEY_UP, 0 }, "seek 60" },
+  { { KEY_DOWN, 0 }, "seek -60" },
+  { { KEY_PAGE_UP, 0 }, "seek 600" },
   { { KEY_PAGE_DOWN, 0 }, "seek -600" },
   { { '+', 0 }, "audio_delay 0.100" },
   { { '-', 0 }, "audio_delay -0.100" },
