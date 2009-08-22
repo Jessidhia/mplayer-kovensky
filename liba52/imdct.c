@@ -1259,12 +1259,12 @@ void a52_imdct_init (uint32_t mm_accel)
 	ifft64 = ifft64_c;
 
 #if ARCH_X86 || ARCH_X86_64
-	if(mm_accel & MM_ACCEL_X86_SSE)
+/*	if(mm_accel & MM_ACCEL_X86_SSE)
 	{
 	  fprintf (stderr, "Using SSE optimized IMDCT transform\n");
 	  a52_imdct_512 = imdct_do_512_sse;
 	}
-	else
+	else*/
 	if(mm_accel & MM_ACCEL_X86_3DNOWEXT)
 	{
 	  fprintf (stderr, "Using 3DNowEx optimized IMDCT transform\n");
