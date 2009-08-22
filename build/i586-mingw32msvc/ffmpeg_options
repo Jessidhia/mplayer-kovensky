@@ -18,3 +18,7 @@
 --enable-libvorbis
 --enable-libx264
 --enable-libxvid
+--enable-version3
+--enable-libopencore-amrnb
+--enable-libopencore-amrwb
+--enable-runtime-cpudetect
