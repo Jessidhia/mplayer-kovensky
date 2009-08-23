@@ -4,7 +4,7 @@ import os
 from os import path
 from subprocess import check_call
 
-from script.helpers import run_foreach_submodule, GitWrapper
+from script.helpers import GitWrapper
 
 def main():
     os.chdir('..')
@@ -19,6 +19,8 @@ def main():
         if not path.exists(path.join(p, '.git')):
             continue
         check_call('git submodule update'.split() + [p])
-    run_foreach_submodule('git submodule update --init', 'nottop')
+    def cmd():
+        check_call('git submodule update --init'.split())
+    git.foreach_submodule(cmd)
 
 main()

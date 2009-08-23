@@ -67,7 +67,7 @@ class GitWrapper(object):
             check_call('git submodule update'.split() + nofetch_args + [name])
 
     def get_config(self):
-        output = run_command('git config --list --null')
+        output = run_command('git config --null --list')
         result = {}
         for line in output.split(chr(0)):
             if not line:
@@ -86,11 +86,18 @@ class GitWrapper(object):
             result.append(path)
         return result
 
-def run_foreach_submodule(command, *args):
-    env = os.environ.copy()
-    env['MPBUILD_COMMAND'] = command
-    executable = path.join(os.getcwd(), 'build', 'script', 'foreach_submodule')
-    check_call([executable] + list(args), env=env)
+    def foreach_submodule(self, func, recurse=True):
+        for module in self.get_submodules():
+            if path.exists(path.join(module, '.git')):
+                os.chdir(module)
+                func()
+                if recurse:
+                    self.foreach_submodule(func)
+                os.chdir('..')
+
+    def foreach_module(self, func):
+        func()
+        self.foreach_submodule(func)
 
 def parse_configfile(filename):
     if not path.exists(filename):

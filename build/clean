@@ -1,5 +1,17 @@
-#!/bin/sh
-set -e
-rm -rf build_libs ffmpeg_build
-MPBUILD_COMMAND='git clean -x -d -f' "`pwd`"/script/foreach_submodule nottop
-make -C .. distclean
+<<<<<<< Updated upstream
+#!/usr/bin/env python
+
+from subprocess import check_call
+from script.helpers import GitWrapper
+
+def main():
+    git = GitWrapper()
+    check_call('rm -rf build_libs ffmpeg_build build-stamp configure-stamp'.split())
+    os.chdir('..')
+    check_call('git clean -x -d -f build/debian/'.split())
+    def cmd():
+        check_call('git clean -x -d -f'.split())
+    git.foreach_submodule(cmd)
+    check_call('make distclean')
+
+main()

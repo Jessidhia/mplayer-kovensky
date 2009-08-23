@@ -6,7 +6,7 @@ import sys
 from optparse import OptionParser
 from subprocess import check_call
 
-from script.helpers import run_command, run_foreach_submodule, GitWrapper
+from script.helpers import run_command, GitWrapper
 
 option_helptext = \
 """# Place each option on its own line. Empty lines and lines starting with '#'
@@ -71,9 +71,13 @@ def main():
 
     # Ensure sync, needed in addition what's done in submodule_clone() above
     # at least if both ffmpeg and ffmpeg-mt dirs exist separately
-    run_foreach_submodule('git submodule sync')
+    def cmd():
+        check_call('git submodule sync'.split())
+    git.foreach_module(cmd)
     # Init recursive submodules (libswscale under ffmpeg) - not trying to
     # make this support shallow clones for now.
-    run_foreach_submodule('git submodule update --init', 'nottop')
+    def cmd():
+        check_call('git submodule update --init'.split())
+    git.foreach_submodule(cmd)
 
 main()

@@ -1,4 +1,0 @@
-#!/bin/sh
-set -e
-test -z $1 && $MPBUILD_COMMAND
-git submodule foreach "$0"
