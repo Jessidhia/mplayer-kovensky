@@ -77,8 +77,10 @@ typedef enum
 	AUDIO_DTS	= 0x2001,
 	AUDIO_LPCM_BE  	= 0x10001,
 	AUDIO_AAC	= mmioFOURCC('M', 'P', '4', 'A'),
+	AUDIO_TRUEHD	= mmioFOURCC('T', 'R', 'H', 'D'),
 	SPU_DVD		= 0x3000000,
 	SPU_DVB		= 0x3000001,
+	SPU_TELETEXT	= 0x3000002,
 	PES_PRIVATE1	= 0xBD00000,
 	SL_PES_STREAM	= 0xD000000,
 	SL_SECTION	= 0xD100000,
@@ -244,8 +246,9 @@ typedef struct {
 } TS_pids_t;
 
 
-#define IS_AUDIO(x) (((x) == AUDIO_MP2) || ((x) == AUDIO_A52) || ((x) == AUDIO_LPCM_BE) || ((x) == AUDIO_AAC) || ((x) == AUDIO_DTS))
+#define IS_AUDIO(x) (((x) == AUDIO_MP2) || ((x) == AUDIO_A52) || ((x) == AUDIO_LPCM_BE) || ((x) == AUDIO_AAC) || ((x) == AUDIO_DTS) || ((x) == AUDIO_TRUEHD))
 #define IS_VIDEO(x) (((x) == VIDEO_MPEG1) || ((x) == VIDEO_MPEG2) || ((x) == VIDEO_MPEG4) || ((x) == VIDEO_H264) || ((x) == VIDEO_AVC)  || ((x) == VIDEO_VC1))
+#define IS_SUB(x) (((x) == SPU_DVD) || ((x) == SPU_DVB) || ((x) == SPU_TELETEXT))
 
 static int ts_parse(demuxer_t *demuxer, ES_stream_t *es, unsigned char *packet, int probe);
 
@@ -694,7 +697,7 @@ static off_t ts_detect_streams(demuxer_t *demuxer, tsdemux_init_t *param)
 
 			is_audio = IS_AUDIO(es.type) || ((es.type==SL_PES_STREAM) && IS_AUDIO(es.subtype));
 			is_video = IS_VIDEO(es.type) || ((es.type==SL_PES_STREAM) && IS_VIDEO(es.subtype));
-			is_sub   = ((es.type == SPU_DVD) || (es.type == SPU_DVB));
+			is_sub   = IS_SUB(es.type);
 
 
 			if((! is_audio) && (! is_video) && (! is_sub))
@@ -871,6 +874,8 @@ static off_t ts_detect_streams(demuxer_t *demuxer, tsdemux_init_t *param)
 		mp_msg(MSGT_DEMUXER, MSGL_INFO, "AUDIO LPCM(pid=%d)", param->apid);
 	else if(param->atype == AUDIO_AAC)
 		mp_msg(MSGT_DEMUXER, MSGL_INFO, "AUDIO AAC(pid=%d)", param->apid);
+	else if(param->atype == AUDIO_TRUEHD)
+		mp_msg(MSGT_DEMUXER, MSGL_INFO, "AUDIO TRUEHD(pid=%d)", param->apid);
 	else
 	{
 		audio_found = 0;
@@ -879,8 +884,8 @@ static off_t ts_detect_streams(demuxer_t *demuxer, tsdemux_init_t *param)
 		mp_msg(MSGT_DEMUXER, MSGL_INFO, "NO AUDIO! ");
 	}
 
-	if(param->stype == SPU_DVD || param->stype == SPU_DVB)
-		mp_msg(MSGT_DEMUXER, MSGL_INFO, " SUB %s(pid=%d) ", (param->stype==SPU_DVD ? "DVD" : "DVB"), param->spid);
+	if(IS_SUB(param->stype))
+		mp_msg(MSGT_DEMUXER, MSGL_INFO, " SUB %s(pid=%d) ", (param->stype==SPU_DVD ? "DVD" : param->stype==SPU_DVB ? "DVB" : "Teletext"), param->spid);
 	else
 	{
 		param->stype = UNKNOWN;
@@ -1412,6 +1417,8 @@ static int pes_parse2(unsigned char *buf, uint16_t packet_len, ES_stream_t *es, 
 		int ssid = parse_pes_extension_fields(p, pkt_len);
 		if((audio_substream_id!=-1) && (ssid != audio_substream_id))
 			return 0;
+		if(ssid == 0x72)
+			es->type  = type_from_pmt = AUDIO_TRUEHD;
 	}
 
 	p += header_len + 9;
@@ -2245,6 +2252,14 @@ static int parse_descriptors(struct pmt_es_t *es, uint8_t *ptr)
 				mp_msg(MSGT_DEMUX, MSGL_DBG2, "DVB DTS Descriptor\n");
 			}
 		}
+		else if(ptr[j] == 0x56) // Teletext
+		{
+			if(descr_len >= 5) {
+				memcpy(es->lang, ptr+2, 3);
+				es->lang[3] = 0;
+			}
+			es->type = SPU_TELETEXT;
+		}
 		else if(ptr[j] == 0x59)	//Subtitling Descriptor
 		{
 			uint8_t subtype;
@@ -2875,7 +2890,7 @@ static int ts_parse(demuxer_t *demuxer , ES_stream_t *es, unsigned char *packet,
 
 		is_video = IS_VIDEO(tss->type) || (tss->type==SL_PES_STREAM && IS_VIDEO(tss->subtype));
 		is_audio = IS_AUDIO(tss->type) || (tss->type==SL_PES_STREAM && IS_AUDIO(tss->subtype)) || (tss->type == PES_PRIVATE1);
-		is_sub	= ((tss->type == SPU_DVD) || (tss->type == SPU_DVB));
+		is_sub	= IS_SUB(tss->type);
 		pid_type = pid_type_from_pmt(priv, pid);
 
 			// PES CONTENT STARTS HERE
@@ -2908,7 +2923,7 @@ static int ts_parse(demuxer_t *demuxer , ES_stream_t *es, unsigned char *packet,
 				si = &priv->astr;
 			}
 			else if(is_sub
-				|| (pid_type == SPU_DVD) || (pid_type == SPU_DVB))
+				|| IS_SUB(pid_type))
 			{
 				//SUBS are infrequent, so the initial detection may fail
 				// and we may need to add them at play-time
@@ -3057,7 +3072,7 @@ static int ts_parse(demuxer_t *demuxer , ES_stream_t *es, unsigned char *packet,
 			tss->is_synced |= es->is_synced || rap_flag;
 			tss->payload_size = es->payload_size;
 
-			if(is_audio && (lang = pid_lang_from_pmt(priv, es->pid)))
+			if((is_sub || is_audio) && (lang = pid_lang_from_pmt(priv, es->pid)))
 			{
 				memcpy(es->lang, lang, 3);
 				es->lang[3] = 0;
