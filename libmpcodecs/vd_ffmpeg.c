@@ -417,6 +417,9 @@ static int init(sh_video_t *sh){
     if ( lavc_codec->id == CODEC_ID_MPEG4 ) { /* Run away from packed b-frames (It is now blocked by ffmpeg-mt itself but show the warning anyway) */
         mp_msg(MSGT_DECVIDEO, MSGL_WARN, "Multithreading is broken on MPEG-4 ASP, spawning only 1 thread...\n");
         lavc_param->threads = 1;
+    } else if ( lavc_codec->id == CODEC_ID_MPEG2VIDEO || lavc_codec->id == CODEC_ID_MPEG1VIDEO ) {
+        mp_msg(MSGT_DECVIDEO, MSGL_WARN, "Multithreading gives corrupt video on MPEG-2 ASP, spawning only 1 thread...\n");
+        lavc_param->threads = 1;
     } else {
         mp_msg(MSGT_DECVIDEO, MSGL_INFO, "Spawning %d decoding thread%s...\n",
                         lavc_param->threads, lavc_param->threads == 1 ? "" : "s");
