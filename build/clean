@@ -1,6 +1,6 @@
-<<<<<<< Updated upstream
 #!/usr/bin/env python
 
+import os
 from subprocess import check_call
 from script.helpers import GitWrapper
 
@@ -12,6 +12,6 @@ def main():
     def cmd():
         check_call('git clean -x -d -f'.split())
     git.foreach_submodule(cmd)
-    check_call('make distclean')
+    check_call('make distclean'.split())
 
 main()
