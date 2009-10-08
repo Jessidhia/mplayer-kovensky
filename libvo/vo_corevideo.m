@@ -161,10 +161,6 @@ static void free_file_specific(void)
 static int config(uint32_t width, uint32_t height, uint32_t d_width, uint32_t d_height, uint32_t flags, char *title, uint32_t format)
 {
 	free_file_specific();
-	config_movie_aspect((float)d_width/d_height);
-
-	vo_dwidth  = d_width  *= mpGLView->winSizeMult;
-	vo_dheight = d_height *= mpGLView->winSizeMult;
 
 	//misc mplayer setup
 	image_width = width;
@@ -183,6 +179,11 @@ static int config(uint32_t width, uint32_t height, uint32_t d_width, uint32_t d_
 
 	if(!shared_buffer)
 	{
+		config_movie_aspect((float)d_width/d_height);
+
+		vo_dwidth  = d_width  *= mpGLView->winSizeMult;
+		vo_dheight = d_height *= mpGLView->winSizeMult;
+
 		image_data = malloc(image_width*image_height*image_bytes);
 		image_datas[0] = image_data;
 		if (vo_doublebuffering)
@@ -337,7 +338,7 @@ static void uninit(void)
     buffer_name = NULL;
 }
 
-static opt_t subopts[] = {
+static const opt_t subopts[] = {
 {"device_id",     OPT_ARG_INT,  &screen_id,     NULL},
 {"shared_buffer", OPT_ARG_BOOL, &shared_buffer, NULL},
 {"buffer_name",   OPT_ARG_MSTRZ,&buffer_name,   NULL},
@@ -594,58 +595,40 @@ static int control(uint32_t request, void *data)
 	[menuItem release];
 }
 
+- (void)set_winSizeMult:(float)mult
+{
+    NSRect frame;
+    int d_width, d_height;
+    aspect(&d_width, &d_height, A_NOZOOM);
+
+    if (isFullscreen) {
+        vo_fs = !vo_fs;
+        [self fullscreen:NO];
+    }
+
+    winSizeMult = mult;
+    frame.size.width  = d_width  * mult;
+    frame.size.height = d_height * mult;
+    [window setContentSize: frame.size];
+    [self reshape];
+}
+
 /*
 	Menu Action
  */
 - (void)menuAction:(id)sender
 {
-	uint32_t d_width;
-	uint32_t d_height;
-	NSRect frame;
-
-	aspect((int *)&d_width, (int *)&d_height,A_NOZOOM);
-
 	if(sender == kQuitCmd)
 	{
 		mplayer_put_key(KEY_ESC);
 	}
 
 	if(sender == kHalfScreenCmd)
-	{
-		if(isFullscreen) {
-			vo_fs = (!(vo_fs)); [self fullscreen:NO];
-		}
-
-		winSizeMult = 0.5;
-		frame.size.width = d_width*winSizeMult;
-		frame.size.height = d_height*winSizeMult;
-		[window setContentSize: frame.size];
-		[self reshape];
-	}
+		[self set_winSizeMult: 0.5];
 	if(sender == kNormalScreenCmd)
-	{
-		if(isFullscreen) {
-			vo_fs = (!(vo_fs)); [self fullscreen:NO];
-		}
-
-		winSizeMult = 1;
-		frame.size.width = d_width;
-		frame.size.height = d_height;
-		[window setContentSize: frame.size];
-		[self reshape];
-	}
+		[self set_winSizeMult: 1];
 	if(sender == kDoubleScreenCmd)
-	{
-		if(isFullscreen) {
-			vo_fs = (!(vo_fs)); [self fullscreen:NO];
-		}
-
-		winSizeMult = 2;
-		frame.size.width = d_width*winSizeMult;
-		frame.size.height = d_height*winSizeMult;
-		[window setContentSize: frame.size];
-		[self reshape];
-	}
+		[self set_winSizeMult: 2];
 	if(sender == kFullScreenCmd)
 	{
 		vo_fs = (!(vo_fs));

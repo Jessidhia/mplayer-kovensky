@@ -205,6 +205,7 @@ int vo_config(struct vo *vo, uint32_t width, uint32_t height,
 	      uint32_t d_width, uint32_t d_height, uint32_t flags,
 	      char *title, uint32_t format) { abort(); }
 int vo_control(struct vo *vo, uint32_t request, void *data) { abort(); }
+int vo_draw_image(struct vo *vo, struct mp_image *mpi, double pts) { abort(); }
 int vo_draw_frame(struct vo *vo, uint8_t *src[]) { abort(); }
 int vo_draw_slice(struct vo *vo, uint8_t *src[], int stride[], int w, int h, int x, int y) { abort(); }
 void vo_draw_osd(struct vo *vo, struct osd_state *osd) { abort(); }
@@ -220,6 +221,12 @@ void mplayer_put_key(struct mp_fifo *fifo, int code)
 #include "ass_mp.h"
 char *current_module;
 #include "mpcommon.h"
+
+// Needed by mpcommon.c
+void set_osd_subtitle(struct MPContext *mpctx, subtitle *subs) {
+    vo_sub = subs;
+    vo_osd_changed(OSDTYPE_SUBTITLE);
+}
 
 //char *out_audio_codec=NULL; // override audio codec
 //char *out_video_codec=NULL; // override video codec
@@ -582,14 +589,14 @@ play_next_file:
 #ifdef CONFIG_DVDREAD
 if(stream->type==STREAMTYPE_DVD){
   if(audio_lang && opts.audio_id==-1) opts.audio_id=dvd_aid_from_lang(stream,audio_lang);
-  if(dvdsub_lang && opts.sub_id==-2) opts.sub_id=dvd_sid_from_lang(stream,dvdsub_lang);
+  if(dvdsub_lang && opts.sub_id==-1) opts.sub_id=dvd_sid_from_lang(stream,dvdsub_lang);
 }
 #endif
 
 #ifdef CONFIG_DVDNAV
 if(stream->type==STREAMTYPE_DVDNAV){
   if(audio_lang && opts.audio_id==-1) opts.audio_id=mp_dvdnav_aid_from_lang(stream,audio_lang);
-  if(dvdsub_lang && opts.sub_id==-2) opts.sub_id=mp_dvdnav_sid_from_lang(stream,dvdsub_lang);
+  if(dvdsub_lang && opts.sub_id==-1) opts.sub_id=mp_dvdnav_sid_from_lang(stream,dvdsub_lang);
 }
 #endif
 
@@ -609,10 +616,10 @@ if(stream->type==STREAMTYPE_DVDNAV){
 
   select_audio(demuxer, opts.audio_id, audio_lang);
 
-  if (opts.sub_id < 0 && dvdsub_lang)
+  if (opts.sub_id < -1 && dvdsub_lang)
     opts.sub_id = demuxer_sub_track_by_lang(demuxer, dvdsub_lang);
 
-  if (opts.sub_id < 0)
+  if (opts.sub_id < -1)
     opts.sub_id = demuxer_default_sub_track(demuxer);
 
   for (i = 0; i < MAX_S_STREAMS; i++) {
@@ -1579,7 +1586,7 @@ if(sh_audio && !demuxer2){
  }
  else
 #endif
-     update_subtitles(sh_video, d_dvdsub, 0, 0);
+     update_subtitles(NULL, &opts, sh_video, sh_video->pts, 0, d_dvdsub, 0);
 
  frame_data = (s_frame_data){ .start = NULL, .in_size = 0, .frame_time = 0., .already_read = 0 };
 

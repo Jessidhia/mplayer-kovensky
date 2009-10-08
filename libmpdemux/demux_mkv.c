@@ -240,30 +240,10 @@ add_cluster_position (mkv_demuxer_t *mkv_d, uint64_t position)
 static int
 aac_get_sample_rate_index (uint32_t sample_rate)
 {
-  if (92017 <= sample_rate)
-    return 0;
-  else if (75132 <= sample_rate)
-    return 1;
-  else if (55426 <= sample_rate)
-    return 2;
-  else if (46009 <= sample_rate)
-    return 3;
-  else if (37566 <= sample_rate)
-    return 4;
-  else if (27713 <= sample_rate)
-    return 5;
-  else if (23004 <= sample_rate)
-    return 6;
-  else if (18783 <= sample_rate)
-    return 7;
-  else if (13856 <= sample_rate)
-    return 8;
-  else if (11502 <= sample_rate)
-    return 9;
-  else if (9391 <= sample_rate)
-    return 10;
-  else
-    return 11;
+  static const int srates[] = {92017, 75132, 55426, 46009, 37566, 27713, 23004, 18783, 13856, 11502, 9391, 0};
+  int i = 0;
+  while (sample_rate < srates[i]) i++;
+  return i;
 }
 
 /** \brief Free cached demux packets
@@ -1319,17 +1299,19 @@ demux_mkv_read_attachments (demuxer_t *demuxer)
                   switch (ebml_read_id (s, &il))
                     {
                     case MATROSKA_ID_FILENAME:
+                        free(name);
                       name = ebml_read_utf8 (s, &l);
                       if (name == NULL)
-                        return 0;
+                          goto error;
                       mp_msg (MSGT_DEMUX, MSGL_V, "[mkv] |  + FileName: %s\n",
                         name);
                       break;
 
                     case MATROSKA_ID_FILEMIMETYPE:
+                        free(mime);
                       mime = ebml_read_ascii (s, &l);
                       if (mime == NULL)
-                        return 0;
+                          goto error;
                       mp_msg (MSGT_DEMUX, MSGL_V, "[mkv] |  + FileMimeType: %s\n",
                         mime);
                       break;
@@ -1343,7 +1325,10 @@ demux_mkv_read_attachments (demuxer_t *demuxer)
                         data = malloc (num);
                         if (stream_read(s, data, num) != (int) num)
                         {
+                        error:
                           free(data);
+                          free(mime);
+                          free(name);
                           return 0;
                         }
                         data_size = num;
@@ -1360,6 +1345,9 @@ demux_mkv_read_attachments (demuxer_t *demuxer)
                 }
 
               demuxer_add_attachment(demuxer, name, mime, data, data_size);
+              free(data);
+              free(mime);
+              free(name);
               mp_msg(MSGT_DEMUX, MSGL_V,
                      "[mkv] Attachment: %s, %s, %u bytes\n",
                      name, mime, data_size);
@@ -1629,7 +1617,7 @@ demux_mkv_open_video (demuxer_t *demuxer, mkv_track_t *track, int vid)
           uint32_t type2;
           unsigned int cnt;
 
-          src = track->private_data + RVPROPERTIES_SIZE;
+          src = (uint8_t *)track->private_data + RVPROPERTIES_SIZE;
 
           cnt = track->private_size - RVPROPERTIES_SIZE;
           bih = realloc(bih, sizeof (BITMAPINFOHEADER)+8+cnt);
@@ -2984,7 +2972,7 @@ demux_mkv_seek (demuxer_t *demuxer, float rel_seek_secs, float audio_delay, int 
           target_filepos = (uint64_t) (target_timecode * mkv_d->last_filepos
                                        / (mkv_d->last_pts * 1000.0));
 
-          max_pos = mkv_d->cluster_positions[mkv_d->num_cluster_pos-1];
+          max_pos = mkv_d->num_cluster_pos ? mkv_d->cluster_positions[mkv_d->num_cluster_pos-1] : 0;
           if (target_filepos > max_pos)
             {
               if ((off_t) max_pos > stream_tell (s))

@@ -3,7 +3,7 @@
 //... Okay enough of the hw, now send the other two!
 //
 // Updated by: Gabrov <gabrov@freemail.hu>
-// Sync'ed with help_mp-en.h r29209 (2009. 05. 24.)
+// Sync'ed with help_mp-en.h r29549 (2009. 09. 11.)
 
 
 // ========================= MPlayer help ===========================
@@ -1277,10 +1277,7 @@ static const char help_text[]=
 #define MSGTR_AO_ALSA_UnableToDisableResampling "[AO_ALSA] A resampling letiltása sikertelen: %s\n"
 #define MSGTR_AO_ALSA_UnableToSetSamplerate2 "[AO_ALSA] Sikerteln a samplerate-2 beállítása: %s\n"
 #define MSGTR_AO_ALSA_UnableToSetBufferTimeNear "[AO_ALSA] Sikertelen a buffer idő beállítása: %s\n"
-#define MSGTR_AO_ALSA_UnableToSetPeriodTime "[AO_ALSA] Sikertelen a periódusidő beállítása: %s\n"
-#define MSGTR_AO_ALSA_BufferTimePeriodTime "[AO_ALSA] buffer_time: %d, period_time :%d\n"
-#define MSGTR_AO_ALSA_UnableToGetPeriodSize "[AO ALSA] Sikertelen a periódus idő lekérdezése: %s\n"
-#define MSGTR_AO_ALSA_UnableToSetPeriodSize "[AO ALSA] Sikertelen a periódus méret beállítása (%ld): %s\n"
+#define MSGTR_AO_ALSA_UnableToGetPeriodSize "[AO ALSA] Sikertelen a periódus méret lekérdezése: %s\n"
 #define MSGTR_AO_ALSA_UnableToSetPeriods "[AO_ALSA] Sikertelen a periódusok beállítása: %s\n"
 #define MSGTR_AO_ALSA_UnableToSetHwParameters "[AO_ALSA] Sikerteln a hw-paraméter-ek beállítása: %s\n"
 #define MSGTR_AO_ALSA_UnableToGetBufferSize "[AO_ALSA] Sikerteln a buffer méret lekérdezése: %s\n"
@@ -1636,8 +1633,6 @@ static const char help_text[]=
 
 // vd.c
 #define MSGTR_CodecDidNotSet "VDec: a codec nem állította be az sh->disp_w és az sh_disp_h izéket, megpróbálom workaroundolni!\n"
-#define MSGTR_VoConfigRequest "VDec: vo config kérés - %d x %d (preferált színtér: %s)\n"
-#define MSGTR_UsingXAsOutputCspNoY "VDec: %s használata kimeneti színtérként (nincs %d)\n"
 #define MSGTR_CouldNotFindColorspace "Nem találok egyező colorspace-t - újra próbálom a -vf scale filterrel...\n"
 #define MSGTR_MovieAspectIsSet "A film aspect értéke %.2f:1 - aspect arány javítása.\n"
 #define MSGTR_MovieAspectUndefined "A film aspect értéke nem definiált - nincs arányjavítás.\n"

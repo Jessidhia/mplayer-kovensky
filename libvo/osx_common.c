@@ -1,8 +1,26 @@
-// only to get keycode definitions from HIToolbox/Events.h
+/*
+ * This file is part of MPlayer.
+ *
+ * MPlayer is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * MPlayer is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with MPlayer; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ */
 #include "config.h"
 
+// only to get keycode definitions from HIToolbox/Events.h
 #include <Carbon/Carbon.h>
 #include "osx_common.h"
+#include "old_vo_defines.h"
 #include "video_out.h"
 #include "osdep/keycodes.h"
 #include "input/input.h"
@@ -20,7 +38,7 @@ static const struct keymap keymap[] = {
 
     // navigation block
     {kVK_Help, KEY_INSERT}, {kVK_ForwardDelete, KEY_DELETE}, {kVK_Home, KEY_HOME},
-    {kVK_End, KEY_END}, {kVK_PageUp, KEY_PAGE_UP}, {kVK_PageUp, KEY_PAGE_DOWN},
+    {kVK_End, KEY_END}, {kVK_PageUp, KEY_PAGE_UP}, {kVK_PageDown, KEY_PAGE_DOWN},
 
     // F-keys
     {kVK_F1, KEY_F + 1}, {kVK_F2, KEY_F + 2}, {kVK_F3, KEY_F + 3}, {kVK_F4, KEY_F + 4},
@@ -59,7 +77,7 @@ void change_movie_aspect(float new_aspect)
         new_aspect = old_movie_aspect;
     our_aspect_change = 1;
     snprintf(cmd_str, sizeof(cmd_str), "switch_ratio %f", new_aspect);
-    mp_input_queue_cmd(mp_input_parse_cmd(cmd_str));
+    mp_input_queue_cmd(global_vo->input_ctx, mp_input_parse_cmd(cmd_str));
 }
 
 /**
