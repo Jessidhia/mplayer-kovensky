@@ -1267,7 +1267,6 @@ void a52_imdct_init (uint32_t mm_accel)
 	  a52_imdct_512 = imdct_do_512_sse;
 	}
 	else*/
-#endif
 	if(mm_accel & MM_ACCEL_X86_3DNOWEXT)
 	{
 	  fprintf (stderr, "Using 3DNowEx optimized IMDCT transform\n");
