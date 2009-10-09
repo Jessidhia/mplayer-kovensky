@@ -1,7 +1,7 @@
 mplayer: ffmpeg libass mplayer-config
 	$(MAKE) -C ..
 
-mplayer-config:
+mplayer-config: ffmpeg libass
 	script/mplayer-config
 
 ffmpeg-config:
@@ -10,7 +10,8 @@ ffmpeg-config:
 ffmpeg: ffmpeg-config
 	$(MAKE) -C ffmpeg_build install
 
-libass-config:
+# libass doesn't really depend on ffmpeg, but added so configure runs are in order
+libass-config: ffmpeg
 	script/libass-config
 
 libass: libass-config
