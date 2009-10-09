@@ -5,14 +5,16 @@ from helpers import parse_configfile
 from subprocess import check_call
 
 def main():
-    mydir = os.getcwd()
+    mydir = os.getcwd().replace("\\", "/")
     extra_args = parse_configfile('common_options')
     extra_args += parse_configfile('mplayer_options')
 
     env = os.environ.copy()
-    PKG_CONFIG_PATH = '%s/build_libs/lib/pkgconfig:%s' % (
-        mydir, env.get('PKG_CONFIG_PATH', ''))
-    env['PKG_CONFIG_PATH'] = PKG_CONFIG_PATH
+    pkg_config_path = env.get('PKG_CONFIG_PATH', '')
+    if len(pkg_config_path) > 0:
+        pkg_config_path = ''.join(':', pkg_config_path)
+    env['PKG_CONFIG_PATH'] = '%s/build_libs/lib/pkgconfig%s' % (
+                             mydir, pkg_config_path)
 
     # The --extra-cflags and --extra-ldflags parameters should not be
     # necessary to find the libraries, but they're there to ensure those
@@ -23,6 +25,6 @@ def main():
             '--extra-ldflags=-L%s/build_libs/lib' % mydir]
 
     os.chdir('..')
-    check_call(['./configure'] + args + extra_args, env=env)
+    check_call(['sh', './configure'] + args + extra_args, env=env)
 
 main()
