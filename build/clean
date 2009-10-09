@@ -12,6 +12,7 @@ def main():
     def cmd():
         check_call('git clean -x -d -f'.split())
     git.foreach_submodule(cmd)
+    os.chdir('..')
     check_call('make distclean'.split())
 
 main()
