@@ -4,15 +4,12 @@
 # are ignored. The options do not need quoting, so you can have for example
 # --extra-libs=-lfoo -lbar
 # (and NOT --extra-libs='-lfoo -lbar').
---cross-prefix=i586-mingw32msvc-
---target-os=mingw32
---target-exec=wine
---arch=x86
---cpu=i686
+--cpu=pentium2
 --enable-memalign-hack
 --enable-nonfree
 --enable-avisynth
 --enable-libdirac
+--enable-libmp3lame
 --enable-libspeex
 --enable-libtheora
 --enable-libvorbis
@@ -22,4 +19,3 @@
 --enable-libopencore-amrnb
 --enable-libopencore-amrwb
 --enable-runtime-cpudetect
---enable-ffmpeg

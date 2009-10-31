@@ -1,0 +1,16 @@
+# You can place options for MPlayer configure in this file.
+
+# Place each option on its own line. Empty lines and lines starting with '#'
+# are ignored. The options do not need quoting, so you can have for example
+# --extra-libs=-lfoo -lbar
+# (and NOT --extra-libs='-lfoo -lbar').
+--enable-menu
+--enable-static
+--enable-fontconfig
+--enable-x264
+--enable-matrixview
+--disable-tremor-internal
+--enable-runtime-cpudetection
+--extra-ldflags=-lcaca -lz
+--enable-caca
+--with-fribidi-config=pkg-config fribidi
