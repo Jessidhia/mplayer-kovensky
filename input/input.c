@@ -1072,17 +1072,9 @@ static mp_cmd_t *get_cmd_from_keys(struct input_ctx *ictx, int n, int *keys,
   if (ictx->default_bindings && cmd == NULL)
     cmd = find_bind_for_key(def_cmd_binds,n,keys);
 
-  if(cmd == NULL) {
-      mp_tmsg(MSGT_INPUT,MSGL_WARN,"No bind found for key '%s'.", get_key_name(keys[0],
-                                                                  key_buf));
-    if(n > 1) {
-      int s;
-      for(s=1; s < n; s++)
-          mp_msg(MSGT_INPUT,MSGL_WARN,"-%s", get_key_name(keys[s], key_buf));
-    }
-    mp_msg(MSGT_INPUT,MSGL_WARN,"                         \n");
+  if(cmd == NULL)
     return NULL;
-  }
+  
   if (strcmp(cmd, "ignore") == 0) return NULL;
   ret =  mp_input_parse_cmd(cmd);
   if(!ret) {
