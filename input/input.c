@@ -456,6 +456,7 @@ static const mp_cmd_bind_t def_cmd_binds[] = {
   { { '8', 0 }, "saturation 1" },
   { { 'd', 0 }, "frame_drop" },
   { { 'D', 0 }, "step_property_osd deinterlace" },
+  { { 'c', 0 }, "step_property_osd yuv_colorspace" },
   { { 'r', 0 }, "sub_pos -1" },
   { { 't', 0 }, "sub_pos +1" },
   { { 'a', 0 }, "sub_alignment" },
@@ -472,11 +473,9 @@ static const mp_cmd_bind_t def_cmd_binds[] = {
   { { 'n', 0 }, "tv_step_norm" },
   { { 'u', 0 }, "tv_step_chanlist" },
 #endif
-#ifdef CONFIG_TV_TELETEXT
   { { 'X', 0 }, "step_property teletext_mode 1" },
   { { 'W', 0 }, "step_property teletext_page 1" },
   { { 'Q', 0 }, "step_property teletext_page -1" },
-#endif
 #ifdef CONFIG_JOYSTICK
   { { JOY_AXIS0_PLUS, 0 }, "seek 10" },
   { { JOY_AXIS0_MINUS, 0 }, "seek -10" },

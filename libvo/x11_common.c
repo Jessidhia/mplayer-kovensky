@@ -713,7 +713,7 @@ void vo_x11_classhint(struct vo *vo, Window window, char *name)
     XClassHint wmClass;
     pid_t pid = getpid();
 
-    wmClass.res_name = name;
+    wmClass.res_name = vo_winname ? vo_winname : name;
     wmClass.res_class = "MPlayer";
     XSetClassHint(x11->display, window, &wmClass);
     XChangeProperty(x11->display, window, x11->XA_NET_WM_PID, XA_CARDINAL,
@@ -765,7 +765,6 @@ void vo_x11_uninit(struct vo *vo)
 int vo_x11_check_events(struct vo *vo)
 {
     struct vo_x11_state *x11 = vo->x11;
-    struct MPOpts *opts = vo->opts;
     Display *display = vo->x11->display;
     int ret = 0;
     XEvent Event;
@@ -790,8 +789,6 @@ int vo_x11_check_events(struct vo *vo)
                 ret |= VO_EVENT_EXPOSE;
                 break;
             case ConfigureNotify:
-//         if (!vo_fs && (Event.xconfigure.width == opts->vo_screenwidth || Event.xconfigure.height == opts->vo_screenheight)) break;
-//         if (vo_fs && Event.xconfigure.width != opts->vo_screenwidth && Event.xconfigure.height != opts->vo_screenheight) break;
                 if (x11->window == None)
                     break;
                 {
@@ -1210,7 +1207,6 @@ static int vo_x11_get_fs_type(int supported)
 
     if (vo_fstype_list)
     {
-        i = 0;
         for (i = 0; vo_fstype_list[i]; i++)
         {
             int neg = 0;
@@ -1268,7 +1264,7 @@ static int vo_x11_get_fs_type(int supported)
                 else
                     type |= vo_wm_NETWM;
             } else if (!strcmp(arg, "none"))
-                return 0;
+                type = 0; // clear; keep parsing
         }
     }
 
@@ -1293,6 +1289,9 @@ int vo_x11_update_geometry(struct vo *vo)
     }
     XTranslateCoordinates(x11->display, x11->window, x11->rootwin, 0, 0,
                           &vo->dx, &vo->dy, &dummy_win);
+    if (vo_wintitle)
+        XStoreName(x11->display, x11->window, vo_wintitle);
+
     return depth <= INT_MAX ? depth : 0;
 }
 
@@ -1301,6 +1300,10 @@ void vo_x11_fullscreen(struct vo *vo)
     struct MPOpts *opts = vo->opts;
     struct vo_x11_state *x11 = vo->x11;
     int x, y, w, h;
+    x = x11->vo_old_x;
+    y = x11->vo_old_y;
+    w = x11->vo_old_width;
+    h = x11->vo_old_height;
 
     if (WinID >= 0) {
         vo_fs = !vo_fs;
@@ -1311,15 +1314,6 @@ void vo_x11_fullscreen(struct vo *vo)
 
     if (vo_fs)
     {
-        // fs->win
-        if ( ! (x11->fs_type & vo_wm_FULLSCREEN) ) // not needed with EWMH fs
-        {
-            x = x11->vo_old_x;
-            y = x11->vo_old_y;
-            w = x11->vo_old_width;
-            h = x11->vo_old_height;
-	}
-
         vo_x11_ewmh_fullscreen(x11, _NET_WM_STATE_REMOVE);   // removes fullscreen state if wm supports EWMH
         vo_fs = VO_FALSE;
     } else
@@ -1642,6 +1636,18 @@ void vo_vm_close(struct vo *vo)
         vidmodes = NULL;
     }
 }
+
+double vo_vm_get_fps(struct vo *vo)
+{
+    struct vo_x11_state *x11 = vo->x11;
+    int clock;
+    XF86VidModeModeLine modeline;
+    if (!XF86VidModeGetModeLine(x11->display, x11->screen, &clock, &modeline))
+        return 0;
+    if (modeline.privsize)
+        XFree(modeline.private);
+    return 1e3 * clock / modeline.htotal / modeline.vtotal;
+}
 #endif
 
 #endif                          /* X11_FULLSCREEN */
@@ -1894,6 +1900,10 @@ int vo_xv_set_eq(struct vo *vo, uint32_t xv_port, char *name, int value)
                 else if (!strcmp(attributes[i].name, "XV_BLUE_INTENSITY")
                          && (!strcasecmp(name, "blue_intensity")))
                     port_value = value;
+                else if ((!strcmp(attributes[i].name, "XV_ITURBT_709") //NVIDIA
+                          || !strcmp(attributes[i].name, "XV_COLORSPACE"))//ATI
+                         && (!strcasecmp(name, "bt_709")))
+                    port_value = value;
                 else
                     continue;
 
@@ -1974,6 +1984,10 @@ int vo_xv_get_eq(struct vo *vo, uint32_t xv_port, char *name, int *value)
                     *value = val;
                 else if (!strcmp(attributes[i].name, "XV_BLUE_INTENSITY")
                          && (!strcasecmp(name, "blue_intensity")))
+                    *value = val;
+                else if ((!strcmp(attributes[i].name, "XV_ITURBT_709") //NVIDIA
+                          || !strcmp(attributes[i].name, "XV_COLORSPACE"))//ATI
+                         && (!strcasecmp(name, "bt_709")))
                     *value = val;
                 else
                     continue;

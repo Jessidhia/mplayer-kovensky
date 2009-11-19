@@ -196,7 +196,6 @@ static int config(struct vo *vo, uint32_t width, uint32_t height,
                   uint32_t d_width, uint32_t d_height, uint32_t flags,
                   char *title, uint32_t format)
 {
-    struct MPOpts *opts = vo->opts;
     struct vo_x11_state *x11 = vo->x11;
     XVisualInfo vinfo;
     XSetWindowAttributes xswa;
@@ -400,7 +399,7 @@ static inline void put_xvimage(struct vo *vo, XvImage *xvi)
 }
 
 // Only copies luma for planar formats as draw_alpha doesn't change others */
-void copy_backup_image(struct vo *vo, int dest, int src)
+static void copy_backup_image(struct vo *vo, int dest, int src)
 {
     struct xvctx *ctx = vo->priv;
 
@@ -414,7 +413,6 @@ void copy_backup_image(struct vo *vo, int dest, int src)
 static void check_events(struct vo *vo)
 {
     struct xvctx *ctx = vo->priv;
-    struct vo_x11_state *x11 = vo->x11;
     int e = vo_x11_check_events(vo);
 
     if (e & VO_EVENT_EXPOSE || e & VO_EVENT_RESIZE)
@@ -817,6 +815,15 @@ static int control(struct vo *vo, uint32_t request, void *data)
             struct voctrl_get_equalizer_args *args = data;
             return vo_xv_get_eq(vo, x11->xv_port, args->name, args->valueptr);
         }
+    case VOCTRL_SET_YUV_COLORSPACE:;
+        int given_cspc = *(int *)data % 2;
+        return vo_xv_set_eq(vo, x11->xv_port, "bt_709", given_cspc * 200 - 100);
+    case VOCTRL_GET_YUV_COLORSPACE:;
+        int bt709_enabled;
+        if (!vo_xv_get_eq(vo, x11->xv_port, "bt_709", &bt709_enabled))
+            return false;
+        *(int *)data = bt709_enabled == 100;
+        return true;
     case VOCTRL_ONTOP:
         vo_x11_ontop(vo);
         return VO_TRUE;
