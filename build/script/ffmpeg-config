@@ -22,7 +22,8 @@ def main():
             '--disable-shared', '--enable-static',
             '--enable-postproc',
             '--disable-devices', '--disable-protocols', '--disable-ffmpeg',
-            '--disable-ffplay', '--disable-ffserver']
+            '--disable-ffplay', '--disable-ffserver',
+	    '--disable-vaapi']
 
     if os.path.exists('ffmpeg-mt-enabled'):
         ffmpeg_dir = 'ffmpeg-mt'
