@@ -2325,11 +2325,6 @@ static double update_video_nocorrect_pts(struct MPContext *mpctx,
         mp_dvdnav_save_smpi(mpctx, in_size, packet, decoded_frame);
 #endif
         if (decoded_frame) {
-            // These updates are done here for vf_expand OSD/subtitles
-            update_subtitles(mpctx, &mpctx->opts, sh_video, sh_video->pts,
-                             mpctx->video_offset, mpctx->d_sub, 0);
-            update_teletext(sh_video, mpctx->demuxer, 0);
-            update_osd_msg(mpctx);
             current_module = "filter video";
             if (filter_video(sh_video, decoded_frame, sh_video->pts))
                 break;
@@ -2337,6 +2332,36 @@ static double update_video_nocorrect_pts(struct MPContext *mpctx,
     }
     *blit_frame = 1;
     return frame_time;
+}
+
+static void determine_frame_pts(struct MPContext *mpctx)
+{
+    struct sh_video *sh_video = mpctx->sh_video;
+    struct MPOpts *opts = &mpctx->opts;
+
+    if (opts->user_pts_assoc_mode) {
+        sh_video->pts_assoc_mode = opts->user_pts_assoc_mode;
+    } else if (sh_video->pts_assoc_mode == 0) {
+        if (sh_video->codec_reordered_pts != MP_NOPTS_VALUE)
+            sh_video->pts_assoc_mode = 1;
+        else
+            sh_video->pts_assoc_mode = 2;
+    } else {
+        int probcount1 = sh_video->num_reordered_pts_problems;
+        int probcount2 = sh_video->num_sorted_pts_problems;
+        if (sh_video->pts_assoc_mode == 2) {
+            int tmp = probcount1;
+            probcount1 = probcount2;
+            probcount2 = tmp;
+        }
+        if (probcount1 >= probcount2 * 1.5 + 2) {
+            sh_video->pts_assoc_mode = 3 - sh_video->pts_assoc_mode;
+            mp_msg(MSGT_CPLAYER, MSGL_V, "Switching to pts association mode "
+                   "%d.\n", sh_video->pts_assoc_mode);
+        }
+    }
+    sh_video->pts = sh_video->pts_assoc_mode == 1 ?
+        sh_video->codec_reordered_pts : sh_video->sorted_pts;
 }
 
 static double update_video(struct MPContext *mpctx, int *blit_frame)
@@ -2379,11 +2404,7 @@ static double update_video(struct MPContext *mpctx, int *blit_frame)
         void *decoded_frame = decode_video(sh_video, packet, in_size,
                                            framedrop_type, pts);
         if (decoded_frame) {
-            // These updates are done here for vf_expand OSD/subtitles
-            update_subtitles(mpctx, &mpctx->opts, sh_video, sh_video->pts,
-                             mpctx->video_offset, mpctx->d_sub, 0);
-            update_teletext(sh_video, mpctx->demuxer, 0);
-            update_osd_msg(mpctx);
+            determine_frame_pts(mpctx);
             current_module = "filter video";
             if (filter_video(sh_video, decoded_frame, sh_video->pts))
                 if (!video_out->config_ok)
@@ -3464,10 +3485,6 @@ if(stream_dump_type==5){
   int len;
   FILE *f;
   current_module="dumpstream";
-  if(mpctx->stream->type==STREAMTYPE_STREAM && mpctx->stream->fd<0){
-    mp_tmsg(MSGT_CPLAYER,MSGL_FATAL,"Cannot dump this stream - no file descriptor available.\n");
-    exit_player(mpctx, EXIT_ERROR);
-  }
   stream_reset(mpctx->stream);
   stream_seek(mpctx->stream,mpctx->stream->start_pos);
   f=fopen(stream_dump_name,"wb");
@@ -4042,6 +4059,11 @@ if(!mpctx->sh_video) {
           goto goto_next_file;
       }
       if (blit_frame) {
+          struct sh_video *sh_video = mpctx->sh_video;
+          update_subtitles(mpctx, &mpctx->opts, sh_video, sh_video->pts,
+                           mpctx->video_offset, mpctx->d_sub, 0);
+          update_teletext(sh_video, mpctx->demuxer, 0);
+          update_osd_msg(mpctx);
           struct vf_instance *vf = mpctx->sh_video->vfilter;
           vf->control(vf, VFCTRL_DRAW_EOSD, NULL);
           vf->control(vf, VFCTRL_DRAW_OSD, mpctx->osd);
