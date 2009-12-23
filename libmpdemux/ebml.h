@@ -145,6 +145,7 @@
 
 /* IDs in the chapters master */
 #define MATROSKA_ID_EDITIONENTRY         0x45B9
+#define MATROSKA_ID_EDITIONFLAGDEFAULT   0x45DB
 #define MATROSKA_ID_EDITIONFLAGORDERED   0x45DD
 #define MATROSKA_ID_CHAPTERATOM          0xB6
 #define MATROSKA_ID_CHAPTERTIMESTART     0x91
@@ -152,6 +153,8 @@
 #define MATROSKA_ID_CHAPTERDISPLAY       0x80
 #define MATROSKA_ID_CHAPSTRING           0x85
 #define MATROSKA_ID_CHAPTERSEGMENTUID    0x6E67
+#define MATROSKA_ID_CHAPTERSEGMENTEDITIONUID\
+                                         0x6EBC
 
 /* IDs in the cluster master */
 #define MATROSKA_ID_CLUSTERTIMECODE      0xE7

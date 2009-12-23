@@ -1040,6 +1040,7 @@ static int playtree_add_playlist(struct MPContext *mpctx, play_tree_t* entry)
 
 void add_subtitles(struct MPContext *mpctx, char *filename, float fps, int noerr)
 {
+    struct MPOpts *opts = &mpctx->opts;
     sub_data *subd;
 #ifdef CONFIG_ASS
     ASS_Track *asst = 0;
@@ -1051,13 +1052,13 @@ void add_subtitles(struct MPContext *mpctx, char *filename, float fps, int noerr
 
     subd = sub_read_file(filename, fps);
 #ifdef CONFIG_ASS
-    if (ass_enabled)
+    if (opts->ass_enabled)
 #ifdef CONFIG_ICONV
         asst = ass_read_file(ass_library, filename, sub_cp);
 #else
         asst = ass_read_file(ass_library, filename, 0);
 #endif
-    if (ass_enabled && subd && !asst)
+    if (opts->ass_enabled && subd && !asst)
         asst = ass_read_subdata(ass_library, subd, fps);
 
     if (!asst && !subd)
@@ -1908,6 +1909,7 @@ static void mp_dvdnav_reset_stream (MPContext *ctx) {
     }
 
     audio_delay = 0.0f;
+    ctx->global_sub_size = ctx->global_sub_indices[SUB_SOURCE_DEMUX] + mp_dvdnav_number_of_subs(ctx->stream);
     if (dvdsub_lang && opts->sub_id == dvdsub_lang_id) {
         dvdsub_lang_id = mp_dvdnav_sid_from_lang(ctx->stream, dvdsub_lang);
         if (dvdsub_lang_id != opts->sub_id) {
@@ -2203,7 +2205,7 @@ int reinit_video_chain(struct MPContext *mpctx)
 #endif
 
 #ifdef CONFIG_ASS
-  if(ass_enabled) {
+  if(opts->ass_enabled) {
     int i;
     int insert = 1;
     if (opts->vf_settings)
@@ -2228,7 +2230,7 @@ int reinit_video_chain(struct MPContext *mpctx)
   sh_video->vfilter = append_filters(sh_video->vfilter, opts->vf_settings);
 
 #ifdef CONFIG_ASS
-  if (ass_enabled)
+  if (opts->ass_enabled)
     sh_video->vfilter->control(sh_video->vfilter, VFCTRL_INIT_EOSD, ass_library);
 #endif
 
@@ -2272,11 +2274,9 @@ err_out:
   return 0;
 }
 
-static double update_video_nocorrect_pts(struct MPContext *mpctx,
-                                         int *blit_frame)
+static double update_video_nocorrect_pts(struct MPContext *mpctx)
 {
     struct sh_video *sh_video = mpctx->sh_video;
-    *blit_frame = 0;
     double frame_time = 0;
     struct vo *video_out = mpctx->video_out;
     while (!video_out->frame_loaded) {
@@ -2334,7 +2334,6 @@ static double update_video_nocorrect_pts(struct MPContext *mpctx,
                     break;
         }
     }
-    *blit_frame = 1;
     return frame_time;
 }
 
@@ -2368,15 +2367,14 @@ static void determine_frame_pts(struct MPContext *mpctx)
         sh_video->codec_reordered_pts : sh_video->sorted_pts;
 }
 
-static double update_video(struct MPContext *mpctx, int *blit_frame)
+static double update_video(struct MPContext *mpctx)
 {
     struct sh_video *sh_video = mpctx->sh_video;
     struct vo *video_out = mpctx->video_out;
-    *blit_frame = 0;
     sh_video->vfilter->control(sh_video->vfilter, VFCTRL_SET_OSD_OBJ,
                                mpctx->osd); // hack for vf_expand
     if (!mpctx->opts.correct_pts)
-        return update_video_nocorrect_pts(mpctx, blit_frame);
+        return update_video_nocorrect_pts(mpctx);
 
     double pts;
 
@@ -2445,7 +2443,6 @@ static double update_video(struct MPContext *mpctx, int *blit_frame)
     sh_video->timer += frame_time;
     if (mpctx->sh_audio)
         mpctx->delay -= frame_time;
-    *blit_frame = 1;
     return frame_time;
 }
 
@@ -2835,11 +2832,13 @@ static void build_ordered_chapter_timeline(struct MPContext *mpctx)
     struct demuxer *demuxer = mpctx->demuxer;
     struct matroska_data *m = &demuxer->matroska_data;
 
+    // +1 because sources/uid_map[0] is original file even if all chapters
+    // actually use other sources and need separate entries
     struct content_source *sources = talloc_array_ptrtype(NULL, sources,
-                                                   m->num_ordered_chapters);
+                                                   m->num_ordered_chapters+1);
     sources[0].stream = mpctx->stream;
     sources[0].demuxer = mpctx->demuxer;
-    unsigned char uid_map[m->num_ordered_chapters][16];
+    unsigned char uid_map[m->num_ordered_chapters+1][16];
     int num_sources = 1;
     memcpy(uid_map[0], m->segment_uid, 16);
 
@@ -2862,6 +2861,7 @@ static void build_ordered_chapter_timeline(struct MPContext *mpctx)
                                                uid_map);
 
 
+    // +1 for terminating chapter with start time marking end of last real one
     struct timeline_part *timeline = talloc_array_ptrtype(NULL, timeline,
                                                   m->num_ordered_chapters + 1);
     struct chapter *chapters = talloc_array_ptrtype(NULL, chapters,
@@ -2936,7 +2936,6 @@ static void build_ordered_chapter_timeline(struct MPContext *mpctx)
     mpctx->chapters = chapters;
 
     mpctx->timeline_part = 0;
-    mpctx->video_offset = timeline[0].source_start;
     mpctx->demuxer = timeline[0].source->demuxer;
 }
 
@@ -3661,7 +3660,7 @@ if (mpctx->global_sub_size <= mpctx->global_sub_indices[SUB_SOURCE_DEMUX] + opts
   mpctx->global_sub_size = mpctx->global_sub_indices[SUB_SOURCE_DEMUX] + opts->sub_id + 1;
 
 #ifdef CONFIG_ASS
-if (ass_enabled && ass_library) {
+if (opts->ass_enabled && ass_library) {
     for (int j = 0; j < mpctx->num_sources; j++) {
         struct demuxer *d = mpctx->sources[j].demuxer;
         for (int i = 0; i < d->num_attachments; i++) {
@@ -3858,7 +3857,9 @@ if (mpctx->global_sub_size) {
     mp_msg(MSGT_IDENTIFY,MSGL_INFO,"ID_AUDIO_RATE=%d\n", mpctx->sh_audio->samplerate);
     mp_msg(MSGT_IDENTIFY,MSGL_INFO,"ID_AUDIO_NCH=%d\n", mpctx->sh_audio->channels);
   }
-  mp_msg(MSGT_IDENTIFY,MSGL_INFO,"ID_LENGTH=%.2f\n", demuxer_get_time_length(mpctx->demuxer));
+  mp_msg(MSGT_IDENTIFY,MSGL_INFO,"ID_LENGTH=%.2f\n", mpctx->timeline ?
+         mpctx->timeline[mpctx->num_timeline_parts].start :
+         demuxer_get_time_length(mpctx->demuxer));
   mp_msg(MSGT_IDENTIFY,MSGL_INFO,"ID_SEEKABLE=%d\n",
          mpctx->stream->seek && (!mpctx->demuxer || mpctx->demuxer->seekable));
   if (mpctx->demuxer) {
@@ -3979,7 +3980,8 @@ if(play_n_frames==0){
   mpctx->stop_play=PT_NEXT_ENTRY; goto goto_next_file;
 }
 
-if (seek_to_sec) {
+// If there's a timeline force an absolute seek to initialize state
+if (seek_to_sec || mpctx->timeline) {
     seek(mpctx, seek_to_sec, SEEK_ABSOLUTE);
     end_at.pos += seek_to_sec;
 }
@@ -4054,8 +4056,10 @@ if(!mpctx->sh_video) {
   vo_pts=mpctx->sh_video->timer*90000.0;
   vo_fps=mpctx->sh_video->fps;
 
-  if (!mpctx->video_out->frame_loaded) {
-      double frame_time = update_video(mpctx, &blit_frame);
+  blit_frame = mpctx->video_out->frame_loaded;
+  if (!blit_frame) {
+      double frame_time = update_video(mpctx);
+      blit_frame = mpctx->video_out->frame_loaded;
       mp_dbg(MSGT_AVSYNC,MSGL_DBG2,"*** ftime=%5.3f ***\n",frame_time);
       if (mpctx->sh_video->vf_initialized < 0) {
 	  mp_tmsg(MSGT_CPLAYER,MSGL_FATAL, "\nFATAL: Could not initialize video filters (-vf) or video output (-vo).\n");

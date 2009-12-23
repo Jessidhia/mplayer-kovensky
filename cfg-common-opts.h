@@ -40,6 +40,7 @@
 	{"dvd-speed", "MPlayer was compiled without libdvdread support.\n", CONF_TYPE_PRINT, 0, 0, 0, NULL},
 	{"dvd", "MPlayer was compiled without libdvdread support.\n", CONF_TYPE_PRINT, CONF_NOCFG, 0, 0, NULL},
 #endif /* CONFIG_DVDREAD */
+	OPT_INTRANGE("edition", edition_id, 0, -1, 8190),
 	{"alang", &audio_lang, CONF_TYPE_STRING, 0, 0, 0, NULL},
 	{"slang", &dvdsub_lang, CONF_TYPE_STRING, 0, 0, 0, NULL},
 
@@ -320,8 +321,8 @@
  	{"subfont-autoscale", &subtitle_autoscale, CONF_TYPE_INT, CONF_RANGE, 0, 3, NULL},
 #endif
 #ifdef CONFIG_ASS
-	{"ass", &ass_enabled, CONF_TYPE_FLAG, 0, 0, 1, NULL},
-	{"noass", &ass_enabled, CONF_TYPE_FLAG, 0, 1, 0, NULL},
+        OPT_FLAG_ON("ass", ass_enabled, 0),
+        OPT_FLAG_OFF("noass", ass_enabled, 0),
 	{"ass-font-scale", &ass_font_scale, CONF_TYPE_FLOAT, CONF_RANGE, 0, 100, NULL},
 	{"ass-line-spacing", &ass_line_spacing, CONF_TYPE_FLOAT, CONF_RANGE, -1000, 1000, NULL},
 	{"ass-top-margin", &ass_top_margin, CONF_TYPE_INT, CONF_RANGE, 0, 2000, NULL},

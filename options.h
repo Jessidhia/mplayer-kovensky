@@ -29,6 +29,7 @@ typedef struct MPOpts {
     int osd_duration;
     int loop_times;
     int ordered_chapters;
+    int edition_id;
     int correct_pts;
     int user_correct_pts;
     int user_pts_assoc_mode;
@@ -44,6 +45,7 @@ typedef struct MPOpts {
     float screen_size_xy;
     int flip;
     int vd_use_slices;
+    int ass_enabled;
     struct lavc_param {
         int workaround_bugs;
         int error_resilience;
