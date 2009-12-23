@@ -12,7 +12,7 @@ def main():
     env = os.environ.copy()
     pkg_config_path = env.get('PKG_CONFIG_PATH', '')
     if len(pkg_config_path) > 0:
-        pkg_config_path = ''.join(':', pkg_config_path)
+        pkg_config_path = ':'.join(['', pkg_config_path])
     env['PKG_CONFIG_PATH'] = '%s/build_libs/lib/pkgconfig%s' % (
                              mydir, pkg_config_path)
 
