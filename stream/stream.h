@@ -1,6 +1,7 @@
 #ifndef MPLAYER_STREAM_H
 #define MPLAYER_STREAM_H
 
+#include "config.h"
 #include "mp_msg.h"
 #include <string.h>
 #include <inttypes.h>
@@ -268,6 +269,7 @@ inline static int stream_seek(stream_t *s,off_t pos){
     off_t x=pos-(s->pos-s->buf_len);
     if(x>=0){
       s->buf_pos=x;
+      s->eof = 0;
 //      putchar('*');fflush(stdout);
       return 1;
     }

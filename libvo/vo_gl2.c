@@ -85,6 +85,7 @@ static int      isGL12 = GL_FALSE;
 static int      gl_bilinear=1;
 static int      gl_antialias=0;
 static int      use_yuv;
+static int      is_yuv;
 static int      use_glFinish;
 
 static void (*draw_alpha_fnc)
@@ -104,7 +105,7 @@ struct TexSquare
 static GLint getInternalFormat(void)
 {
   switch (glctx.type) {
-#ifdef GL_WIN32
+#ifdef CONFIG_GL_WIN32
   case GLTYPE_W32:
   {
   PIXELFORMATDESCRIPTOR pfd;
@@ -122,7 +123,7 @@ static GLint getInternalFormat(void)
   }
   break;
 #endif
-#ifdef CONFIG_X11
+#ifdef CONFIG_GL_X11
   case GLTYPE_X11:
   if (glXGetConfig(mDisplay, glctx.vinfo.x11, GLX_RED_SIZE, &r_sz) != 0) r_sz = 0;
   if (glXGetConfig(mDisplay, glctx.vinfo.x11, GLX_GREEN_SIZE, &g_sz) != 0) g_sz = 0;
@@ -181,7 +182,7 @@ static int initTextures(void)
     s*=2;
   texture_height=s;
 
-  if (image_format != IMGFMT_YV12)
+  if (!is_yuv)
   gl_internal_format = getInternalFormat();
 
   /* Test the max texture size */
@@ -260,7 +261,7 @@ static int initTextures(void)
       glGenTextures (1, &(tsq->texobj));
 
       glBindTexture (GL_TEXTURE_2D, tsq->texobj);
-      if (image_format == IMGFMT_YV12) {
+      if (is_yuv) {
         glGenTextures(2, tsq->uvtexobjs);
         ActiveTexture(GL_TEXTURE1);
         glBindTexture (GL_TEXTURE_2D, tsq->uvtexobjs[0]);
@@ -273,13 +274,15 @@ static int initTextures(void)
                        texture_width, texture_height, 0);
 
       glTexEnvf (GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-      if (image_format == IMGFMT_YV12) {
+      if (is_yuv) {
+        int xs, ys;
+        mp_get_chroma_shift(image_format, &xs, &ys);
         ActiveTexture(GL_TEXTURE1);
         glCreateClearTex(GL_TEXTURE_2D, gl_internal_format, gl_bitmap_format,  gl_bitmap_type, GL_LINEAR,
-                         texture_width / 2, texture_height / 2, 128);
+                         texture_width >> xs, texture_height >> ys, 128);
         ActiveTexture(GL_TEXTURE2);
         glCreateClearTex(GL_TEXTURE_2D, gl_internal_format, gl_bitmap_format,  gl_bitmap_type, GL_LINEAR,
-                         texture_width / 2, texture_height / 2, 128);
+                         texture_width >> xs, texture_height >> ys, 128);
         ActiveTexture(GL_TEXTURE0);
       }
 
@@ -378,7 +381,7 @@ static void drawTextureDisplay (void)
 
   glColor3f(1.0,1.0,1.0);
 
-  if (image_format == IMGFMT_YV12)
+  if (is_yuv)
     glEnableYUVConversion(GL_TEXTURE_2D, use_yuv);
   for (y = 0; y < texnumy; y++) {
     int thish = texture_height;
@@ -389,7 +392,7 @@ static void drawTextureDisplay (void)
       if (x == texnumx - 1 && image_width % texture_width)
         thisw = image_width % texture_width;
       glBindTexture (GL_TEXTURE_2D, square->texobj);
-      if (image_format == IMGFMT_YV12) {
+      if (is_yuv) {
         ActiveTexture(GL_TEXTURE1);
         glBindTexture (GL_TEXTURE_2D, square->uvtexobjs[0]);
         ActiveTexture(GL_TEXTURE2);
@@ -406,11 +409,11 @@ static void drawTextureDisplay (void)
       glDrawTex(square->fx, square->fy, square->fw, square->fh,
                 0, 0, texture_width, texture_height,
                 texture_width, texture_height,
-                0, image_format == IMGFMT_YV12, 0);
+                0, is_yuv, 0);
       square++;
     } /* for all texnumx */
   } /* for all texnumy */
-  if (image_format == IMGFMT_YV12)
+  if (is_yuv)
     glDisableYUVConversion(GL_TEXTURE_2D, use_yuv);
   texdirty = 0;
 }
@@ -462,7 +465,7 @@ static void draw_alpha_15(int x0,int y0, int w,int h, unsigned char* src, unsign
 static void draw_alpha_null(int x0,int y0, int w,int h, unsigned char* src, unsigned char *srca, int stride){
 }
 
-#ifdef GL_WIN32
+#ifdef CONFIG_GL_WIN32
 
 static int config_w32(uint32_t width, uint32_t height, uint32_t d_width, uint32_t d_height, uint32_t flags, char *title, uint32_t format) {
   if (!vo_w32_config(d_width, d_height, flags))
@@ -555,10 +558,11 @@ static int initGl(uint32_t d_width, uint32_t d_height)
   glDepthMask(GL_FALSE);
   glDisable(GL_CULL_FACE);
   glEnable (GL_TEXTURE_2D);
-  if (image_format == IMGFMT_YV12) {
+  if (is_yuv) {
+    int xs, ys;
     gl_conversion_params_t params = {GL_TEXTURE_2D, use_yuv,
-          0.0, 1.0, 0.0, 1.0, 1.0, 1.0, 1.0,
-          texture_width, texture_height};
+          {MP_CSP_DEFAULT, 0.0, 1.0, 0.0, 1.0, 1.0, 1.0, 1.0},
+          texture_width, texture_height, 0, 0, 0};
     switch (use_yuv) {
       case YUV_CONVERSION_FRAGMENT_LOOKUP:
         glGenTextures(1, &lookupTex);
@@ -576,6 +580,9 @@ static int initGl(uint32_t d_width, uint32_t d_height)
         BindProgram(GL_FRAGMENT_PROGRAM, fragprog);
         break;
     }
+    mp_get_chroma_shift(image_format, &xs, &ys);
+    params.chrom_texw = params.texw >> xs;
+    params.chrom_texh = params.texh >> ys;
     glSetupYUVConversion(&params);
   }
 
@@ -603,13 +610,16 @@ static int initGl(uint32_t d_width, uint32_t d_height)
 static int
 config(uint32_t width, uint32_t height, uint32_t d_width, uint32_t d_height, uint32_t flags, char *title, uint32_t format)
 {
+  int xs, ys;
   const unsigned char * glVersion;
 
   image_height = height;
   image_width = width;
   image_format = format;
+  is_yuv = mp_get_chroma_shift(image_format, &xs, &ys) > 0;
+  is_yuv |= (xs << 8) | (ys << 16);
 
-#ifdef GL_WIN32
+#ifdef CONFIG_GL_WIN32
   if (config_w32(width, height, d_width, d_height, flags, title, format) == -1)
 #else
   if (config_glx(width, height, d_width, d_height, flags, title, format) == -1)
@@ -659,7 +669,7 @@ config(uint32_t width, uint32_t height, uint32_t d_width, uint32_t d_height, uin
   return 0;
 }
 
-#ifndef GL_WIN32
+#ifndef CONFIG_GL_WIN32
 static int gl_handlekey(int key)
 {
   if(key=='a'||key=='A') {
@@ -676,7 +686,7 @@ static int gl_handlekey(int key)
 static void check_events(void)
 {
   int e;
-#ifndef GL_WIN32
+#ifndef CONFIG_GL_WIN32
   XEvent         Event;
   char           buf[100];
   KeySym         keySym;
@@ -729,6 +739,8 @@ static int draw_slice(uint8_t *src[], int stride[], int w,int h,int x,int y)
   int rem_h = h;
   struct TexSquare *texline = &texgrid[y / texture_height * texnumx];
   int subtex_y = y % texture_width;
+  int xs, ys;
+  mp_get_chroma_shift(image_format, &xs, &ys);
   while (rem_h > 0) {
     int rem_w = w;
     struct TexSquare *tsq = &texline[x / texture_width];
@@ -748,24 +760,24 @@ static int draw_slice(uint8_t *src[], int stride[], int w,int h,int x,int y)
       ActiveTexture(GL_TEXTURE1);
       glBindTexture(GL_TEXTURE_2D, tsq->uvtexobjs[0]);
       glUploadTex(GL_TEXTURE_2D, gl_bitmap_format,  gl_bitmap_type,
-                  uptr, ustride, subtex_x / 2, subtex_y / 2,
-                  subtex_w / 2, subtex_h / 2, 0);
+                  uptr, ustride, subtex_x >> xs, subtex_y >> ys,
+                  subtex_w >> xs, subtex_h >> ys, 0);
       ActiveTexture(GL_TEXTURE2);
       glBindTexture(GL_TEXTURE_2D, tsq->uvtexobjs[1]);
       glUploadTex(GL_TEXTURE_2D, gl_bitmap_format,  gl_bitmap_type,
-                  vptr, vstride, subtex_x / 2, subtex_y / 2,
-                  subtex_w / 2, subtex_h / 2, 0);
+                  vptr, vstride, subtex_x >> xs, subtex_y >> ys,
+                  subtex_w >> xs, subtex_h >> ys, 0);
       subtex_x = 0;
       yptr += subtex_w;
-      uptr += subtex_w / 2;
-      vptr += subtex_w / 2;
+      uptr += subtex_w >> xs;
+      vptr += subtex_w >> xs;
       tsq++;
       rem_w -= subtex_w;
     }
     subtex_y = 0;
     yptr += subtex_h * ystride - w;
-    uptr += subtex_h / 2 * ustride - w / 2;
-    vptr += subtex_h / 2 * vstride - w / 2;
+    uptr += (subtex_h >> ys) * ustride - (w >> xs);
+    vptr += (subtex_h >> ys) * vstride - (w >> xs);
     texline += texnumx;
     rem_h -= subtex_h;
   }
@@ -776,7 +788,7 @@ static int draw_slice(uint8_t *src[], int stride[], int w,int h,int x,int y)
 static int
 draw_frame(uint8_t *src[])
 {
-  if (image_format == IMGFMT_YV12) {
+  if (is_yuv) {
     mp_msg(MSGT_VO, MSGL_ERR, "[gl2] error: draw_frame called for YV12!\n");
     return 0;
   }
@@ -789,12 +801,11 @@ draw_frame(uint8_t *src[])
 static int
 query_format(uint32_t format)
 {
+  if (use_yuv && mp_get_chroma_shift(format, NULL, NULL) &&
+      (IMGFMT_IS_YUVP16_NE(format) || !IMGFMT_IS_YUVP16(format)))
+    return VFCAP_CSP_SUPPORTED | VFCAP_CSP_SUPPORTED_BY_HW | VFCAP_OSD |
+           VFCAP_HWSCALE_UP | VFCAP_HWSCALE_DOWN | VFCAP_ACCEPT_STRIDE;
   switch(format) {
-    case IMGFMT_YV12:
-      if (use_yuv)
-        return VFCAP_CSP_SUPPORTED | VFCAP_CSP_SUPPORTED_BY_HW | VFCAP_OSD |
-               VFCAP_HWSCALE_UP | VFCAP_HWSCALE_DOWN | VFCAP_ACCEPT_STRIDE;
-      break;
 #ifdef __APPLE__
     case IMGFMT_RGB32:
 #else
@@ -821,7 +832,7 @@ uninit(void)
 }
 
 static const opt_t subopts[] = {
-  {"yuv",          OPT_ARG_INT,  &use_yuv,      (opt_test_f)int_non_neg},
+  {"yuv",          OPT_ARG_INT,  &use_yuv,      int_non_neg},
   {"glfinish",     OPT_ARG_BOOL, &use_glFinish, NULL},
   {NULL}
 };
@@ -830,7 +841,7 @@ static int preinit(const char *arg)
 {
   enum MPGLType gltype = GLTYPE_X11;
   // set defaults
-#ifdef GL_WIN32
+#ifdef CONFIG_GL_WIN32
   gltype = GLTYPE_W32;
 #endif
   use_yuv = 0;
@@ -882,7 +893,7 @@ static int control(uint32_t request, void *data)
     case VOCTRL_SET_PANSCAN:
       resize(vo_dwidth, vo_dheight);
       return VO_TRUE;
-#ifndef GL_WIN32
+#ifndef CONFIG_GL_WIN32
     case VOCTRL_SET_EQUALIZER:
     {
       struct voctrl_set_equalizer_args *args = data;

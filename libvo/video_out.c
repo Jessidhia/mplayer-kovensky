@@ -90,6 +90,7 @@ extern struct vo_driver video_out_vdpau;
 extern struct vo_driver video_out_xv;
 extern struct vo_driver video_out_gl;
 extern struct vo_driver video_out_gl2;
+extern struct vo_driver video_out_matrixview;
 extern struct vo_driver video_out_dga;
 extern struct vo_driver video_out_sdl;
 extern struct vo_driver video_out_3dfx;
@@ -190,6 +191,9 @@ const struct vo_driver *video_out_drivers[] =
         &video_out_matrixview,
 #endif
 #endif
+#ifdef CONFIG_MATRIXVIEW
+        &video_out_matrixview,
+#endif
 #ifdef CONFIG_DGA
         &video_out_dga,
 #endif
@@ -258,7 +262,7 @@ const struct vo_driver *video_out_drivers[] =
 #ifdef CONFIG_YUV4MPEG
         &video_out_yuv4mpeg,
 #endif
-#ifdef CONFIG_PNG
+#ifdef CONFIG_LIBAVCODEC
         &video_out_png,
 #endif
 #ifdef CONFIG_JPEG

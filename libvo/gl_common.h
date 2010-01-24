@@ -26,13 +26,14 @@
 #include "mp_msg.h"
 
 #include "video_out.h"
+#include "csputils.h"
 
-#ifdef GL_WIN32
+#ifdef CONFIG_GL_WIN32
 #include <windows.h>
 #include <GL/gl.h>
 #include "w32_common.h"
 #endif
-#ifdef CONFIG_X11
+#ifdef CONFIG_GL_X11
 #include <GL/gl.h>
 #include <X11/Xlib.h>
 #include <GL/glx.h>
@@ -45,7 +46,7 @@
 #ifndef GLAPIENTRY
 #ifdef APIENTRY
 #define GLAPIENTRY APIENTRY
-#elif defined(GL_WIN32)
+#elif defined(CONFIG_GL_WIN32)
 #define GLAPIENTRY __stdcall
 #else
 #define GLAPIENTRY
@@ -68,6 +69,9 @@
 #endif
 #ifndef GL_CLAMP_TO_EDGE
 #define GL_CLAMP_TO_EDGE 0x812F
+#endif
+#ifndef GL_GENERATE_MIPMAP
+#define GL_GENERATE_MIPMAP 0x8191
 #endif
 #ifndef GL_REGISTER_COMBINERS_NV
 #define GL_REGISTER_COMBINERS_NV 0x8522
@@ -326,18 +330,15 @@ int loadGPUProgram(GLenum target, char *prog);
 //! extract chrominance scaler out of type
 #define YUV_CHROM_SCALER(t) ((t >> YUV_CHROM_SCALER_SHIFT) & YUV_SCALER_MASK)
 /** \} */
+
 typedef struct {
   GLenum target;
   int type;
-  float brightness;
-  float contrast;
-  float hue;
-  float saturation;
-  float rgamma;
-  float ggamma;
-  float bgamma;
+  struct mp_csp_params csp_params;
   int texw;
   int texh;
+  int chrom_texw;
+  int chrom_texh;
   float filter_strength;
 } gl_conversion_params_t;
 
@@ -364,15 +365,15 @@ typedef struct MPGLContext {
   enum MPGLType type;
   union {
     int w32;
-#ifdef CONFIG_X11
+#ifdef CONFIG_GL_X11
     XVisualInfo *x11;
 #endif
   } vinfo;
   union {
-#ifdef GL_WIN32
+#ifdef CONFIG_GL_WIN32
     HGLRC w32;
 #endif
-#ifdef CONFIG_X11
+#ifdef CONFIG_GL_X11
     GLXContext x11;
 #endif
   } context;
@@ -394,8 +395,10 @@ extern void (GLAPIENTRY *End)(void);
 extern void (GLAPIENTRY *Viewport)(GLint, GLint, GLsizei, GLsizei);
 extern void (GLAPIENTRY *MatrixMode)(GLenum);
 extern void (GLAPIENTRY *LoadIdentity)(void);
+extern void (GLAPIENTRY *Translated)(double, double, double);
 extern void (GLAPIENTRY *Scaled)(double, double, double);
 extern void (GLAPIENTRY *Ortho)(double, double, double, double, double, double);
+extern void (GLAPIENTRY *Frustum)(double, double, double, double, double, double);
 extern void (GLAPIENTRY *PushMatrix)(void);
 extern void (GLAPIENTRY *PopMatrix)(void);
 extern void (GLAPIENTRY *Clear)(GLbitfield);
@@ -407,10 +410,14 @@ extern void (GLAPIENTRY *CallList)(GLuint);
 extern void (GLAPIENTRY *CallLists)(GLsizei, GLenum, const GLvoid *);
 extern void (GLAPIENTRY *GenTextures)(GLsizei, GLuint *);
 extern void (GLAPIENTRY *DeleteTextures)(GLsizei, const GLuint *);
+extern void (GLAPIENTRY *TexEnvf)(GLenum, GLenum, GLfloat);
 extern void (GLAPIENTRY *TexEnvi)(GLenum, GLenum, GLint);
 extern void (GLAPIENTRY *Color4ub)(GLubyte, GLubyte, GLubyte, GLubyte);
 extern void (GLAPIENTRY *Color3f)(GLfloat, GLfloat, GLfloat);
+extern void (GLAPIENTRY *Color4f)(GLfloat, GLfloat, GLfloat, GLfloat);
 extern void (GLAPIENTRY *ClearColor)(GLclampf, GLclampf, GLclampf, GLclampf);
+extern void (GLAPIENTRY *ClearDepth)(GLclampd);
+extern void (GLAPIENTRY *DepthFunc)(GLenum);
 extern void (GLAPIENTRY *Enable)(GLenum);
 extern void (GLAPIENTRY *Disable)(GLenum);
 extern const GLubyte *(GLAPIENTRY *GetString)(GLenum);
@@ -428,6 +435,11 @@ extern void (GLAPIENTRY *TexParameterf)(GLenum, GLenum, GLfloat);
 extern void (GLAPIENTRY *TexParameterfv)(GLenum, GLenum, const GLfloat *);
 extern void (GLAPIENTRY *TexCoord2f)(GLfloat, GLfloat);
 extern void (GLAPIENTRY *Vertex2f)(GLfloat, GLfloat);
+extern void (GLAPIENTRY *Vertex3f)(GLfloat, GLfloat, GLfloat);
+extern void (GLAPIENTRY *Normal3f)(GLfloat, GLfloat, GLfloat);
+extern void (GLAPIENTRY *Lightfv)(GLenum, GLenum, const GLfloat *);
+extern void (GLAPIENTRY *ColorMaterial)(GLenum, GLenum);
+extern void (GLAPIENTRY *ShadeModel)(GLenum);
 extern void (GLAPIENTRY *GetIntegerv)(GLenum, GLint *);
 
 extern void (GLAPIENTRY *GenBuffers)(GLsizei, GLuint *);

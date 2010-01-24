@@ -74,10 +74,12 @@ static int init_audio_codec(sh_audio_t *sh_audio)
 	sh_audio->a_in_buffer_len = 0;
     }
 
-    sh_audio->a_buffer_size = sh_audio->audio_out_minsize + MAX_OUTBURST;
+    const int base_size = 65536;
+    // At least 64 KiB plus rounding up to next decodable unit size
+    sh_audio->a_buffer_size = base_size + sh_audio->audio_out_minsize;
 
     mp_tmsg(MSGT_DECAUDIO, MSGL_V, "dec_audio: Allocating %d + %d = %d bytes for output buffer.\n",
-	   sh_audio->audio_out_minsize, MAX_OUTBURST, sh_audio->a_buffer_size);
+	   sh_audio->audio_out_minsize, base_size, sh_audio->a_buffer_size);
 
     sh_audio->a_buffer = av_mallocz(sh_audio->a_buffer_size);
     if (!sh_audio->a_buffer) {
@@ -352,17 +354,9 @@ int init_audio_filters(sh_audio_t *sh_audio, int in_samplerate,
 
 static int filter_n_bytes(sh_audio_t *sh, int len)
 {
-    int error = 0;
-    // Filter
-    af_data_t filter_input = {
-	.audio = sh->a_buffer,
-	.rate = sh->samplerate,
-	.nch = sh->channels,
-	.format = sh->sample_format
-    };
-    af_data_t *filter_output;
-
     assert(len-1 + sh->audio_out_minsize <= sh->a_buffer_size);
+
+    int error = 0;
 
     // Decode more bytes if needed
     while (sh->a_buffer_len < len) {
@@ -378,9 +372,16 @@ static int filter_n_bytes(sh_audio_t *sh, int len)
 	sh->a_buffer_len += ret;
     }
 
-    filter_input.len = len;
+    // Filter
+    af_data_t filter_input = {
+	.audio = sh->a_buffer,
+	.len = len,
+	.rate = sh->samplerate,
+	.nch = sh->channels,
+	.format = sh->sample_format
+    };
     af_fix_parameters(&filter_input);
-    filter_output = af_play(sh->afilter, &filter_input);
+    af_data_t *filter_output = af_play(sh->afilter, &filter_input);
     if (!filter_output)
 	return -1;
     if (sh->a_out_buffer_size < sh->a_out_buffer_len + filter_output->len) {

@@ -426,14 +426,14 @@ static int mp_property_chapter(m_option_t *prop, int action, void *arg,
             mpctx->rel_seek_secs = next_pts;
         }
         if (chapter_name)
-            set_osd_msg(OSD_MSG_TEXT, 1, opts->osd_duration,
-                        _("Chapter: (%d) %s"), chapter + 1, chapter_name);
+            set_osd_tmsg(OSD_MSG_TEXT, 1, opts->osd_duration,
+                         "Chapter: (%d) %s", chapter + 1, chapter_name);
     }
     else if (step_all > 0)
         mpctx->rel_seek_secs = 1000000000.;
     else
-        set_osd_msg(OSD_MSG_TEXT, 1, opts->osd_duration,
-                    _("Chapter: (%d) %s"), 0, _("unknown"));
+        set_osd_tmsg(OSD_MSG_TEXT, 1, opts->osd_duration,
+                     "Chapter: (%d) %s", 0, mp_gtext("unknown"));
     if (chapter_name)
         talloc_free(chapter_name);
     return M_PROPERTY_OK;
@@ -506,8 +506,8 @@ static int mp_property_angle(m_option_t *prop, int action, void *arg,
         return M_PROPERTY_NOT_IMPLEMENTED;
     }
     angle = demuxer_set_angle(mpctx->demuxer, angle);
-    set_osd_msg(OSD_MSG_TEXT, 1, opts->osd_duration,
-                        _("Angle: %d/%d"), angle, angles);
+    set_osd_tmsg(OSD_MSG_TEXT, 1, opts->osd_duration,
+                 "Angle: %d/%d", angle, angles);
     if (angle_name)
         free(angle_name);
     return M_PROPERTY_OK;
@@ -666,7 +666,7 @@ static int mp_property_mute(m_option_t *prop, int action, void *arg,
 	if (!arg)
 	    return M_PROPERTY_ERROR;
 	if (mpctx->edl_muted) {
-	    *(char **) arg = strdup(_("enabled (EDL)"));
+	    *(char **) arg = strdup(mp_gtext("enabled (EDL)"));
 	    return M_PROPERTY_OK;
 	}
     default:
@@ -824,32 +824,32 @@ static int mp_property_audio(m_option_t *prop, int action, void *arg,
 			     MPContext *mpctx)
 {
     struct MPOpts *opts = &mpctx->opts;
-    int current_id = -1, tmp;
+    int current_id, tmp;
+    if (!mpctx->demuxer || !mpctx->demuxer->audio)
+        return M_PROPERTY_UNAVAILABLE;
+    current_id = mpctx->demuxer->audio->id;
 
     switch (action) {
     case M_PROPERTY_GET:
-	if (!mpctx->sh_audio)
-	    return M_PROPERTY_UNAVAILABLE;
 	if (!arg)
 	    return M_PROPERTY_ERROR;
-        *(int *) arg = opts->audio_id;
+	*(int *) arg = current_id;
 	return M_PROPERTY_OK;
     case M_PROPERTY_PRINT:
-	if (!mpctx->sh_audio)
-	    return M_PROPERTY_UNAVAILABLE;
 	if (!arg)
 	    return M_PROPERTY_ERROR;
 
-        if (opts->audio_id < 0)
-	    *(char **) arg = strdup(_("disabled"));
+	if (current_id < 0)
+	    *(char **) arg = strdup(mp_gtext("disabled"));
 	else {
-	    char lang[40] = _("unknown");
+	    char lang[40];
+            strncpy(lang, mp_gtext("unknown"), sizeof(lang));
             sh_audio_t* sh = mpctx->sh_audio;
             if (sh && sh->lang)
                 av_strlcpy(lang, sh->lang, 40);
 #ifdef CONFIG_DVDREAD
 	    else if (mpctx->stream->type == STREAMTYPE_DVD) {
-                int code = dvd_lang_from_aid(mpctx->stream, opts->audio_id);
+		int code = dvd_lang_from_aid(mpctx->stream, current_id);
 		if (code) {
 		    lang[0] = code >> 8;
 		    lang[1] = code;
@@ -860,22 +860,19 @@ static int mp_property_audio(m_option_t *prop, int action, void *arg,
 
 #ifdef CONFIG_DVDNAV
 	    else if (mpctx->stream->type == STREAMTYPE_DVDNAV)
-		mp_dvdnav_lang_from_aid(mpctx->stream, opts->audio_id, lang);
+		mp_dvdnav_lang_from_aid(mpctx->stream, current_id, lang);
 #endif
 	    *(char **) arg = malloc(64);
-            snprintf(*(char **) arg, 64, "(%d) %s", opts->audio_id, lang);
+	    snprintf(*(char **) arg, 64, "(%d) %s", current_id, lang);
 	}
 	return M_PROPERTY_OK;
 
     case M_PROPERTY_STEP_UP:
     case M_PROPERTY_SET:
-	if (!mpctx->demuxer)
-	    return M_PROPERTY_UNAVAILABLE;
 	if (action == M_PROPERTY_SET && arg)
 	    tmp = *((int *) arg);
 	else
 	    tmp = -1;
-	current_id = mpctx->demuxer->audio->id;
         opts->audio_id = demuxer_switch_audio(mpctx->demuxer, tmp);
         if (opts->audio_id == -2
             || (opts->audio_id > -1
@@ -903,34 +900,33 @@ static int mp_property_video(m_option_t *prop, int action, void *arg,
 			     MPContext *mpctx)
 {
     struct MPOpts *opts = &mpctx->opts;
-    int current_id = -1, tmp;
+    int current_id, tmp;
+    if (!mpctx->demuxer || !mpctx->demuxer->video)
+        return M_PROPERTY_UNAVAILABLE;
+    current_id = mpctx->demuxer->video->id;
 
     switch (action) {
     case M_PROPERTY_GET:
-	if (!mpctx->sh_video)
-	    return M_PROPERTY_UNAVAILABLE;
 	if (!arg)
 	    return M_PROPERTY_ERROR;
-        *(int *) arg = opts->video_id;
+	*(int *) arg = current_id;
 	return M_PROPERTY_OK;
     case M_PROPERTY_PRINT:
-	if (!mpctx->sh_video)
-	    return M_PROPERTY_UNAVAILABLE;
 	if (!arg)
 	    return M_PROPERTY_ERROR;
 
-        if (opts->video_id < 0)
-	    *(char **) arg = strdup(_("disabled"));
+	if (current_id < 0)
+	    *(char **) arg = strdup(mp_gtext("disabled"));
 	else {
-	    char lang[40] = _("unknown");
+	    char lang[40];
+            strncpy(lang, mp_gtext("unknown"), sizeof(lang));
 	    *(char **) arg = malloc(64);
-            snprintf(*(char **) arg, 64, "(%d) %s", opts->video_id, lang);
+	    snprintf(*(char **) arg, 64, "(%d) %s", current_id, lang);
 	}
 	return M_PROPERTY_OK;
 
     case M_PROPERTY_STEP_UP:
     case M_PROPERTY_SET:
-	current_id = mpctx->demuxer->video->id;
 	if (action == M_PROPERTY_SET && arg)
 	    tmp = *((int *) arg);
 	else
@@ -1189,9 +1185,9 @@ static int mp_property_framedropping(m_option_t *prop, int action,
     case M_PROPERTY_PRINT:
 	if (!arg)
 	    return M_PROPERTY_ERROR;
-	*(char **) arg = strdup(frame_dropping == 1 ? _("enabled") :
-				(frame_dropping == 2 ? _("hard") :
-				 _("disabled")));
+	*(char **) arg = strdup(frame_dropping == 1 ? mp_gtext("enabled") :
+				(frame_dropping == 2 ? mp_gtext("hard") :
+				 mp_gtext("disabled")));
 	return M_PROPERTY_OK;
     default:
 	return m_property_choice(prop, action, arg, &frame_dropping);
@@ -1363,9 +1359,6 @@ static int mp_property_aspect(m_option_t *prop, int action, void *arg,
 static int mp_property_sub_pos(m_option_t *prop, int action, void *arg,
 			       MPContext *mpctx)
 {
-    if (!mpctx->sh_video)
-	return M_PROPERTY_UNAVAILABLE;
-
     switch (action) {
     case M_PROPERTY_SET:
 	if (!arg)
@@ -1439,16 +1432,16 @@ static int mp_property_sub(m_option_t *prop, int action, void *arg,
              || mpctx->demuxer->type == DEMUXER_TYPE_OGG)
              && d_sub && d_sub->sh && opts->sub_id >= 0) {
             const char* lang = ((sh_sub_t*)d_sub->sh)->lang;
-            if (!lang) lang = _("unknown");
+            if (!lang) lang = mp_gtext("unknown");
             snprintf(*(char **) arg, 63, "(%d) %s", opts->sub_id, lang);
 	    return M_PROPERTY_OK;
 	}
 
 	if (vo_vobsub && vobsub_id >= 0) {
-	    const char *language = _("unknown");
+	    const char *language = mp_gtext("unknown");
 	    language = vobsub_get_id(vo_vobsub, (unsigned int) vobsub_id);
 	    snprintf(*(char **) arg, 63, "(%d) %s",
-		     vobsub_id, language ? language : _("unknown"));
+		     vobsub_id, language ? language : mp_gtext("unknown"));
 	    return M_PROPERTY_OK;
 	}
 #ifdef CONFIG_DVDREAD
@@ -1464,10 +1457,11 @@ static int mp_property_sub(m_option_t *prop, int action, void *arg,
 	}
 #endif
         if (opts->sub_id >= 0) {
-            snprintf(*(char **) arg, 63, "(%d) %s", opts->sub_id, _("unknown"));
+            snprintf(*(char **) arg, 63, "(%d) %s", opts->sub_id,
+                     mp_gtext("unknown"));
 	    return M_PROPERTY_OK;
 	}
-	snprintf(*(char **) arg, 63, _("disabled"));
+	snprintf(*(char **) arg, 63, mp_gtext("disabled"));
 	return M_PROPERTY_OK;
 
     case M_PROPERTY_SET:
@@ -1600,16 +1594,16 @@ static int mp_property_sub_source(m_option_t *prop, int action, void *arg,
         switch (sub_source(mpctx))
         {
         case SUB_SOURCE_SUBS:
-            snprintf(*(char **) arg, 63, _("file"));
+            snprintf(*(char **) arg, 63, mp_gtext("file"));
             break;
         case SUB_SOURCE_VOBSUB:
-            snprintf(*(char **) arg, 63, _("vobsub"));
+            snprintf(*(char **) arg, 63, mp_gtext("vobsub"));
             break;
         case SUB_SOURCE_DEMUX:
-            snprintf(*(char **) arg, 63, _("embedded"));
+            snprintf(*(char **) arg, 63, mp_gtext("embedded"));
             break;
         default:
-            snprintf(*(char **) arg, 63, _("disabled"));
+            snprintf(*(char **) arg, 63, mp_gtext("disabled"));
         }
         return M_PROPERTY_OK;
     case M_PROPERTY_SET:
@@ -1697,7 +1691,7 @@ static int mp_property_sub_by_type(m_option_t *prop, int action, void *arg,
             return mp_property_sub(prop, M_PROPERTY_PRINT, arg, mpctx);
         *(char **) arg = malloc(64);
         (*(char **) arg)[63] = 0;
-        snprintf(*(char **) arg, 63, _("disabled"));
+        snprintf(*(char **) arg, 63, mp_gtext("disabled"));
         return M_PROPERTY_OK;
     case M_PROPERTY_SET:
         if (!arg)
@@ -1780,7 +1774,7 @@ static int mp_property_sub_alignment(m_option_t *prop, int action,
 	if (!arg)
 	    return M_PROPERTY_ERROR;
 	M_PROPERTY_CLAMP(prop, sub_alignment);
-	*(char **) arg = strdup(name[sub_alignment]);
+	*(char **) arg = strdup(mp_gtext(name[sub_alignment]));
 	return M_PROPERTY_OK;
     case M_PROPERTY_SET:
 	if (!arg)
@@ -2306,12 +2300,12 @@ static int show_property_osd(MPContext *mpctx, const char *pname)
     else if (p->osd_progbar) {
         if (prop->type == CONF_TYPE_INT) {
             if (mp_property_do(pname, M_PROPERTY_GET, &r, mpctx) > 0)
-                set_osd_bar(mpctx, p->osd_progbar, p->osd_msg,
+                set_osd_bar(mpctx, p->osd_progbar, mp_gtext(p->osd_msg),
                             prop->min, prop->max, r);
         } else if (prop->type == CONF_TYPE_FLOAT) {
             float f;
             if (mp_property_do(pname, M_PROPERTY_GET, &f, mpctx) > 0)
-                set_osd_bar(mpctx, p->osd_progbar, p->osd_msg,
+                set_osd_bar(mpctx, p->osd_progbar, mp_gtext(p->osd_msg),
                             prop->min, prop->max, f);
         } else {
             mp_msg(MSGT_CPLAYER, MSGL_ERR,
@@ -2325,8 +2319,8 @@ static int show_property_osd(MPContext *mpctx, const char *pname)
         char *val = mp_property_print(pname, mpctx);
         if (val) {
             int index = p - property_osd_display;
-            set_osd_msg(p->osd_id >= 0 ? p->osd_id : OSD_MSG_PROPERTY + index,
-                        1, opts->osd_duration, p->osd_msg, val);
+            set_osd_tmsg(p->osd_id >= 0 ? p->osd_id : OSD_MSG_PROPERTY + index,
+                         1, opts->osd_duration, p->osd_msg, val);
             free(val);
         }
     }
@@ -2479,6 +2473,23 @@ static const struct {
 };
 #endif
 
+static const char *property_error_string(int error_value)
+{
+    switch (error_value) {
+    case M_PROPERTY_ERROR:
+        return "ERROR";
+    case M_PROPERTY_UNAVAILABLE:
+        return "PROPERTY_UNAVAILABLE";
+    case M_PROPERTY_NOT_IMPLEMENTED:
+        return "NOT_IMPLEMENTED";
+    case M_PROPERTY_UNKNOWN:
+        return "PROPERTY_UNKNOWN";
+    case M_PROPERTY_DISABLED:
+        return "DISABLED";
+    }
+    return "UNKNOWN";
+}
+
 void run_command(MPContext *mpctx, mp_cmd_t *cmd)
 {
     struct MPOpts *opts = &mpctx->opts;
@@ -2527,6 +2538,8 @@ void run_command(MPContext *mpctx, mp_cmd_t *cmd)
 			   cmd->args[0].v.s, cmd->args[1].v.s);
                 else if (case_fallthrough_hack)
                     show_property_osd(mpctx, cmd->args[0].v.s);
+		if (r <= 0)
+		    mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_ERROR=%s\n", property_error_string(r));
 	    }
 	    break;
 
@@ -2573,16 +2586,20 @@ void run_command(MPContext *mpctx, mp_cmd_t *cmd)
 			   cmd->args[0].v.s, cmd->args[1].v.f);
                 else if (case_fallthrough_hack)
                     show_property_osd(mpctx, cmd->args[0].v.s);
+		if (r <= 0)
+		    mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_ERROR=%s\n", property_error_string(r));
 	    }
 	    break;
 
 	case MP_CMD_GET_PROPERTY:{
 		char *tmp;
-		if (mp_property_do(cmd->args[0].v.s, M_PROPERTY_TO_STRING,
-				   &tmp, mpctx) <= 0) {
+		int r = mp_property_do(cmd->args[0].v.s, M_PROPERTY_TO_STRING,
+				       &tmp, mpctx);
+		if (r <= 0) {
 		    mp_msg(MSGT_CPLAYER, MSGL_WARN,
 			   "Failed to get value of property '%s'.\n",
 			   cmd->args[0].v.s);
+		    mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_ERROR=%s\n", property_error_string(r));
 		    break;
 		}
 		mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_%s=%s\n",
@@ -2624,24 +2641,24 @@ void run_command(MPContext *mpctx, mp_cmd_t *cmd)
 		float v = cmd->args[0].v.f;
 		opts->playback_speed += v;
 		build_afilter_chain(mpctx, sh_audio, &ao_data);
-		set_osd_msg(OSD_MSG_SPEED, 1, osd_duration, _("Speed: x %6.2f"),
-			    opts->playback_speed);
+		set_osd_tmsg(OSD_MSG_SPEED, 1, osd_duration, "Speed: x %6.2f",
+                             opts->playback_speed);
 	    } break;
 
 	case MP_CMD_SPEED_MULT:{
 		float v = cmd->args[0].v.f;
 		opts->playback_speed *= v;
 		build_afilter_chain(mpctx, sh_audio, &ao_data);
-		set_osd_msg(OSD_MSG_SPEED, 1, osd_duration, _("Speed: x %6.2f"),
-			    opts->playback_speed);
+		set_osd_tmsg(OSD_MSG_SPEED, 1, osd_duration, "Speed: x %6.2f",
+                             opts->playback_speed);
 	    } break;
 
 	case MP_CMD_SPEED_SET:{
 		float v = cmd->args[0].v.f;
 		opts->playback_speed = v;
 		build_afilter_chain(mpctx, sh_audio, &ao_data);
-		set_osd_msg(OSD_MSG_SPEED, 1, osd_duration, _("Speed: x %6.2f"),
-			    opts->playback_speed);
+		set_osd_tmsg(OSD_MSG_SPEED, 1, osd_duration, "Speed: x %6.2f",
+                             opts->playback_speed);
 	    } break;
 
 	case MP_CMD_FRAME_STEP:
@@ -2715,8 +2732,8 @@ void run_command(MPContext *mpctx, mp_cmd_t *cmd)
 				     (sh_video->pts +
 				      sub_delay) * 1000 + .5, movement) / 1000.;
 #endif
-		set_osd_msg(OSD_MSG_SUB_DELAY, 1, osd_duration,
-			    _("Sub delay: %d ms"), ROUND(sub_delay * 1000));
+		set_osd_tmsg(OSD_MSG_SUB_DELAY, 1, osd_duration,
+                             "Sub delay: %d ms", ROUND(sub_delay * 1000));
 	    }
 	    break;
 
@@ -2737,10 +2754,10 @@ void run_command(MPContext *mpctx, mp_cmd_t *cmd)
 		/* Show OSD state when disabled, but not when an explicit
 		   argument is given to the OSD command, i.e. in slave mode. */
 		if (v == -1 && opts->osd_level <= 1)
-		    set_osd_msg(OSD_MSG_OSD_STATUS, 0, osd_duration,
-				_("OSD: %s"),
-				opts->osd_level ? _("enabled") :
-				_("disabled"));
+		    set_osd_tmsg(OSD_MSG_OSD_STATUS, 0, osd_duration,
+                                 "OSD: %s",
+                                 opts->osd_level ? mp_gtext("enabled") :
+                                 mp_gtext("disabled"));
 		else
 		    rm_osd_msg(OSD_MSG_OSD_STATUS);
 	    }
@@ -2829,9 +2846,9 @@ void run_command(MPContext *mpctx, mp_cmd_t *cmd)
 		    radio_step_channel(mpctx->demuxer->stream,
 				       RADIO_CHANNEL_LOWER);
 		if (radio_get_channel_name(mpctx->demuxer->stream)) {
-		    set_osd_msg(OSD_MSG_RADIO_CHANNEL, 1, osd_duration,
-				_("Channel: %s"),
-				radio_get_channel_name(mpctx->demuxer->stream));
+		    set_osd_tmsg(OSD_MSG_RADIO_CHANNEL, 1, osd_duration,
+                                 "Channel: %s",
+                                 radio_get_channel_name(mpctx->demuxer->stream));
 		}
 	    }
 	    break;
@@ -2840,9 +2857,9 @@ void run_command(MPContext *mpctx, mp_cmd_t *cmd)
 	    if (mpctx->demuxer->stream->type == STREAMTYPE_RADIO) {
 		radio_set_channel(mpctx->demuxer->stream, cmd->args[0].v.s);
 		if (radio_get_channel_name(mpctx->demuxer->stream)) {
-		    set_osd_msg(OSD_MSG_RADIO_CHANNEL, 1, osd_duration,
-				_("Channel: %s"),
-				radio_get_channel_name(mpctx->demuxer->stream));
+		    set_osd_tmsg(OSD_MSG_RADIO_CHANNEL, 1, osd_duration,
+                                 "Channel: %s",
+                                 radio_get_channel_name(mpctx->demuxer->stream));
 		}
 	    }
 	    break;
@@ -2910,8 +2927,8 @@ void run_command(MPContext *mpctx, mp_cmd_t *cmd)
 					TV_CHANNEL_LOWER);
 		    }
 		    if (tv_channel_list) {
-			set_osd_msg(OSD_MSG_TV_CHANNEL, 1, osd_duration,
-				    _("Channel: %s"), tv_channel_current->name);
+			set_osd_tmsg(OSD_MSG_TV_CHANNEL, 1, osd_duration,
+                                     "Channel: %s", tv_channel_current->name);
 			//vo_osd_changed(OSDTYPE_SUBTITLE);
 		    }
 		}
@@ -2950,8 +2967,8 @@ void run_command(MPContext *mpctx, mp_cmd_t *cmd)
 		tv_set_channel((tvi_handle_t *) (mpctx->demuxer->priv),
 			       cmd->args[0].v.s);
 		if (tv_channel_list) {
-		    set_osd_msg(OSD_MSG_TV_CHANNEL, 1, osd_duration,
-				_("Channel: %s"), tv_channel_current->name);
+		    set_osd_tmsg(OSD_MSG_TV_CHANNEL, 1, osd_duration,
+                                 "Channel: %s", tv_channel_current->name);
 		    //vo_osd_changed(OSDTYPE_SUBTITLE);
 		}
 	    }
@@ -2983,8 +3000,8 @@ void run_command(MPContext *mpctx, mp_cmd_t *cmd)
 	    if (mpctx->file_format == DEMUXER_TYPE_TV) {
 		tv_last_channel((tvi_handle_t *) (mpctx->demuxer->priv));
 		if (tv_channel_list) {
-		    set_osd_msg(OSD_MSG_TV_CHANNEL, 1, osd_duration,
-				_("Channel: %s"), tv_channel_current->name);
+		    set_osd_tmsg(OSD_MSG_TV_CHANNEL, 1, osd_duration,
+                                 "Channel: %s", tv_channel_current->name);
 		    //vo_osd_changed(OSDTYPE_SUBTITLE);
 		}
 	    }

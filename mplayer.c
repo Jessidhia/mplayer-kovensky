@@ -698,6 +698,7 @@ void exit_player_with_rc(struct MPContext *mpctx, exit_reason_t how, int rc)
 
 #ifdef CONFIG_ASS
   ass_library_done(ass_library);
+  ass_library = NULL;
 #endif
 
   current_module="exit_player";
@@ -705,13 +706,19 @@ void exit_player_with_rc(struct MPContext *mpctx, exit_reason_t how, int rc)
 // free mplayer config
   if(mpctx->mconfig)
     m_config_free(mpctx->mconfig);
+  mpctx->mconfig = NULL;
 
+  if(mpctx->playtree_iter)
+    play_tree_iter_free(mpctx->playtree_iter);
+  mpctx->playtree_iter = NULL;
   if(mpctx->playtree)
     play_tree_free(mpctx->playtree, 1);
+  mpctx->playtree = NULL;
 
   talloc_free(mpctx->key_fifo);
 
   if(edl_records != NULL) free(edl_records); // free mem allocated for EDL
+  edl_records = NULL;
   switch(how) {
   case EXIT_QUIT:
     mp_tmsg(MSGT_CPLAYER,MSGL_INFO,"\nExiting... (%s)\n","Quit");
@@ -1041,51 +1048,42 @@ static int playtree_add_playlist(struct MPContext *mpctx, play_tree_t* entry)
 void add_subtitles(struct MPContext *mpctx, char *filename, float fps, int noerr)
 {
     struct MPOpts *opts = &mpctx->opts;
-    sub_data *subd;
-#ifdef CONFIG_ASS
-    ASS_Track *asst = 0;
-#endif
+    sub_data *subd = NULL;
+    struct ass_track *asst = NULL;
 
     if (filename == NULL || mpctx->set_of_sub_size >= MAX_SUBTITLE_FILES) {
 	return;
     }
 
-    subd = sub_read_file(filename, fps);
 #ifdef CONFIG_ASS
-    if (opts->ass_enabled)
+    if (opts->ass_enabled) {
 #ifdef CONFIG_ICONV
         asst = ass_read_file(ass_library, filename, sub_cp);
 #else
         asst = ass_read_file(ass_library, filename, 0);
 #endif
-    if (opts->ass_enabled && subd && !asst)
-        asst = ass_read_subdata(ass_library, subd, fps);
-
-    if (!asst && !subd)
-#else
-    if(!subd)
+        if (!asst) {
+            subd = sub_read_file(filename, fps);
+            if (subd) {
+                asst = ass_read_subdata(ass_library, subd, fps);
+                if (asst) {
+                    sub_free(subd);
+                    subd = NULL;
+                }
+            }
+        }
+    } else
 #endif
-        mp_tmsg(MSGT_CPLAYER, noerr ? MSGL_WARN : MSGL_ERR, "Cannot load subtitles: %s\n",
-		filename_recode(filename));
-#if defined(_WIN32) && !defined(HAVE_NEW_GUI)
-    if(filename) {
-        static char message[MAX_PATH + 1];
-        char *s = strrchr(filename, '\\');
-        if (!s) s = strrchr(filename, '/');
-        if (s) s++; else s = filename; 
-        message[0] = 0;
-        snprintf(message, MAX_PATH, "MPlayer: %s", filename_recode(s));
-        message[MAX_PATH] = 0;
-        SetConsoleTitle(message);
-     }
-#endif
+        subd = sub_read_file(filename, fps);
 
-#ifdef CONFIG_ASS
-    if (!asst && !subd) return;
+
+    if (!asst && !subd) {
+        mp_tmsg(MSGT_CPLAYER, noerr ? MSGL_WARN : MSGL_ERR,
+                "Cannot load subtitles: %s\n", filename_recode(filename));
+        return;
+    }
+
     mpctx->set_of_ass_tracks[mpctx->set_of_sub_size] = asst;
-#else
-    if (!subd) return;
-#endif
     mpctx->set_of_subtitles[mpctx->set_of_sub_size] = subd;
     mp_msg(MSGT_IDENTIFY, MSGL_INFO, "ID_FILE_SUB_ID=%d\n", mpctx->set_of_sub_size);
     mp_msg(MSGT_IDENTIFY, MSGL_INFO, "ID_FILE_SUB_FILENAME=%s\n",
@@ -1144,7 +1142,11 @@ void init_vo_spudec(struct MPContext *mpctx)
  * will be done automatically by replacing our main() if we include SDL.h.
  */
 #if defined(__APPLE__) && defined(CONFIG_SDL)
+#ifdef CONFIG_SDL_SDL_H
+#include <SDL/SDL.h>
+#else
 #include <SDL.h>
+#endif
 #endif
 
 /**
@@ -1356,10 +1358,10 @@ static mp_osd_msg_t* osd_msg_stack = NULL;
  *  it is pulled on top of the stack, otherwise a new message is created.
  *
  */
-
-void set_osd_msg(int id, int level, int time, const char* fmt, ...) {
+static void set_osd_msg_va(int id, int level, int time, const char *fmt,
+                           va_list ap)
+{
     mp_osd_msg_t *msg,*last=NULL;
-    va_list va;
     int r;
 
     // look if the id is already in the stack
@@ -1376,9 +1378,7 @@ void set_osd_msg(int id, int level, int time, const char* fmt, ...) {
         osd_msg_stack = msg;
     }
     // write the msg
-    va_start(va,fmt);
-    r = vsnprintf(msg->msg, 128, fmt, va);
-    va_end(va);
+    r = vsnprintf(msg->msg, 128, fmt, ap);
     if(r >= 128) msg->msg[127] = 0;
     // set id and time
     msg->id = id;
@@ -1386,6 +1386,23 @@ void set_osd_msg(int id, int level, int time, const char* fmt, ...) {
     msg->time = time;
 
 }
+
+void set_osd_msg(int id, int level, int time, const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    set_osd_msg_va(id, level, time, fmt, ap);
+    va_end(ap);
+}
+
+void set_osd_tmsg(int id, int level, int time, const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    set_osd_msg_va(id, level, time, mp_gtext(fmt), ap);
+    va_end(ap);
+}
+
 
 /**
  *  \brief Remove a message from the OSD stack
@@ -2031,7 +2048,6 @@ static int fill_audio_out_buffers(struct MPContext *mpctx)
     int playsize;
     int playflags=0;
     int audio_eof=0;
-    int bytes_to_write;
     sh_audio_t * const sh_audio = mpctx->sh_audio;
 
     current_module="play_audio";
@@ -2042,65 +2058,59 @@ static int fill_audio_out_buffers(struct MPContext *mpctx)
 	// sync completely wrong; there should be no need to use ao_data.pts
 	// in get_space()
 	ao_data.pts = ((mpctx->sh_video?mpctx->sh_video->timer:0)+mpctx->delay)*90000.0;
-	bytes_to_write = mpctx->audio_out->get_space();
-	if (mpctx->sh_video || bytes_to_write >= ao_data.outburst)
+	playsize = mpctx->audio_out->get_space();
+	if (mpctx->sh_video || playsize >= ao_data.outburst)
 	    break;
 
 	// handle audio-only case:
 	// this is where mplayer sleeps during audio-only playback
 	// to avoid 100% CPU use
-	sleep_time = (ao_data.outburst - bytes_to_write) * 1000 / ao_data.bps;
+	sleep_time = (ao_data.outburst - playsize) * 1000 / ao_data.bps;
 	if (sleep_time < 10) sleep_time = 10; // limit to 100 wakeups per second
 	usec_sleep(sleep_time * 1000);
     }
 
-    while (bytes_to_write) {
-	playsize = bytes_to_write;
-	if (playsize > MAX_OUTBURST)
-	    playsize = MAX_OUTBURST;
-	bytes_to_write -= playsize;
-
-	// Fill buffer if needed:
-	current_module="decode_audio";
-	t = GetTimer();
-	if (decode_audio(sh_audio, playsize) < 0) // EOF or error
-	    if (mpctx->d_audio->eof) {
-		audio_eof = 1;
-		if (sh_audio->a_out_buffer_len == 0)
-		    return 0;
-	    }
-	t = GetTimer() - t;
-	tt = t*0.000001f; audio_time_usage+=tt;
-	if (playsize > sh_audio->a_out_buffer_len) {
-	    playsize = sh_audio->a_out_buffer_len;
-	    if (audio_eof)
-		playflags |= AOPLAY_FINAL_CHUNK;
-	}
-	if (!playsize)
-	    break;
-
-	// play audio:
-	current_module="play_audio";
-
-	// Is this pts value actually useful for the aos that access it?
-	// They're obviously badly broken in the way they handle av sync;
-	// would not having access to this make them more broken?
-	ao_data.pts = ((mpctx->sh_video?mpctx->sh_video->timer:0)+mpctx->delay)*90000.0;
-	playsize = mpctx->audio_out->play(sh_audio->a_out_buffer, playsize, playflags);
-
-	if (playsize > 0) {
-	    sh_audio->a_out_buffer_len -= playsize;
-	    memmove(sh_audio->a_out_buffer, &sh_audio->a_out_buffer[playsize],
-		    sh_audio->a_out_buffer_len);
-	    mpctx->delay += opts->playback_speed*playsize/(double)ao_data.bps;
-	}
-	else if (audio_eof && mpctx->audio_out->get_delay() < .04) {
-	    // Sanity check to avoid hanging in case current ao doesn't output
-	    // partial chunks and doesn't check for AOPLAY_FINAL_CHUNK
-	    mp_msg(MSGT_CPLAYER, MSGL_WARN, "Audio output truncated at end.\n");
-	    sh_audio->a_out_buffer_len = 0;
-	}
+    // Fill buffer if needed:
+    current_module="decode_audio";
+    t = GetTimer();
+    if (decode_audio(sh_audio, playsize) < 0) // EOF or error
+        if (mpctx->d_audio->eof) {
+            audio_eof = 1;
+            if (sh_audio->a_out_buffer_len == 0)
+                return 0;
+        }
+    t = GetTimer() - t;
+    tt = t*0.000001f; audio_time_usage+=tt;
+    if (playsize > sh_audio->a_out_buffer_len) {
+        playsize = sh_audio->a_out_buffer_len;
+        if (audio_eof)
+            playflags |= AOPLAY_FINAL_CHUNK;
     }
+    if (!playsize)
+        return 1;
+
+    // play audio:
+    current_module="play_audio";
+
+    // Is this pts value actually useful for the aos that access it?
+    // They're obviously badly broken in the way they handle av sync;
+    // would not having access to this make them more broken?
+    ao_data.pts = ((mpctx->sh_video?mpctx->sh_video->timer:0)+mpctx->delay)*90000.0;
+    playsize = mpctx->audio_out->play(sh_audio->a_out_buffer, playsize, playflags);
+
+    if (playsize > 0) {
+        sh_audio->a_out_buffer_len -= playsize;
+        memmove(sh_audio->a_out_buffer, &sh_audio->a_out_buffer[playsize],
+                sh_audio->a_out_buffer_len);
+        mpctx->delay += opts->playback_speed*playsize/(double)ao_data.bps;
+    }
+    else if (audio_eof && mpctx->audio_out->get_delay() < .04) {
+        // Sanity check to avoid hanging in case current ao doesn't output
+        // partial chunks and doesn't check for AOPLAY_FINAL_CHUNK
+        mp_msg(MSGT_CPLAYER, MSGL_WARN, "Audio output truncated at end.\n");
+        sh_audio->a_out_buffer_len = 0;
+    }
+
     return 1;
 }
 
@@ -2218,9 +2228,15 @@ int reinit_video_chain(struct MPContext *mpctx)
       extern vf_info_t vf_info_ass;
       const vf_info_t* libass_vfs[] = {&vf_info_ass, NULL};
       char* vf_arg[] = {"auto", "1", NULL};
-      vf_instance_t* vf_ass = vf_open_plugin(opts, libass_vfs,sh_video->vfilter,"ass",vf_arg);
+      int retcode = 0;
+      struct vf_instance *vf_ass = vf_open_plugin_noerr(opts, libass_vfs,
+                                                        sh_video->vfilter,
+                                                        "ass", vf_arg,
+                                                        &retcode);
       if (vf_ass)
         sh_video->vfilter = vf_ass;
+      else if (retcode == -1) // vf_ass open() returns -1 if there's VO EOSD
+          mp_msg(MSGT_CPLAYER, MSGL_V, "[ass] vf_ass not needed\n");
       else
         mp_msg(MSGT_CPLAYER,MSGL_ERR, "ASS: cannot add video filter\n");
     }
