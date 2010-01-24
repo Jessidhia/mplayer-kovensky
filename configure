@@ -6038,7 +6038,7 @@ if test "$_iconv" = no ; then
 fi
 
 if test "$_freetype" = auto ; then
-    if ( $_freetypeconfig --version ) >/dev/null 2>&1 ; then
+    if $_pkg_config --version >/dev/null 2>&1 || $_freetypeconfig --version >/dev/null 2>&1; then
         cat > $TMPC << EOF
 #include <stdio.h>
 #include <ft2build.h>
@@ -6054,15 +6054,24 @@ int main(void) {
 }
 EOF
         _freetype=no
-        cc_check $($_freetypeconfig --cflags) $($_freetypeconfig --libs) && _freetype=yes
+        if $_pkg_config --exists freetype2; then
+            cc_check $($_pkg_config --cflags freetype2) $($_pkg_config --libs freetype2) && _freetype=yes && _res_comment="pkg-config"
+        else
+            cc_check $($_freetypeconfig --cflags) $($_freetypeconfig --libs) && _freetype=yes && _res_comment="$_freetypeconfig"
+        fi
     else
         _freetype=no
     fi
 fi
 if test "$_freetype" = yes ; then
     def_freetype='#define CONFIG_FREETYPE 1'
-    extra_cflags="$extra_cflags $($_freetypeconfig --cflags)"
-    extra_ldflags="$extra_ldflags $($_freetypeconfig --libs)"
+    if $_pkg_config --exists freetype2; then
+        extra_cflags="$extra_cflags $($_pkg_config --cflags freetype2)"
+        extra_ldflags="$extra_ldflags $($_pkg_config --libs freetype2)"
+    else
+        extra_cflags="$extra_cflags $($_freetypeconfig --cflags)"
+        extra_ldflags="$extra_ldflags $($_freetypeconfig --libs)"
+    fi
 else
     def_freetype='#undef CONFIG_FREETYPE'
 fi
