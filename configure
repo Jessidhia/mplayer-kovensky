@@ -6106,7 +6106,10 @@ else
 fi
 echores "$_fontconfig"
 
-
+if test "$_freetype" = no; then
+    _ass=no
+    _res_comment="FreeType support needed"
+fi
 echocheck "SSA/ASS support"
 if test "$_ass" = auto -o "$_ass" = yes ; then
         if $_pkg_config libass; then
