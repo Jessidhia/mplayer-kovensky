@@ -368,13 +368,13 @@ void add_subtitles(char *filename, float fps, int silent)
 
     subd = sub_read_file(filename, fps);
 #ifdef CONFIG_ASS
-    if (ass_enabled)
+    if (opts.ass_enabled)
 #ifdef CONFIG_ICONV
         asst = ass_read_file(ass_library, filename, sub_cp);
 #else
         asst = ass_read_file(ass_library, filename, 0);
 #endif
-    if (ass_enabled && subd && !asst)
+    if (opts.ass_enabled && subd && !asst)
         asst = ass_read_subdata(ass_library, subd, fps);
 
     if (!asst && !subd && !silent)
@@ -886,7 +886,7 @@ default: {
   } else sh_video->vfilter = ve;
     // append 'expand' filter, it fixes stride problems and renders osd:
 #ifdef CONFIG_ASS
-    if (auto_expand && !ass_enabled) { /* we do not want both */
+    if (auto_expand && !opts.ass_enabled) { /* we do not want both */
 #else
     if (auto_expand) {
 #endif
@@ -896,7 +896,7 @@ default: {
 
  
 #ifdef CONFIG_ASS
-   if(ass_enabled) {
+   if(opts.ass_enabled) {
      int i;
      int insert = 1;
      if (opts.vf_settings)
@@ -937,7 +937,7 @@ default: {
     sh_video->vfilter=append_filters(sh_video->vfilter, opts.vf_settings);
 
 #ifdef CONFIG_ASS
-   if (ass_enabled)
+   if (opts.ass_enabled)
      ((vf_instance_t *)sh_video->vfilter)->control(sh_video->vfilter, VFCTRL_INIT_EOSD, ass_library);
 #endif
  
