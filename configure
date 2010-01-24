@@ -3897,16 +3897,27 @@ fi
 echores "$_apple_ir"
 fi #if linux
 
-echocheck "pkg-config"
-_pkg_config=pkg-config
+echocheck "$_target-pkg-config"
+_pkg_config=$_target-pkg-config
 if $($_pkg_config --version > /dev/null 2>&1); then
   if test "$_ld_static"; then
     _pkg_config="$_pkg_config --static"
   fi
   echores "yes"
 else
-  _pkg_config=false
+  _pkg_config=pkg-config
   echores "no"
+
+  echocheck "pkg-config"
+  if $($_pkg_config --version > /dev/null 2>&1); then
+    if test "$_ld_static"; then
+      _pkg_config="$_pkg_config --static"
+    fi
+    echores "yes"
+  else
+    _pkg_config=false
+    echores "no"
+  fi
 fi
 
 
