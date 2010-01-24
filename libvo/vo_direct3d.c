@@ -33,8 +33,6 @@
 #include "font_load.h"
 #include "sub.h"
 
-typedef IDirect3D9 * (WINAPI *imp_Direct3DCreate9)(UINT);
-
 static const vo_info_t info =
 {
     "Direct3D 9 Renderer",
@@ -86,8 +84,6 @@ static struct global_priv {
                                     cannot lock a normal texture. Uses RGBA */
     IDirect3DSurface9 *d3d_backbuf; /**< Video card's back buffer (used to
                                     display next frame) */
-    HANDLE d3d9;                    /**< d3d9 Library HANDLE */
-    imp_Direct3DCreate9 pDirect3DCreate9; /**< pointer to Direct3DCreate9 function */
     int cur_backbuf_width;          /**< Current backbuffer width */
     int cur_backbuf_height;         /**< Current backbuffer height */
     int is_osd_populated;           /**< 1 = OSD texture has something to display,
