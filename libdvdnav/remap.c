@@ -33,10 +33,6 @@
 #endif
 #endif /* _MSC_VER */
 
-#ifdef _WIN32
-#include <shlobj.h>
-#endif
-
 #include <inttypes.h>
 #include <limits.h>
 #include <sys/time.h>
@@ -203,28 +199,12 @@ remap_t* remap_loadmap( char *title) {
 
     memset(&tmp, 0, sizeof(tmp));
     /* Build the map filename */
-#ifdef __MINGW32__
-    {
-        char exedir[MAX_PATH + 1];
-        if (SHGetFolderPathA(NULL, CSIDL_LOCAL_APPDATA|CSIDL_FLAG_CREATE, NULL, 0, exedir) != S_OK && (home = strrchr(exedir, '\\')))
-        {
-            if (home[1] == '\0') *home = '\0';
-            snprintf(fname, sizeof(fname) - 1, "%s\\dvdnav\\%s.map", exedir, title);
-        }
-        else
-        {
-            fprintf(MSG_OUT, "libdvdnav: Unable to find CSIDL_LOCAL_APPDATA.\n" );
-            return NULL;
-        }
-    }
-#else
     home = getenv("HOME");
     if(!home) {
-        fprintf(MSG_OUT, "libdvdnav: Unable to find home directory\n" );
+        fprintf(MSG_OUT, "libdvdnav: Unable to find home directory" );
         return NULL;
     }
     snprintf(fname, sizeof(fname), "%s/.dvdnav/%s.map", home, title);
-#endif
 
     /* Open the map file */
     fp = fopen( fname, "r");
