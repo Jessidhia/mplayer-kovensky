@@ -3567,10 +3567,12 @@ if(mpctx->stream->type==STREAMTYPE_DVDNAV){
 // CACHE2: initial prefill: 20%  later: 5%  (should be set by -cacheopts)
 goto_enable_cache:
 if(stream_cache_size>0){
+  int res;
   current_module="enable_cache";
-  if(!stream_enable_cache(mpctx->stream,stream_cache_size*1024,
+  res = stream_enable_cache(mpctx->stream,stream_cache_size*1024,
                           stream_cache_size*1024*(stream_cache_min_percent / 100.0),
-                          stream_cache_size*1024*(stream_cache_seek_min_percent / 100.0)))
+                          stream_cache_size*1024*(stream_cache_seek_min_percent / 100.0));
+  if(res == 0)
       if((mpctx->stop_play = libmpdemux_was_interrupted(mpctx, PT_NEXT_ENTRY))) goto goto_next_file;
 }
 
@@ -3681,7 +3683,7 @@ if (opts->ass_enabled && ass_library) {
         struct demuxer *d = mpctx->sources[j].demuxer;
         for (int i = 0; i < d->num_attachments; i++) {
             struct demux_attachment *att = d->attachments + i;
-            if (extract_embedded_fonts
+            if (use_embedded_fonts
                 && att->name && att->type && att->data && att->data_size
                 && (strcmp(att->type, "application/x-truetype-font") == 0
                     || strcmp(att->type, "application/x-font") == 0))

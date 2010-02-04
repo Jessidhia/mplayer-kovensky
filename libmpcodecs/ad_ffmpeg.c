@@ -153,6 +153,7 @@ static int control(sh_audio_t *sh,int cmd,void* arg, ...)
     switch(cmd){
     case ADCTRL_RESYNC_STREAM:
         avcodec_flush_buffers(lavc_context);
+        ds_clear_parser(sh->ds);
     return CONTROL_TRUE;
     }
     return CONTROL_UNKNOWN;
@@ -188,7 +189,7 @@ static int decode_audio(sh_audio_t *sh_audio,unsigned char *buf,int minlen,int m
 	y=avcodec_decode_audio3(sh_audio->context,(int16_t*)buf,&len2,&pkt);
 //printf("return:%d samples_out:%d bitstream_in:%d sample_sum:%d\n", y, len2, x, len); fflush(stdout);
 	if(y<0){ mp_msg(MSGT_DECAUDIO,MSGL_V,"lavc_audio: error\n");break; }
-	if(!sh_audio->needs_parsing && y<x)
+	if(!sh_audio->parser && y<x)
 	    sh_audio->ds->buffer_pos+=y-x;  // put back data (HACK!)
 	if(len2>0){
 	  if (((AVCodecContext *)sh_audio->context)->channels >= 5) {

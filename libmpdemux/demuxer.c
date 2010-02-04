@@ -59,6 +59,7 @@
 // just be removed again.
 #define PARSE_ON_ADD 0
 
+static void clear_parser(sh_common_t *sh);
 void resync_video_stream(sh_video_t *sh_video);
 void resync_audio_stream(sh_audio_t *sh_audio);
 
@@ -284,8 +285,7 @@ static void free_sh_sub(sh_sub_t *sh)
 #endif
     free(sh->lang);
 #ifdef CONFIG_LIBAVCODEC
-    av_parser_close(sh->parser);
-    av_freep(&sh->avctx);
+    clear_parser((sh_common_t *)sh);
 #endif
     free(sh);
 }
@@ -326,8 +326,7 @@ void free_sh_audio(demuxer_t *demuxer, int id)
     free(sh->codecdata);
     free(sh->lang);
 #ifdef CONFIG_LIBAVCODEC
-    av_parser_close(sh->parser);
-    av_freep(&sh->avctx);
+    clear_parser((sh_common_t *)sh);
 #endif
     free(sh);
 }
@@ -359,8 +358,7 @@ void free_sh_video(sh_video_t *sh)
     mp_msg(MSGT_DEMUXER, MSGL_DBG2, "DEMUXER: freeing sh_video at %p\n", sh);
     free(sh->bih);
 #ifdef CONFIG_LIBAVCODEC
-    av_parser_close(sh->parser);
-    av_freep(&sh->avctx);
+    clear_parser((sh_common_t *)sh);
 #endif
     free(sh);
 }
@@ -396,19 +394,6 @@ void free_demuxer(demuxer_t *demuxer)
         free(demuxer->info);
     }
     free(demuxer->filename);
-    if (demuxer->chapters) {
-        for (i = 0; i < demuxer->num_chapters; i++)
-            free(demuxer->chapters[i].name);
-        free(demuxer->chapters);
-    }
-    if (demuxer->attachments) {
-        for (i = 0; i < demuxer->num_attachments; i++) {
-            free(demuxer->attachments[i].name);
-            free(demuxer->attachments[i].type);
-            free(demuxer->attachments[i].data);
-        }
-        free(demuxer->attachments);
-    }
     if (demuxer->teletext)
         teletext_control(demuxer->teletext, TV_VBI_CONTROL_STOP, NULL);
     talloc_free(demuxer);
@@ -460,6 +445,9 @@ static void allocate_parser(AVCodecContext **avctx, AVCodecParserContext **parse
     case 0x86:
         codec_id = CODEC_ID_DTS;
         break;
+    case MKTAG('M', 'L', 'P', ' '):
+        codec_id = CODEC_ID_MLP;
+        break;
     case 0x55:
     case 0x5500736d:
     case MKTAG('.', 'm', 'p', '3'):
@@ -471,6 +459,9 @@ static void allocate_parser(AVCodecContext **avctx, AVCodecParserContext **parse
     case MKTAG('.', 'm', 'p', '2'):
     case MKTAG('.', 'm', 'p', '1'):
         codec_id = CODEC_ID_MP2;
+        break;
+    case MKTAG('T', 'R', 'H', 'D'):
+        codec_id = CODEC_ID_TRUEHD;
         break;
     }
     if (codec_id != CODEC_ID_NONE) {
@@ -509,6 +500,20 @@ int ds_parse(demux_stream_t *ds, uint8_t **buffer, int *len, double pts, off_t p
     if (!parser)
         return *len;
     return av_parser_parse2(parser, avctx, buffer, len, *buffer, *len, pts, pts, pos);
+}
+
+static void clear_parser(sh_common_t *sh)
+{
+    av_parser_close(sh->parser);
+    sh->parser = NULL;
+    av_freep(&sh->avctx);
+}
+
+void ds_clear_parser(demux_stream_t *ds)
+{
+    if (!ds->sh)
+        return;
+    clear_parser(ds->sh);
 }
 #endif
 
@@ -1201,6 +1206,11 @@ demuxer_t *demux_open(struct MPOpts *opts, stream_t *vs, int file_format,
 
 void demux_flush(demuxer_t *demuxer)
 {
+#if PARSE_ON_ADD
+    ds_clear_parser(demuxer->video);
+    ds_clear_parser(demuxer->audio);
+    ds_clear_parser(demuxer->sub);
+#endif
     ds_free_packs(demuxer->video);
     ds_free_packs(demuxer->audio);
     ds_free_packs(demuxer->sub);
@@ -1432,41 +1442,45 @@ int demuxer_switch_video(demuxer_t *demuxer, int index)
 }
 
 int demuxer_add_attachment(demuxer_t *demuxer, const char *name,
-                           const char *type, const void *data, size_t size)
+                           int name_maxlen, const char *type, int type_maxlen,
+                           const void *data, size_t size)
 {
-    if (!(demuxer->num_attachments & 31))
-        demuxer->attachments = realloc(demuxer->attachments,
-                (demuxer->num_attachments + 32) * sizeof(demux_attachment_t));
+    if (!(demuxer->num_attachments % 32))
+        demuxer->attachments = talloc_realloc(demuxer, demuxer->attachments,
+                                              struct demux_attachment,
+                                              demuxer->num_attachments + 32);
 
-    demuxer->attachments[demuxer->num_attachments].name = strdup(name);
-    demuxer->attachments[demuxer->num_attachments].type = strdup(type);
-    demuxer->attachments[demuxer->num_attachments].data = malloc(size);
-    memcpy(demuxer->attachments[demuxer->num_attachments].data, data, size);
-    demuxer->attachments[demuxer->num_attachments].data_size = size;
+    struct demux_attachment *att =
+        demuxer->attachments + demuxer->num_attachments;
+    att->name = talloc_strndup(demuxer->attachments, name, name_maxlen);
+    att->type = talloc_strndup(demuxer->attachments, type, type_maxlen);
+    att->data = talloc_size(demuxer->attachments, size);
+    memcpy(att->data, data, size);
+    att->data_size = size;
 
     return demuxer->num_attachments++;
 }
 
-int demuxer_add_chapter(demuxer_t *demuxer, const char *name, uint64_t start,
-                        uint64_t end)
+int demuxer_add_chapter(demuxer_t *demuxer, const char *name, int name_maxlen,
+                        uint64_t start, uint64_t end)
 {
-    if (demuxer->chapters == NULL)
-        demuxer->chapters = malloc(32 * sizeof(*demuxer->chapters));
-    else if (!(demuxer->num_chapters % 32))
-        demuxer->chapters = realloc(demuxer->chapters,
-                                    (demuxer->num_chapters + 32) *
-                                        sizeof(*demuxer->chapters));
+    if (!(demuxer->num_chapters % 32))
+        demuxer->chapters = talloc_realloc(demuxer, demuxer->chapters,
+                                           struct demux_chapter,
+                                           demuxer->num_chapters + 32);
 
     demuxer->chapters[demuxer->num_chapters].start = start;
     demuxer->chapters[demuxer->num_chapters].end = end;
-    demuxer->chapters[demuxer->num_chapters].name = strdup(name ? name : mp_gtext("unknown"));
+    demuxer->chapters[demuxer->num_chapters].name = name ?
+        talloc_strndup(demuxer->chapters, name, name_maxlen) :
+        talloc_strdup(demuxer->chapters, mp_gtext("unknown"));
 
     mp_msg(MSGT_IDENTIFY, MSGL_INFO, "ID_CHAPTER_ID=%d\n", demuxer->num_chapters);
     mp_msg(MSGT_IDENTIFY, MSGL_INFO, "ID_CHAPTER_%d_START=%"PRIu64"\n", demuxer->num_chapters, start);
     if (end)
         mp_msg(MSGT_IDENTIFY, MSGL_INFO, "ID_CHAPTER_%d_END=%"PRIu64"\n", demuxer->num_chapters, end);
     if (name)
-        mp_msg(MSGT_IDENTIFY, MSGL_INFO, "ID_CHAPTER_%d_NAME=%s\n", demuxer->num_chapters, name);
+        mp_msg(MSGT_IDENTIFY, MSGL_INFO, "ID_CHAPTER_%d_NAME=%.*s\n", demuxer->num_chapters, name_maxlen, name);
 
     return demuxer->num_chapters++;
 }

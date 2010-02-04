@@ -1,5 +1,5 @@
 .\" $Revision$
-.\" MPlayer (C) 2000-2009 MPlayer Team
+.\" MPlayer (C) 2000-2010 MPlayer Team
 .\" This man page was/is done by Gabucino, Diego Biurrun, Jonas Jermann
 .
 .\" --------------------------------------------------------------------------
@@ -2072,7 +2072,6 @@ Also see \-vf expand.
 Turn on SSA/ASS subtitle rendering.
 With this option, libass will be used for SSA/ASS
 external subtitles and Matroska tracks.
-You may also want to use \-embeddedfonts.
 .br
 .I NOTE:
 Unlike normal OSD, libass uses fontconfig by default. To disable it, use
@@ -2197,15 +2196,10 @@ Dumps the subtitle substream from VOB streams.
 Also see the \-dump*sub and \-vobsubout* options.
 .
 .TP
-.B \-embeddedfonts (FreeType only)
-Enables extraction of Matroska embedded fonts (default: disabled).
+.B \-noembeddedfonts
+Disables use of fonts embedded in Matroska containers and ASS scripts (default: enabled).
 These fonts can be used for SSA/ASS subtitle
 rendering (\-ass option).
-Font files are created in the ~/.mplayer/\:fonts directory.
-.br
-.I NOTE:
-With FontConfig 2.4.2 or newer, embedded fonts are opened directly from memory,
-and this option is enabled by default.
 .
 .TP
 .B \-ffactor <number>
@@ -3864,13 +3858,23 @@ Speed depends more on GPU memory bandwidth than other methods.
 Select the color space for YUV to RGB conversion.
 .RSss
 .IPs 0
-Use the formula used normally by MPlayer (default)
+Use the formula used normally by MPlayer (default).
 .IPs 1
 Use ITU-R BT.601 color space.
 .IPs 2
 Use ITU-R BT.709 color space.
 .IPs 3
 Use SMPTE-240M color space.
+.RE
+.IPs levelconv=<n>
+Select the brightness level conversion to use for the YUV to RGB conversion
+.RSss
+.IPs 0
+Convert TV to PC levels (default).
+.IPs 1
+Convert PC to TV levels.
+.IPs 2
+Do not do any conversion.
 .RE
 .IPs lscale=<n>
 Select the scaling function to use for luminance scaling.
@@ -5738,7 +5742,7 @@ Position of the cropped picture, defaults to center.
 .PD 1
 .
 .TP
-.B cropdetect[=limit:round]
+.B cropdetect[=limit:round[:reset]]
 Calculates necessary cropping parameters and prints the recommended parameters
 to stdout.
 .PD 0
@@ -5752,6 +5756,13 @@ Value which the width/\:height should be divisible by (default: 16).
 The offset is automatically adjusted to center the video.
 Use 2 to get only even dimensions (needed for 4:2:2 video).
 16 is best when encoding to most video codecs.
+.br
+.IPs <reset>
+Counter that determines after how many frames cropdetect will reset
+the previously detected largest video area and start over to detect
+the current optimal crop area.  This can be useful when channel
+logos distort the video area.  0 indicates never reset and return
+the largest area encountered during playback. (default: 0).
 .RE
 .PD 1
 .

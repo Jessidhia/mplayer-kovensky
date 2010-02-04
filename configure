@@ -167,7 +167,7 @@ alpha() {
 
 arm() {
   case "$host_arch" in
-    arm) return 0;;
+    arm*) return 0;;
     *) return 1;;
   esac
 }
@@ -321,7 +321,7 @@ Codecs:
   --enable-libdca           enable libdca support [autodetect]
   --disable-mp3lib          disable builtin mp3lib [autodetect]
   --disable-liba52          disable liba52 [autodetect]
-  --disable-liba52-internal disable builtin liba52 [autodetect]
+  --enable-liba52-internal  enable builtin liba52 [disabled]
   --disable-libmpeg2        disable builtin libmpeg2 [autodetect]
   --disable-musepack        disable musepack support [autodetect]
 
@@ -487,6 +487,7 @@ _sse2=auto
 _ssse3=auto
 _cmov=auto
 _fast_cmov=auto
+_fast_clz=auto
 _armv5te=auto
 _armv6=auto
 _armv6t2=auto
@@ -576,7 +577,7 @@ _speex=auto
 _theora=auto
 _mp3lib=auto
 _liba52=auto
-_liba52_internal=auto
+_liba52_internal=no
 _libdca=auto
 _libmpeg2=auto
 _faad=auto
@@ -1225,6 +1226,8 @@ for ac_option do
   --disable-cmov) _cmov=no ;;
   --enable-fast-cmov) _fast_cmov=yes ;;
   --disable-fast-cmov) _fast_cmov=no ;;
+  --enable-fast-clz) _fast_clz=yes ;;
+  --disable-fast-clz) _fast_clz=no ;;
   --enable-altivec) _altivec=yes ;;
   --disable-altivec) _altivec=no ;;
   --enable-armv5te) _armv5te=yes ;;
@@ -1385,6 +1388,7 @@ fi
 
 if win32 ; then
   _exesuf=".exe"
+  extra_cflags="$extra_cflags -fno-common"
   # -lwinmm is always needed for osdep/timer-win2.c
   extra_ldflags="$extra_ldflags -lwinmm"
   _pe_executable=yes
@@ -1467,7 +1471,7 @@ if test "$(basename $_cc)" = "icc" || test "$(basename $_cc)" = "ecc"; then
   esac
   echores "$cc_version"
 else
-  for _cc in "$_cc" cc gcc ; do
+  for _cc in "$_cc" gcc cc ; do
     cc_name_tmp=$($_cc -v 2>&1 | tail -n 1 | cut -d ' ' -f 1)
     if test "$cc_name_tmp" = "gcc"; then
     cc_name=$cc_name_tmp
@@ -1486,6 +1490,15 @@ else
     esac
     echores "$cc_version"
     break
+    fi
+    cc_name_tmp=$($_cc -V 2>&1 | head -n 1 | cut -d ' ' -f 2,3)
+    if test "$cc_name_tmp" = "Sun C"; then
+      echocheck "$_cc version"
+      cc_vendor=sun
+      cc_version=$($_cc -V 2>&1 | head -n 1 | cut -d ' ' -f 4)
+      _res_comment="experimental support only"
+      echores "Sun C $cc_version"
+      break
     fi
   done
 fi # icc
@@ -1548,9 +1561,10 @@ if test "$_runtime_cpudetection" = no ; then
 if test -r /proc/cpuinfo && ! cygwin; then
   # Linux with /proc mounted, extract CPU information from it
   _cpuinfo="cat /proc/cpuinfo"
-elif test -r /compat/linux/proc/cpuinfo && ! x86_32 ; then
+elif test -r /compat/linux/proc/cpuinfo && ! x86 ; then
   # FreeBSD with Linux emulation /proc mounted,
   # extract CPU information from it
+  # Don't use it on x86 though, it never reports 3Dnow
   _cpuinfo="cat /compat/linux/proc/cpuinfo"
 elif darwin && ! x86 ; then
   # use hostinfo on Darwin
@@ -1704,7 +1718,9 @@ case "$host_arch" in
         proc=k8
         ;;
 
-    *) proc=k8 iproc=686 ;;
+    *) proc=amdfam10 iproc=686
+        test $_fast_clz = "auto" && _fast_clz=yes
+        ;;
     esac
     ;;
   GenuineIntel)
@@ -1730,6 +1746,7 @@ case "$host_arch" in
         else
             proc=i686
         fi
+        test $_fast_clz = "auto" && _fast_clz=yes
         ;;
     15) iproc=686
         # A nocona in 32-bit mode has no more capabilities than a prescott.
@@ -1737,6 +1754,7 @@ case "$host_arch" in
             proc=prescott
         else
             proc=pentium4
+            test $_fast_clz = "auto" && _fast_clz=yes
         fi
         test $_fast_cmov = "auto" && _fast_cmov=no
         ;;
@@ -1775,6 +1793,7 @@ case "$host_arch" in
   *)
     proc=i586 iproc=586 ;;
   esac
+  test $_fast_clz = "auto" && _fast_clz=no
   fi # test "$_runtime_cpudetection" = no
 
 
@@ -1886,6 +1905,7 @@ EOF
     else
         _fast_cmov="no"
     fi
+    test $_fast_clz = "auto" && _fast_clz=yes
 
     echores "$proc"
     ;;
@@ -1911,11 +1931,16 @@ EOF
     else
         cpuopt=-mcpu
     fi
-    test $_fast_cmov = "auto" && _fast_cmov=yes
     if test "$_runtime_cpudetection" = no ; then
       case "$pvendor" in
       AuthenticAMD)
-        proc=k8;;
+        case "$pfamily" in
+        15) proc=k8
+          test $_fast_clz = "auto" && _fast_clz=no
+          ;;
+        *) proc=amdfam10;;
+        esac
+        ;;
       GenuineIntel)
         case "$pfamily" in
         6) proc=core2;;
@@ -1923,6 +1948,8 @@ EOF
           # 64-bit prescotts exist, but as far as GCC is concerned they
           # have the same capabilities as a nocona.
           proc=nocona
+          test $_fast_cmov = "auto" && _fast_cmov=no
+          test $_fast_clz = "auto" && _fast_clz=no
           ;;
         esac
         ;;
@@ -1950,6 +1977,9 @@ EOF
       fi
       # --- Intel processors ---
       if test "$proc" = "core2"; then
+        cc_check -march=$proc $cpuopt=$proc || proc=x86-64
+      fi
+      if test "$proc" = "x86-64"; then
         cc_check -march=$proc $cpuopt=$proc || proc=nocona
       fi
       if test "$proc" = "nocona"; then
@@ -1975,7 +2005,9 @@ EOF
       cc_check $_march $_mcpu || _march=""
     fi
 
-    _optimizing=""
+    _optimizing="$proc"
+    test $_fast_cmov = "auto" && _fast_cmov=yes
+    test $_fast_clz = "auto" && _fast_clz=yes
 
     echores "$proc"
     ;;
@@ -2008,7 +2040,7 @@ EOF
     _optimizing="$proc"
     ;;
 
-  arm|armv4l|armv5tel)
+  arm*)
     _arch='ARM'
     _target_arch='ARCH_ARM = yes'
     iproc='arm'
@@ -2019,6 +2051,7 @@ EOF
     _target_arch='ARCH_AVR32 = yes'
     def_fast_unaligned='#define HAVE_FAST_UNALIGNED 1'
     iproc='avr32'
+    test $_fast_clz = "auto" && _fast_clz=yes
     ;;
 
   sh|sh4)
@@ -2139,6 +2172,8 @@ EOF
         echores "none"
     fi
 
+    test $_fast_clz = "auto" && _fast_clz=yes
+
     ;;
 
   alpha*)
@@ -2180,6 +2215,8 @@ EOF
     _mcpu="-mcpu=$proc"
     echores "$proc"
 
+    test $_fast_clz = "auto" && _fast_clz=yes
+
     _optimizing="$proc"
     ;;
 
@@ -2205,6 +2242,8 @@ EOF
         fi
         echores "$proc"
     fi
+
+    test $_fast_clz = "auto" && _fast_clz=yes
 
     ;;
 
@@ -2315,7 +2354,8 @@ echocheck "assembler support of -pipe option"
 cat > $TMPC << EOF
 int main(void) { return 0; }
 EOF
-cc_check -pipe && _pipe="-pipe" && echores "yes" || echores "no"
+# -I. helps to detect compilers that just misunderstand -pipe like Sun C
+cc_check -pipe -I. && _pipe="-pipe" && echores "yes" || echores "no"
 
 
 echocheck "compiler support of named assembler arguments"
@@ -2356,6 +2396,8 @@ if test "$_profile" != "" || test "$_debug" != "" ; then
 elif test -z "$CFLAGS" ; then
   if test "$cc_vendor" = "intel" ; then
     CFLAGS="-O2 $_march $_mcpu $_pipe -fomit-frame-pointer -wd167 -wd556 -wd144"
+  elif test "$cc_vendor" = "sun" ; then
+    CFLAGS="-O2 $_march $_mcpu $_pipe -xc99 -xregs=frameptr"
   elif test "$cc_vendor" != "gnu" ; then
     CFLAGS="-O2 $_march $_mcpu $_pipe"
   else
@@ -2636,6 +2678,8 @@ EOF
   fi
   echores "$_armv5te"
 
+  test $_armv5te = "yes" && test $_fast_clz = "auto" && _fast_clz=yes
+
   echocheck "ARMv6 (SIMD instructions)"
   if test $_armv6 = "auto" ; then
     cat > $TMPC << EOF
@@ -2687,7 +2731,7 @@ EOF
   echores "$_iwmmxt"
 fi
 
-_cpuexts_all='ALTIVEC MMX MMX2 AMD3DNOW AMD3DNOWEXT SSE SSE2 SSSE3 FAST_CMOV CMOV PLD ARMV5TE ARMV6 ARMV6T2 ARMVFP NEON IWMMXT MMI VIS MVI'
+_cpuexts_all='ALTIVEC MMX MMX2 AMD3DNOW AMD3DNOWEXT SSE SSE2 SSSE3 FAST_CMOV CMOV FAST_CLZ PLD ARMV5TE ARMV6 ARMV6T2 ARMVFP NEON IWMMXT MMI VIS MVI'
 test "$_altivec"   = yes && _cpuexts="ALTIVEC $_cpuexts"
 test "$_mmx"       = yes && _cpuexts="MMX $_cpuexts"
 test "$_mmxext"    = yes && _cpuexts="MMX2 $_cpuexts"
@@ -2698,6 +2742,7 @@ test "$_sse2"      = yes && _cpuexts="SSE2 $_cpuexts"
 test "$_ssse3"     = yes && _cpuexts="SSSE3 $_cpuexts"
 test "$_cmov"      = yes && _cpuexts="CMOV $_cpuexts"
 test "$_fast_cmov" = yes && _cpuexts="FAST_CMOV $_cpuexts"
+test "$_fast_clz"  = yes && _cpuexts="FAST_CLZ $_cpuexts"
 test "$pld"        = yes && _cpuexts="PLD $_cpuexts"
 test "$_armv5te"   = yes && _cpuexts="ARMV5TE $_cpuexts"
 test "$_armv6"     = yes && _cpuexts="ARMV6 $_cpuexts"
@@ -2905,7 +2950,7 @@ if test "$_posix4" = yes ; then
 fi
 echores "$_posix4"
 
-for func in llrint log2 lrint lrintf round roundf truncf; do
+for func in exp2 exp2f llrint log2 log2f lrint lrintf round roundf truncf; do
 echocheck $func
 cat > $TMPC << EOF
 #include <math.h>
@@ -3011,7 +3056,7 @@ for _ld_tmp in "$_ld_sock" "$_ld_sock -lresolv" ; do
   cc_check $_ld_tmp && inet_pton=yes && break
 done
 if test $inet_pton = yes ; then
-  test $_ld_tmp && _res_comment="using $_ld_tmp"
+  test "$_ld_tmp" && _res_comment="using $_ld_tmp"
   def_inet_pton='#define HAVE_INET_PTON 1'
 fi
 echores "$inet_pton"
@@ -3030,7 +3075,7 @@ for _ld_tmp in "$_ld_sock" "$_ld_sock -lresolv" ; do
   cc_check $_ld_tmp && inet_aton=yes && break
 done
 if test $inet_aton = yes ; then
-  test $_ld_tmp && _res_comment="using $_ld_tmp"
+  test "$_ld_tmp" && _res_comment="using $_ld_tmp"
   def_inet_aton='#define HAVE_INET_ATON 1'
 fi
 echores "$inet_aton"
@@ -4137,7 +4182,7 @@ echocheck "X11 headers presence"
     fi
   done
   if test $_cross_compile = no; then
-    for I in /usr/X11/include /usr/X11R7/include /usr/X11R6/include \
+    for I in /usr/X11/include /usr/X11R7/include /usr/local/include /usr/X11R6/include \
              /usr/include/X11R6 /usr/openwin/include ; do
       if test -f "$I/X11/Xlib.h" ; then
         extra_cflags="$extra_cflags -I$I"
@@ -4157,8 +4202,8 @@ if test "$_x11" = auto && test "$_x11_headers" = yes ; then
 #include <X11/Xutil.h>
 int main(void) { (void) XCreateWindow(0,0,0,0,0,0,0,0,0,0,0,0); return 0; }
 EOF
-  for I in "" -L/usr/X11R7/lib -L/usr/X11R6/lib -L/usr/lib/X11R6 \
-           -L/usr/X11/lib -L/usr/lib32 -L/usr/openwin/lib -L/usr/X11R6/lib64 \
+  for I in "" -L/usr/X11R7/lib -L/usr/local/lib -L/usr/X11R6/lib -L/usr/lib/X11R6 \
+           -L/usr/X11/lib -L/usr/lib32 -L/usr/openwin/lib -L/usr/local/lib64 -L/usr/X11R6/lib64 \
            -L/usr/lib ; do
     if netbsd; then
       _ld_tmp="$I -lXext -lX11 $_ld_pthread -Wl,-R$(echo $I | sed s/^-L//)"
@@ -4826,15 +4871,14 @@ int main(void) {
 }
 EOF
   _gl=no
-  if cc_check -lGL $_ld_lm ; then
-    _gl=yes
-    _gl_x11=yes
-    libs_mplayer="$libs_mplayer -lGL $_ld_dl"
-  elif cc_check -lGL $_ld_lm $_ld_pthread ; then
-    _gl=yes
-    _gl_x11=yes
-    libs_mplayer="$libs_mplayer -lGL $_ld_pthread $_ld_dl"
-  fi
+  for _ld_tmp in -lGL "-lGL -lXdamage" "-lGL $_ld_pthread" ; do
+    if cc_check $_ld_tmp $_ld_lm ; then
+      _gl=yes
+      _gl_x11=yes
+      libs_mplayer="$libs_mplayer $_ld_tmp $_ld_dl"
+      break
+    fi
+  done
   if cc_check -DGL_WIN32 -lopengl32 ; then
     _gl=yes
     _gl_win32=yes
@@ -5120,7 +5164,7 @@ int main(int argc, char *argv[]) {
 }
 EOF
   _sdl=no
-  for _ld_tmp in "-lSDL" "-lSDL -lpthread" "-lSDL -lwinmm -lgdi32" ; do
+  for _ld_tmp in "-lSDL" "-lSDL -lpthread" "-lSDL -lwinmm -lgdi32" "-lSDL -lwinmm -lgdi32 -ldxguid" ; do
     if cc_check -DCONFIG_SDL_SDL_H $_inc_tmp $_ld_tmp ; then
       _sdl=yes
       def_sdl_sdl_h="#define CONFIG_SDL_SDL_H 1"
@@ -5128,6 +5172,7 @@ EOF
     fi
   done
   if test "$_sdl" = no && "$_sdlconfig" --version >>"$TMPLOG" 2>&1 ; then
+    _res_comment="using $_sdlconfig"
     if cygwin ; then
       _inc_tmp="$($_sdlconfig --cflags | cut -d " " -f 1,5,6 | sed s/no-cygwin/cygwin/)"
       _ld_tmp="$($_sdlconfig --libs | cut -d " " -f 1,4,6 | sed s/no-cygwin/cygwin/)"
@@ -5157,7 +5202,6 @@ if test "$_sdl" = yes ; then
   libs_mplayer="$libs_mplayer $_ld_tmp"
   _vomodules="sdl $_vomodules"
   _aomodules="sdl $_aomodules"
-  _res_comment="using $_sdlconfig"
 else
   def_sdl='#undef CONFIG_SDL'
   _novomodules="sdl $_novomodules"
@@ -6542,7 +6586,7 @@ if test "$_libdca" = auto ; then
 #include <dts.h>
 int main(void) { dts_init(0); return 0; }
 EOF
-  for _ld_dca in -ldts -ldca ; do
+  for _ld_dca in -ldca -ldts ; do
     cc_check $_ld_dca $_ld_lm && extra_ldflags="$extra_ldflags $_ld_dca" \
       && _libdca=yes && break
   done
@@ -7641,6 +7685,14 @@ else
   echores "no"
 fi
 
+echocheck "linker support for --nxcompat --no-seh --dynamicbase"
+if cc_check "-Wl,--nxcompat -Wl,--no-seh -Wl,--dynamicbase" ; then
+  extra_ldflags="-Wl,--nxcompat -Wl,--no-seh -Wl,--dynamicbase $extra_ldflags"
+  echores "yes"
+else
+  echores "no"
+fi
+
 
 # Dynamic linking flags
 # (FIXME: 'echocheck "dynamic linking"' above and modify here accordingly)
@@ -8173,12 +8225,15 @@ $def_winsock2_h
 
 
 /* system functions */
+$def_exp2
+$def_exp2f
 $def_gethostbyname2
 $def_gettimeofday
 $def_glob
 $def_langinfo
 $def_llrint
 $def_log2
+$def_log2f
 $def_lrint
 $def_lrintf
 $def_map_memalign
@@ -8500,10 +8555,11 @@ $def_yasm
 
 #define HAVE_ATTRIBUTE_PACKED 1
 #define HAVE_GETHRTIME 0
-#define HAVE_INLINE_ASM 0
+#define HAVE_INLINE_ASM 1
 #define HAVE_LDBRX 0
 #define HAVE_POLL_H 1
 #define HAVE_PPC4XX 0
+#define HAVE_VFP_ARGS 1
 #define HAVE_VIRTUALALLOC 0
 
 /* Some FFmpeg codecs depend on these. Enable them unconditionally for now. */
