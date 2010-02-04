@@ -4909,19 +4909,6 @@ echores "$_gl"
 
 echocheck "MatrixView"
 if test "$_gl" = no ; then
-  _matrixview=no
-fi
-if test "$_matrixview" = yes ; then
-  _vomodules="matrixview $_vomodules"
-  def_matrixview='#define HAVE_MATRIXVIEW 1'
-else
-  _novomodules="matrixview $_novomodules"
-  def_matrixview='#undef HAVE_MATRIXVIEW'
-fi
-echores "$_matrixview"
-
-echocheck "MatrixView"
-if test "$_gl" = no ; then
   matrixview=no
 fi
 if test "$matrixview" = yes ; then

@@ -187,9 +187,6 @@ const struct vo_driver *video_out_drivers[] =
 #ifdef CONFIG_GL
         &video_out_gl,
         &video_out_gl2,
-#ifdef HAVE_MATRIXVIEW
-        &video_out_matrixview,
-#endif
 #endif
 #ifdef CONFIG_MATRIXVIEW
         &video_out_matrixview,
