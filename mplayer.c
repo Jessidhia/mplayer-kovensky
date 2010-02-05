@@ -3678,13 +3678,12 @@ if (mpctx->global_sub_size <= mpctx->global_sub_indices[SUB_SOURCE_DEMUX] + opts
   mpctx->global_sub_size = mpctx->global_sub_indices[SUB_SOURCE_DEMUX] + opts->sub_id + 1;
 
 #ifdef CONFIG_ASS
-if (opts->ass_enabled && ass_library) {
+if (opts->ass_enabled && ass_library && use_embedded_fonts) {
     for (int j = 0; j < mpctx->num_sources; j++) {
         struct demuxer *d = mpctx->sources[j].demuxer;
         for (int i = 0; i < d->num_attachments; i++) {
             struct demux_attachment *att = d->attachments + i;
-            if (use_embedded_fonts
-                && att->name && att->type && att->data && att->data_size
+            if (att->name && att->type && att->data && att->data_size
                 && (strcmp(att->type, "application/x-truetype-font") == 0
                     || strcmp(att->type, "application/x-font") == 0))
                 ass_add_font(ass_library, att->name, att->data, att->data_size);

@@ -379,11 +379,11 @@ void add_subtitles(char *filename, float fps, int silent)
 
     if (!asst && !subd && !silent)
 #else
-    if(!subd && !silent) 
+    if(!subd && !silent)
 #endif
         mp_msg(MSGT_CPLAYER, MSGL_ERR, MSGTR_CantLoadSub,
 		filename_recode(filename));
- 
+
 #ifdef CONFIG_ASS
     if (!asst && !subd) return;
     ass_track = asst;
@@ -894,7 +894,7 @@ default: {
       sh_video->vfilter=vf_open_filter(&opts, sh_video->vfilter,"expand",vf_args);
     }
 
- 
+
 #ifdef CONFIG_ASS
    if(opts.ass_enabled) {
      int i;
@@ -920,14 +920,13 @@ default: {
        mp_msg(MSGT_MENCODER, MSGL_WARN, "Warning: -ass implies -keep-pts, "
        "which may cause \"badly interleaved\" files.\n");
      }
- 
-     if (ass_library) {
-       for (i = 0; i < demuxer->num_attachments; ++i) {
-         demux_attachment_t* att = demuxer->attachments + i;
-         if (extract_embedded_fonts &&
-             att->name && att->type && att->data && att->data_size &&
-             (strcmp(att->type, "application/x-truetype-font") == 0 ||
-              strcmp(att->type, "application/x-font") == 0))
+
+     if (opts.ass_enabled && ass_library && use_embedded_fonts) {
+       for (int i = 0; i < demuxer->num_attachments; i++) {
+         struct demux_attachment *att = demuxer->attachments + i;
+         if (att->name && att->type && att->data && att->data_size
+             && (strcmp(att->type, "application/x-truetype-font") == 0
+                || strcmp(att->type, "application/x-font") == 0))
            ass_add_font(ass_library, att->name, att->data, att->data_size);
        }
      }
@@ -940,14 +939,14 @@ default: {
    if (opts.ass_enabled)
      ((vf_instance_t *)sh_video->vfilter)->control(sh_video->vfilter, VFCTRL_INIT_EOSD, ass_library);
 #endif
- 
+
  // after reading video params we should load subtitles because
  // we know fps so now we can adjust subtitles time to ~6 seconds AST
  // check .sub
  //  current_module="read_subtitles_file";
    if(sub_name && sub_name[0]){
-     for (i = 0; sub_name[i] != NULL; ++i) 
-         add_subtitles (sub_name[i], sh_video->fps, 0); 
+     for (i = 0; sub_name[i] != NULL; ++i)
+         add_subtitles (sub_name[i], sh_video->fps, 0);
    } else
    if(sub_auto && filename) { // auto load sub file ...
      char **tmp = NULL;
@@ -962,7 +961,7 @@ default: {
      }
      free(tmp);
    }
- 
+
 
     mp_msg(MSGT_CPLAYER,MSGL_INFO,"==========================================================================\n");
     init_best_video_codec(sh_video,video_codec_list,video_fm_list);
