@@ -24,6 +24,6 @@ static char* default_config=
 "vf=screenshot\n\n"
 
 "# Enable colored console output\n"
-"msgcolor=1\n"
+"#msgcolor=1\n"
 ;
 
