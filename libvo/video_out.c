@@ -42,7 +42,7 @@
 #ifdef CONFIG_X11
 #include "x11_common.h"
 #endif
-#ifdef GL_WIN32
+#ifdef CONFIG_GL_WIN32
 #include <windows.h>
 #endif
 
@@ -432,7 +432,7 @@ struct vo *init_best_video_out(struct MPOpts *opts, struct vo_x11_state *x11,
                 return NULL; // do NOT fallback to others
 	}
 
-#ifdef GL_WIN32
+#ifdef CONFIG_GL_WIN32
     OSVERSIONINFO winver;
     memset(&winver, 0, sizeof(OSVERSIONINFO));
     winver.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
