@@ -24,6 +24,7 @@ extern int ao_pcm_waveheader;
 
 extern int fs_layer;
 extern int stop_xscreensaver;
+extern int stop_screensaver;
 
 extern int menu_startup;
 extern int menu_keepdir;
@@ -198,6 +199,10 @@ const m_option_t mplayer_opts[]={
 	{"nostop-xscreensaver", &stop_xscreensaver, CONF_TYPE_FLAG, 0, 1, 0, NULL},
 	{"stop_xscreensaver", "Use -stop-xscreensaver instead, options with _ have been obsoleted.\n", CONF_TYPE_PRINT, 0, 0, 0, NULL},
 	{"fstype", &vo_fstype_list, CONF_TYPE_STRING_LIST, 0, 0, 0, NULL},
+#endif
+#ifdef _WIN32
+	{"stop-screensaver", &stop_screensaver, CONF_TYPE_FLAG, 0, 0, 1, NULL},
+	{"nostop-screensaver", &stop_screensaver, CONF_TYPE_FLAG, 0, 1, 0, NULL},
 #endif
 	{"heartbeat-cmd", &heartbeat_cmd, CONF_TYPE_STRING, 0, 0, 0, NULL},
 	{"mouseinput", &vo_nomouse_input, CONF_TYPE_FLAG, 0, 1, 0, NULL},

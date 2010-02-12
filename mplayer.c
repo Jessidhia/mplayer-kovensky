@@ -92,6 +92,7 @@ float start_volume = -1;
 
 #include "osdep/priority.h"
 
+int stop_screensaver=1;
 char *heartbeat_cmd;
 
 #define ROUND(x) ((int)((x)<0 ? (x)-0.5 : (x)+0.5))
@@ -4129,8 +4130,10 @@ if(!mpctx->sh_video) {
 	xscreensaver_heartbeat(mpctx->x11_state);
     }
 #elif _WIN32
-    current_module = "stop_screensaver";
-    SetThreadExecutionState(ES_DISPLAY_REQUIRED);
+    if (stop_screensaver) {
+        current_module = "stop_screensaver";
+        SetThreadExecutionState(ES_DISPLAY_REQUIRED);
+    }
 #endif
     if (heartbeat_cmd) {
         static unsigned last_heartbeat;
