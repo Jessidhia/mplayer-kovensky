@@ -30,6 +30,19 @@ static const vd_info_t info = {
 
 #include "libavcodec/avcodec.h"
 
+#if defined(__LINUX__) && defined(CONFIG_THREAD)
+#include <sched.h>
+#elif defined(__BEOS__)
+#include <kernel/OS.h>
+#elif defined(__MACH__) || defined(__APPLE__) || defined(__FreeBSD__) || defined(__FreeBSD_kernel__)
+#include <sys/types.h>
+#include <sys/sysctl.h>
+#elif defined(__OpenBSD__)
+#include <sys/param.h>
+#include <sys/sysctl.h>
+#include <machine/cpu.h>
+#endif
+
 #if AVPALETTE_SIZE > 1024
 #error palette too large, adapt libmpcodecs/vf.c:vf_get_image
 #endif
@@ -209,10 +222,9 @@ static int init(sh_video_t *sh){
     }
 
     if ( lavc_param->threads == 0 ) {
-#if __WIN32__
+#if defined(__WIN32__)
         lavc_param->threads = pthread_num_processors_np();
-#elif __LINUX__
-        /* Code stolen from x264 :) */
+#elif defined(__LINUX__)
         unsigned int bit;
         int np;
         cpu_set_t p_aff;
@@ -222,8 +234,25 @@ static int init(sh_video_t *sh){
             np += (((uint8_t *)&p_aff)[bit / 8] >> (bit % 8)) & 1;
 
         lavc_param->threads = np;
+#elif defined(__BEOS__)
+        system_info info;
+        get_system_info( &info );
+        lavc_param->threads = info.cpu_count;
+
+#elif defined(__MACH__) || defined(__APPLE__) || defined(__FreeBSD__) || defined(__FreeBSD_kernel__) || defined(__OpenBSD__)
+        int numberOfCPUs;
+        size_t length = sizeof( numberOfCPUs );
+#ifdef __OpenBSD__
+        int mib[2] = { CTL_HW, HW_NCPU };
+        if( sysctl(mib, 2, &numberOfCPUs, &length, NULL, 0) )
 #else
-        /* TODO: other platforms. For now, just make sure it doesn't break. */
+        if( sysctlbyname("hw.ncpu", &numberOfCPUs, &length, NULL, 0) )
+#endif
+        {
+             numberOfCPUs = 1;
+        }
+        lavc_param->threads = numberOfCPUs;
+#else /* No CPU detection routine available */
         lavc_param->threads = 1;
 #endif
     }
