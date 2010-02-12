@@ -35,7 +35,7 @@ void print_version(const char* name)
     /* Test for CPU capabilities (and corresponding OS support) for optimizing */
     GetCpuCaps(&gCpuCaps);
 #if ARCH_X86
-    mp_msg(MSGT_CPLAYER, MSGL_V,
+    mp_msg(MSGT_CPLAYER, MSGL_INFO,
 	   "CPUflags:  MMX: %d MMX2: %d 3DNow: %d 3DNowExt: %d SSE: %d SSE2: %d SSSE3: %d\n",
 	   gCpuCaps.hasMMX, gCpuCaps.hasMMX2,
 	   gCpuCaps.has3DNow, gCpuCaps.has3DNowExt,
