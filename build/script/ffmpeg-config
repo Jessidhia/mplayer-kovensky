@@ -16,21 +16,21 @@ def main():
 
     args = ['--prefix=%s/build_libs' % mydir,
             '--enable-gpl',
-            '--cpu=native',
+            '--cpu=host',
             '--disable-debug',
             '--enable-pthreads',
             '--disable-shared', '--enable-static',
             '--enable-postproc',
-            '--disable-devices', '--disable-protocols', '--disable-ffmpeg',
+            '--disable-devices', '--disable-ffmpeg',
             '--disable-ffplay', '--disable-ffserver',
-	    '--disable-vaapi']
+            '--disable-vaapi']
 
     if os.path.exists('ffmpeg-mt-enabled'):
         ffmpeg_dir = 'ffmpeg-mt'
     else:
         ffmpeg_dir = 'ffmpeg'
     executable = path.join(mydir, ffmpeg_dir, 'configure')
-    
+
     os.chdir('ffmpeg_build')
     check_call(['sh', executable] + args + extra_args)
 
