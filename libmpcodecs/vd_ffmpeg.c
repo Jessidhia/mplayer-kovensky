@@ -208,6 +208,34 @@ static int init(sh_video_t *sh){
         avctx->slice_flags = SLICE_FLAG_CODED_ORDER|SLICE_FLAG_ALLOW_FIELD;
     }
 
+    if ( lavc_param->threads == 0 ) {
+#if __WIN32__
+        lavc_param->threads = pthread_num_processors_np();
+#elif __LINUX__
+        /* Code stolen from x264 :) */
+        unsigned int bit;
+        int np;
+        cpu_set_t p_aff;
+        memset( &p_aff, 0, sizeof(p_aff) );
+        sched_getaffinity( 0, sizeof(p_aff), &p_aff );
+        for( np = 0, bit = 0; bit < sizeof(p_aff); bit++ )
+            np += (((uint8_t *)&p_aff)[bit / 8] >> (bit % 8)) & 1;
+
+        lavc_param->threads = np;
+#else
+        /* TODO: other platforms. For now, just make sure it doesn't break. */
+        lavc_param->threads = 1;
+#endif
+    }
+
+    if ( lavc_codec->id == CODEC_ID_MPEG4 ) { /* Run away from packed b-frames (It is now blocked by ffmpeg-mt itself but show the warning anyway) */
+        mp_msg(MSGT_DECVIDEO, MSGL_WARN, "Multithreading is broken on MPEG-4 ASP, forcing only 1 thread.\n");
+        lavc_param->threads = 1;
+    } else {
+        mp_msg(MSGT_DECVIDEO, MSGL_INFO, "Using %d decoding thread%s.\n",
+                        lavc_param->threads, lavc_param->threads == 1 ? "" : "s");
+    }
+
     /* Our get_buffer and draw_horiz_band callbacks are not safe to call
      * from other threads. */
     if (lavc_param->threads > 1) {
@@ -348,37 +376,6 @@ static int init(sh_video_t *sh){
     if(sh->bih)
         avctx->bits_per_coded_sample= sh->bih->biBitCount;
 
-    if ( lavc_param->threads == 0 ) {
-#if __WIN32__
-        lavc_param->threads = pthread_num_processors_np();
-#elif __LINUX__
-        /* Code stolen from x264 :) */
-        unsigned int bit;
-        int np;
-        cpu_set_t p_aff;
-        memset( &p_aff, 0, sizeof(p_aff) );
-        sched_getaffinity( 0, sizeof(p_aff), &p_aff );
-        for( np = 0, bit = 0; bit < sizeof(p_aff); bit++ )
-            np += (((uint8_t *)&p_aff)[bit / 8] >> (bit % 8)) & 1;
-
-        lavc_param->threads = np;
-#else
-        /* TODO: other platforms. For now, just make sure it doesn't break. */
-        lavc_param->threads = 1;
-#endif
-    }
-
-    if ( lavc_codec->id == CODEC_ID_MPEG4 ) { /* Run away from packed b-frames (It is now blocked by ffmpeg-mt itself but show the warning anyway) */
-        mp_msg(MSGT_DECVIDEO, MSGL_WARN, "Multithreading is broken on MPEG-4 ASP, spawning only 1 thread...\n");
-        lavc_param->threads = 1;
-    } else if ( lavc_codec->id == CODEC_ID_MPEG2VIDEO || lavc_codec->id == CODEC_ID_MPEG1VIDEO ) {
-        mp_msg(MSGT_DECVIDEO, MSGL_WARN, "Multithreading gives corrupt video on MPEG-2 ASP, spawning only 1 thread...\n");
-        lavc_param->threads = 1;
-    } else {
-        mp_msg(MSGT_DECVIDEO, MSGL_INFO, "Spawning %d decoding thread%s...\n",
-                        lavc_param->threads, lavc_param->threads == 1 ? "" : "s");
-    }
-	
     if(lavc_param->threads > 1) {
         avcodec_thread_init(avctx, lavc_param->threads);
 	    mp_msg(MSGT_DECVIDEO, MSGL_WARN, "WARNING: Multithreading is experimental and may break in weird ways.\n");
