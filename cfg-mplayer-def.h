@@ -6,6 +6,8 @@ static char* default_config=
 "ass=1\n"
 "font=Arial\n\n"
 
+"prefer-ipv4=1\n\n"
+
 "# vo=directx is the default for pre-Vista OSes\n"
 "# vo=gl:yuv=2 is the default for Vista+\n\n"
 
