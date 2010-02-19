@@ -260,9 +260,6 @@ static int init(sh_video_t *sh){
     if ( lavc_codec->id == CODEC_ID_MPEG1VIDEO ) { /* Blocked on ffmpeg-mt itself */
         mp_msg(MSGT_DECVIDEO, MSGL_WARN, "Multithreading is broken on MPEG-1, forcing only 1 thread.\n");
         lavc_param->threads = 1;
-    } else {
-        mp_msg(MSGT_DECVIDEO, MSGL_INFO, "Using %d decoding thread%s.\n",
-                        lavc_param->threads, lavc_param->threads == 1 ? "" : "s");
     }
 
     /* Our get_buffer and draw_horiz_band callbacks are not safe to call
@@ -404,6 +401,9 @@ static int init(sh_video_t *sh){
 
     if(sh->bih)
         avctx->bits_per_coded_sample= sh->bih->biBitCount;
+
+    mp_msg(MSGT_DECVIDEO, MSGL_INFO, "Using %d decoding thread%s.\n",
+                    lavc_param->threads, lavc_param->threads == 1 ? "" : "s");
 
     if(lavc_param->threads > 1) {
         avcodec_thread_init(avctx, lavc_param->threads);
