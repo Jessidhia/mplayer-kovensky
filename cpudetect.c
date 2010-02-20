@@ -143,9 +143,9 @@ void GetCpuCaps( CpuCaps *caps)
 		ptmpstr=tmpstr=GetCpuFriendlyName(regs, regs2);
 		while(*ptmpstr == ' ')        // strip leading spaces
 		    ptmpstr++;
-		mp_msg(MSGT_CPUDETECT,MSGL_V,"CPU: %s ", ptmpstr);
+		mp_msg(MSGT_CPUDETECT,MSGL_INFO,"CPU: %s ", ptmpstr);
 		free(tmpstr);
-		mp_msg(MSGT_CPUDETECT,MSGL_V,"(Family: %d, Model: %d, Stepping: %d)\n",
+		mp_msg(MSGT_CPUDETECT,MSGL_INFO,"(Family: %d, Model: %d, Stepping: %d)\n",
 		    caps->cpuType, caps->cpuModel, caps->cpuStepping);
 
 	}
