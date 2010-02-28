@@ -87,7 +87,7 @@ const int under_mencoder = 0;
 int slave_mode=0;
 int player_idle_mode=0;
 int quiet=0;
-int enable_mouse_movements=0;
+int enable_mouse_movements=1;
 float start_volume = -1;
 
 #include "osdep/priority.h"
