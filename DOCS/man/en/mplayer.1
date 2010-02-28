@@ -3256,6 +3256,11 @@ If your screensaver supports neither the XSS nor XResetScreenSaver
 API please use \-heartbeat\-cmd instead.
 .
 .TP
+.B \-stop\-screensaver (Windows only)
+Disables the windows screensaver by repeatedly resetting the timeout
+during playback.
+.
+.TP
 .B \-title (also see \-use\-filename\-title)
 Set the window title.
 Supported by X11-based video output drivers.
@@ -4674,6 +4679,8 @@ Enable optimizations which do not comply to the specification and might
 potentially cause problems, like simpler dequantization, simpler motion
 compensation, assuming use of the default quantization matrix, assuming
 YUV 4:2:0 and skipping a few checks to detect damaged bitstreams.
+.IPs "h264fast"
+Like '\-lavdopts fast', but only on H.264 video.
 .IPs "gray\ "
 grayscale only decoding (a bit faster than with color)
 .IPs "idct=<0\-99> (see \-lavcopts)"
