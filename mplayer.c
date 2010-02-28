@@ -8,7 +8,7 @@
 #include "config.h"
 #include "talloc.h"
 
-#if _WIN32
+#ifdef _WIN32
 #define _UWIN 1  /*disable Non-underscored versions of non-ANSI functions as otherwise int eof would conflict with eof()*/
 #define _WIN32_WINNT 0x0500 /* enable SetThreadExecutionState for disabling screensaver. Breaks binary compatibility with pre-win2000. */
 #include <windows.h>
@@ -4129,7 +4129,7 @@ if(!mpctx->sh_video) {
 	current_module = "stop_xscreensaver";
 	xscreensaver_heartbeat(mpctx->x11_state);
     }
-#elif _WIN32
+#elif defined(_WIN32)
     if (stop_screensaver) {
         current_module = "stop_screensaver";
         SetThreadExecutionState(ES_DISPLAY_REQUIRED);
