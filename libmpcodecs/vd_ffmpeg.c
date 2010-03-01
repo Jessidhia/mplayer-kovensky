@@ -30,7 +30,7 @@ static const vd_info_t info = {
 
 #include "libavcodec/avcodec.h"
 
-#if defined(__LINUX__) && defined(CONFIG_THREAD)
+#if defined(__linux__) && defined(HAVE_PTHREADS)
 #include <sched.h>
 #elif defined(__BEOS__)
 #include <kernel/OS.h>
@@ -222,9 +222,9 @@ static int init(sh_video_t *sh){
     }
 
     if ( lavc_param->threads == 0 ) {
-#if defined(__WIN32__)
+#if defined(_WIN32)
         lavc_param->threads = pthread_num_processors_np();
-#elif defined(__LINUX__)
+#elif defined(__linux__)
         unsigned int bit;
         int np;
         cpu_set_t p_aff;
