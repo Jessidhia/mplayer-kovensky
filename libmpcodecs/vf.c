@@ -101,7 +101,6 @@ extern const vf_info_t vf_info_blackframe;
 extern const vf_info_t vf_info_geq;
 extern const vf_info_t vf_info_ow;
 extern const vf_info_t vf_info_tcdump;
-extern const vf_info_t vf_info_fixpts;
 
 // list of available filters:
 static const vf_info_t* const filter_list[]={
@@ -204,7 +203,6 @@ static const vf_info_t* const filter_list[]={
     &vf_info_blackframe,
     &vf_info_ow,
     &vf_info_tcdump,
-    &vf_info_fixpts,
     NULL
 };
 

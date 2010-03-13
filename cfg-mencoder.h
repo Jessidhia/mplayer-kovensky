@@ -214,9 +214,6 @@ const m_option_t mencoder_opts[]={
 	{"odml", &write_odml, CONF_TYPE_FLAG, CONF_GLOBAL, 0, 1, NULL},
 	{"noodml", &write_odml, CONF_TYPE_FLAG, CONF_GLOBAL, 1, 0, NULL},
 
-	{"keep-pts", &keep_pts, CONF_TYPE_FLAG, 0, 0, 1, NULL},
-	{"nokeep-pts", &keep_pts, CONF_TYPE_FLAG, 0, 1, 0, NULL},
-
 	// info header strings
 	{"info", (void *) info_conf, CONF_TYPE_SUBCONFIG, CONF_GLOBAL, 0, 0, NULL},
 

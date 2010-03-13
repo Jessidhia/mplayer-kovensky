@@ -7480,48 +7480,6 @@ to the filter chain, and will not work with this filter. If none is given,
 the default filename is "timecodesv2.txt".
 .RE
 .
-.TP
-.B fixpts[=options]
-Fixes the presentation timestamps (PTS) of the frames.
-By default, the PTS passed to the next filter is dropped, but the following
-options can change that:
-.RSs
-.IPs print
-Print the incoming PTS.
-.IPs fps=<fps>
-Specify a frame per second value.
-.IPs start=<pts>
-Specify an initial value for the PTS.
-.IPs autostart=<n>
-Uses the 
-.IR n th
-incoming PTS as the initial PTS.
-All previous pts are kept, so setting a huge value or \-1 keeps the PTS
-intact.
-.IPs autofps=<n>
-Uses the 
-.IR n th
-incoming PTS after the end of autostart to determine the framerate.
-.RE
-.sp 1
-.RS
-.I EXAMPLE:
-.RE
-.PD 0
-.RSs
-.IPs "\-vf fixpts=fps=24000/1001,ass,fixpts"
-Generates a new sequence of PTS, uses it for ASS subtitles, then drops it.
-Generating a new sequence is useful when the timestamps are reset during the
-program; this is frequent on DVDs.
-Dropping it may be necessary to avoid confusing encoders.
-.RE
-.PD 1
-.sp 1
-.RS
-.I NOTE:
-Using this filter together with any sort of seeking (including -ss and EDLs)
-may make demons fly out of your nose.
-.RE
 .
 .SH "GENERAL ENCODING OPTIONS (MENCODER ONLY)"
 .
@@ -7641,14 +7599,6 @@ Currently the only such filter is harddup.
 .TP
 .B \-noodml (\-of avi only)
 Do not write OpenDML index for AVI files >1GB.
-.
-.TP
-.B \-keep\-pts
-Send the original presentation timestamp (PTS) down the filter and encoder
-chain.
-This may cause incorrect output ("badly interleaved") if the original PTS
-are wrong or the framerate is changed, but can be necessary for certain
-filters (such as ASS).
 .
 .TP
 .B \-noskip
