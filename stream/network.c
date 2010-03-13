@@ -1,7 +1,23 @@
 /*
  * Network layer for MPlayer
- * by Bertrand BAUDET <bertrand_baudet@yahoo.com>
- * (C) 2001, MPlayer team.
+ *
+ * Copyright (C) 2001 Bertrand Baudet <bertrand_baudet@yahoo.com>
+ *
+ * This file is part of MPlayer.
+ *
+ * MPlayer is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * MPlayer is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with MPlayer; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 //#define DUMP2FILE
@@ -17,7 +33,6 @@
 #include "config.h"
 
 #include "mp_msg.h"
-#include "help_mp.h"
 
 #if HAVE_WINSOCK2_H
 #include <winsock2.h>
@@ -52,6 +67,15 @@ int   network_ipv4_only_proxy = 0;
 
 
 const mime_struct_t mime_type_table[] = {
+#ifdef CONFIG_LIBAVFORMAT
+	// Flash Video
+	{ "video/x-flv", DEMUXER_TYPE_LAVF_PREFERRED},
+	// do not force any demuxer in this case!
+	// we want the lavf demuxer to be tried first (happens automatically anyway),
+	// but for mov reference files to work we must also try
+	// the native demuxer if lavf fails.
+	{ "video/quicktime", 0 },
+#endif
 	// MP3 streaming, some MP3 streaming server answer with audio/mpeg
 	{ "audio/mpeg", DEMUXER_TYPE_AUDIO },
 	// MPEG streaming
@@ -85,10 +109,6 @@ const mime_struct_t mime_type_table[] = {
 	// NullSoft Streaming Video
 	{ "video/nsv", DEMUXER_TYPE_NSV},
 	{ "misc/ultravox", DEMUXER_TYPE_NSV},
-#ifdef CONFIG_LIBAVFORMAT
-	// Flash Video
-	{ "video/x-flv", DEMUXER_TYPE_LAVF},
-#endif
 	{ NULL, DEMUXER_TYPE_UNKNOWN},
 };
 
@@ -353,6 +373,9 @@ http_seek( stream_t *stream, off_t pos ) {
 
 	if( http_hdr==NULL ) return 0;
 
+	if( mp_msg_test(MSGT_NETWORK,MSGL_V) )
+		http_debug_hdr( http_hdr );
+
 	switch( http_hdr->status_code ) {
 		case 200:
 		case 206: // OK
@@ -367,7 +390,7 @@ http_seek( stream_t *stream, off_t pos ) {
 			break;
 		default:
 			mp_tmsg(MSGT_NETWORK,MSGL_ERR,"Server returns %d: %s\n", http_hdr->status_code, http_hdr->reason_phrase );
-			close( fd );
+			closesocket( fd );
 			fd = -1;
 	}
 	stream->fd = fd;
@@ -450,11 +473,4 @@ void fixup_network_stream_cache(stream_t *stream) {
     }
     mp_tmsg(MSGT_NETWORK,MSGL_INFO,"Cache size set to %d KBytes\n", stream_cache_size);
   }
-}
-
-
-int
-streaming_stop( stream_t *stream ) {
-	stream->streaming_ctrl->status = streaming_stopped_e;
-	return 0;
 }

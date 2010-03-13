@@ -1,3 +1,21 @@
+/*
+ * This file is part of MPlayer.
+ *
+ * MPlayer is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * MPlayer is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with MPlayer; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -5,7 +23,6 @@
 
 #include "config.h"
 #include "mp_msg.h"
-#include "help_mp.h"
 
 #include "img_format.h"
 #include "mp_image.h"
@@ -135,7 +152,7 @@ if(++vf->priv->fno>0){	// ignore first 2 frames - they may be empty
     h -= shrink_by;
     y += (shrink_by / 2 + 1) & ~1;
 
-    mp_tmsg(MSGT_VFILTER, MSGL_INFO, "[CROP] Crop area: X: %d..%d Y: %d..%d (-vf crop=%d:%d:%d:%d).\n",
+    mp_tmsg(MSGT_VFILTER, MSGL_INFO, "[CROP] Crop area: X: %d..%d  Y: %d..%d  (-vf crop=%d:%d:%d:%d).\n",
 	vf->priv->x1,vf->priv->x2,
 	vf->priv->y1,vf->priv->y2,
 	w,h,x,y);
@@ -156,7 +173,7 @@ static int query_format(struct vf_instance* vf, unsigned int fmt) {
 }
 //===========================================================================//
 
-static int open(vf_instance_t *vf, char* args){
+static int vf_open(vf_instance_t *vf, char *args){
     vf->config=config;
     vf->put_image=put_image;
     vf->query_format=query_format;
@@ -176,7 +193,7 @@ const vf_info_t vf_info_cropdetect = {
     "cropdetect",
     "A'rpi",
     "",
-    open,
+    vf_open,
     NULL
 };
 

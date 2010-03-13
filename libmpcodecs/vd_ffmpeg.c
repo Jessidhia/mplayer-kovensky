@@ -1,3 +1,21 @@
+/*
+ * This file is part of MPlayer.
+ *
+ * MPlayer is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * MPlayer is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with MPlayer; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
@@ -6,7 +24,6 @@
 
 #include "config.h"
 #include "mp_msg.h"
-#include "help_mp.h"
 #include "options.h"
 #include "av_opts.h"
 
@@ -455,6 +472,7 @@ static void draw_slice(struct AVCodecContext *s,
                        int y, int type, int height){
     sh_video_t *sh = s->opaque;
     uint8_t *source[MP_MAX_PLANES]= {src->data[0] + offset[0], src->data[1] + offset[1], src->data[2] + offset[2]};
+    int strides[MP_MAX_PLANES] = {src->linesize[0], src->linesize[1], src->linesize[2]};
 #if 0
     int start=0, i;
     int width= s->width;
@@ -478,8 +496,19 @@ static void draw_slice(struct AVCodecContext *s,
         }
     }else
 #endif
+    if (height < 0)
+    {
+        int i;
+        height = -height;
+        y -= height;
+        for (i = 0; i < MP_MAX_PLANES; i++)
+        {
+            strides[i] = -strides[i];
+            source[i] -= strides[i];
+        }
+    }
     if (y < sh->disp_h) {
-        mpcodecs_draw_slice (sh, source, src->linesize, sh->disp_w, (y+height)<=sh->disp_h?height:sh->disp_h-y, 0, y);
+        mpcodecs_draw_slice (sh, source, strides, sh->disp_w, (y+height)<=sh->disp_h?height:sh->disp_h-y, 0, y);
     }
 }
 

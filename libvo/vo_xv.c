@@ -44,7 +44,6 @@ Buffer allocation:
 #include "options.h"
 #include "talloc.h"
 #include "mp_msg.h"
-#include "help_mp.h"
 #include "video_out.h"
 #include "libmpcodecs/vfcap.h"
 #include "libmpcodecs/mp_image.h"
@@ -689,7 +688,7 @@ static int preinit(struct vo *vo, const char *arg)
     /* check for Xvideo extension */
     unsigned int ver, rel, req, ev, err;
     if (Success != XvQueryExtension(x11->display, &ver, &rel, &req, &ev, &err)) {
-        mp_tmsg(MSGT_VO, MSGL_ERR, "[VO_XV] Sorry, Xv not supported by this X11 version/driver\n[VO_XV] ******** Try with -vo x11 or -vo sdl *********\n");
+        mp_tmsg(MSGT_VO, MSGL_ERR, "[VO_XV] Sorry, Xv not supported by this X11 version/driver\n[VO_XV] ******** Try with  -vo x11  or  -vo sdl  *********\n");
         goto error;
     }
 

@@ -26,19 +26,14 @@
 
 #include "config.h"
 #include "mp_msg.h"
-#include "help_mp.h"
 
 #include "stream/stream.h"
 #include "asf.h"
+#include "asfheader.h"
 #include "demuxer.h"
-
+#include "libmpcodecs/dec_audio.h"
 #include "libvo/fastmemcpy.h"
 #include "ffmpeg_files/intreadwrite.h"
-
-// defined at asfheader.c:
-
-int asf_check_header(demuxer_t *demuxer);
-int read_asf_header(demuxer_t *demuxer,struct asf_priv* asf);
 
 // based on asf file-format doc by Eugene [http://divx.euro.ru]
 
@@ -550,8 +545,6 @@ static int demux_asf_fill_buffer(demuxer_t *demux, demux_stream_t *ds){
 
 #include "stheader.h"
 
-void skip_audio_frame(sh_audio_t *sh_audio);
-
 static void demux_seek_asf(demuxer_t *demuxer,float rel_seek_secs,float audio_delay,int flags){
     struct asf_priv* asf = demuxer->priv;
     demux_stream_t *d_audio=demuxer->audio;
@@ -642,7 +635,8 @@ static demuxer_t* demux_open_asf(demuxer_t* demuxer)
 //    demuxer->endpos=avi_header.movi_end;
     if(demuxer->video->id != -2) {
         if(!ds_fill_buffer(demuxer->video)){
-            mp_tmsg(MSGT_DEMUXER,MSGL_WARN,"ASF: " "No video stream found.\n");
+            mp_msg(MSGT_DEMUXER, MSGL_WARN, "ASF: %s",
+                   mp_gtext("No video stream found.\n"));
             demuxer->video->sh=NULL;
             //printf("ASF: missing video stream!? contact the author, it may be a bug :(\n");
         } else {
@@ -659,7 +653,8 @@ static demuxer_t* demux_open_asf(demuxer_t* demuxer)
     if(demuxer->audio->id!=-2){
         mp_tmsg(MSGT_DEMUXER,MSGL_V,"ASF: Searching for audio stream (id:%d).\n",demuxer->audio->id);
         if(!ds_fill_buffer(demuxer->audio)){
-            mp_tmsg(MSGT_DEMUXER,MSGL_INFO,"ASF: " "No audio stream found -> no sound.\n");
+            mp_msg(MSGT_DEMUXER, MSGL_INFO, "ASF: %s",
+                   mp_gtext("No audio stream found -> no sound.\n"));
             demuxer->audio->sh=NULL;
         } else {
             sh_audio=demuxer->audio->sh;sh_audio->ds=demuxer->audio;

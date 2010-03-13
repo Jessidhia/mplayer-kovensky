@@ -321,7 +321,7 @@ static void filter(struct vf_priv_s *p, uint8_t *dst, uint8_t *src, int dst_stri
                 qp= p->qp;
             else{
                 qp= qp_store[ (XMIN(x, width-1)>>qps) + (XMIN(y, height-1)>>qps) * qp_stride];
-                if(p->mpeg2) qp>>=1;
+                qp=norm_qscale(qp, p->mpeg2);
             }
             for(; x<end; x++){
                 const int index= x + y*stride + (8-3)*(1+stride) + 8; //FIXME silly offset
@@ -440,7 +440,7 @@ static int control(struct vf_instance* vf, int request, void* data){
     return vf_next_control(vf,request,data);
 }
 
-static int open(vf_instance_t *vf, char* args){
+static int vf_open(vf_instance_t *vf, char *args){
     vf->config=config;
     vf->put_image=put_image;
     vf->get_image=get_image;
@@ -486,6 +486,6 @@ const vf_info_t vf_info_pp7 = {
     "pp7",
     "Michael Niedermayer",
     "",
-    open,
+    vf_open,
     NULL
 };

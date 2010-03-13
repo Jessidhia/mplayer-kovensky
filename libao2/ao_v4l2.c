@@ -27,12 +27,12 @@
 #include "config.h"
 
 #include "mp_msg.h"
-#include "help_mp.h"
 
 #include "audio_out.h"
 #include "audio_out_internal.h"
 #include "libaf/af_format.h"
 #include "libmpdemux/mpeg_packetizer.h"
+#include "libvo/vo_v4l2.h"
 
 #define MPEG_AUDIO_ID 0x1C0
 
@@ -144,8 +144,6 @@ get_space (void)
 static int
 play (void *data, int len, int flags)
 {
-  int v4l2_write (const unsigned char *data, int len);
-
   if (ao_data.format != AF_FORMAT_MPEG2)
     return 0;
 

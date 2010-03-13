@@ -24,7 +24,6 @@
 #include "audio_out.h"
 
 #include "mp_msg.h"
-#include "help_mp.h"
 
 // there are some globals:
 ao_data_t ao_data={0,0,0,0,OUTBURST,-1,0};
@@ -46,6 +45,7 @@ extern const ao_functions_t audio_out_sun;
 extern const ao_functions_t audio_out_sgi;
 extern const ao_functions_t audio_out_win32;
 extern const ao_functions_t audio_out_dsound;
+extern const ao_functions_t audio_out_kai;
 extern const ao_functions_t audio_out_dart;
 extern const ao_functions_t audio_out_dxr2;
 extern const ao_functions_t audio_out_ivtv;
@@ -62,6 +62,9 @@ const ao_functions_t* const audio_out_drivers[] =
 #endif
 #ifdef CONFIG_WIN32WAVEOUT
         &audio_out_win32,
+#endif
+#ifdef CONFIG_KAI
+        &audio_out_kai,
 #endif
 #ifdef CONFIG_DART
         &audio_out_dart,

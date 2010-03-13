@@ -16,7 +16,6 @@
 
 #include "config.h"
 #include "mp_msg.h"
-#include "help_mp.h"
 
 //#include "stream/stream.h"
 //#include "demuxer.h"
@@ -26,6 +25,7 @@
 //#include "subreader.h"
 #include "sub_cc.h"
 #include "libvo/sub.h"
+#include "demux_ty_osd.h"
 
 //#include "dvdauth.h"
 

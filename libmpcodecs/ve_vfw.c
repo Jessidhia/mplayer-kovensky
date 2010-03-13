@@ -1,3 +1,21 @@
+/*
+ * This file is part of MPlayer.
+ *
+ * MPlayer is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * MPlayer is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with MPlayer; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -8,7 +26,6 @@
 #include "config.h"
 
 #include "mp_msg.h"
-#include "help_mp.h"
 
 #include "codec-cfg.h"
 //#include "stream/stream.h"
@@ -78,7 +95,6 @@ static BITMAPINFOHEADER* vfw_open_encoder(char *dll_name, char *compdatafile, BI
   }
   mp_msg(MSGT_WIN32,MSGL_INFO,"HIC: %x\n", encoder_hic);
 
-#if 1
 {
   ICINFO icinfo;
 
@@ -100,7 +116,6 @@ if (icinfo.dwFlags & VIDCF_QUALITYTIME)
     mp_msg(MSGT_WIN32,MSGL_INFO," temp-quality");
 mp_msg(MSGT_WIN32,MSGL_INFO,"\n");
 }
-#endif
 
   if(compdatafile){
     if (!strncmp(compdatafile, "dialog", 6)){
@@ -123,7 +138,7 @@ mp_msg(MSGT_WIN32,MSGL_INFO,"\n");
         mp_msg(MSGT_WIN32,MSGL_ERR,"Cannot open Compressor data file!\n");
         return NULL;
       }
-      drvdata = (char *) malloc(st.st_size);
+      drvdata = malloc(st.st_size);
       if (fread(drvdata, st.st_size, 1, fd) != 1) {
         mp_msg(MSGT_WIN32,MSGL_ERR,"Cannot read Compressor data file!\n");
         fclose(fd);

@@ -1,3 +1,21 @@
+/*
+ * This file is part of MPlayer.
+ *
+ * MPlayer is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * MPlayer is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with MPlayer; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -7,7 +25,6 @@
 
 #include "config.h"
 #include "mp_msg.h"
-#include "help_mp.h"
 
 #include "img_format.h"
 
@@ -19,6 +36,7 @@
 #include "libmpdemux/stheader.h"
 
 #include "ad_internal.h"
+#include "vd_libdv.h"
 
 static const ad_info_t info =
 {
@@ -30,9 +48,6 @@ static const ad_info_t info =
 };
 
 LIBAD_EXTERN(libdv)
-
-// defined in vd_libdv.c:
-dv_decoder_t*  init_global_rawdv_decoder(void);
 
 static int preinit(sh_audio_t *sh_audio)
 {
@@ -86,7 +101,7 @@ static int decode_audio(sh_audio_t *audio, unsigned char *buf, int minlen, int m
    dv_parse_header(decoder, dv_audio_frame);
 
    if(xx!=decoder->frame_size)
-       mp_tmsg(MSGT_GLOBAL,MSGL_WARN,"[AD_LIBDV] Warning! Audio framesize differs! read=%d hdr=%d.\n",
+       mp_tmsg(MSGT_GLOBAL,MSGL_WARN,"[AD_LIBDV] Warning! Audio framesize differs! read=%d  hdr=%d.\n",
            xx, decoder->frame_size);
 
    if (dv_decode_full_audio(decoder, dv_audio_frame,(int16_t**) audioBuffers))

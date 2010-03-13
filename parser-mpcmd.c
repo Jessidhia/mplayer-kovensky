@@ -1,3 +1,20 @@
+/*
+ * This file is part of MPlayer.
+ *
+ * MPlayer is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * MPlayer is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with MPlayer; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ */
 
 /// \file
 /// \ingroup ConfigParsers Playtree
@@ -14,11 +31,11 @@
 #endif
 
 #include "mp_msg.h"
-#include "help_mp.h"
 #include "m_option.h"
 #include "m_config.h"
 #include "playtree.h"
 #include "parser-mpcmd.h"
+#include "osdep/macosx_finder_args.h"
 
 static int recursion_depth = 0;
 static int mode = 0;
@@ -76,9 +93,6 @@ m_config_parse_mp_command_line(m_config_t *config, int argc, char **argv)
   int no_more_opts = 0;
   int opt_exit = 0; // flag indicating whether mplayer should exit without playing anything
   play_tree_t *last_parent, *last_entry = NULL, *root;
-#ifdef CONFIG_MACOSX_FINDER
-  play_tree_t *macosx_finder_args(m_config_t *, int , char **);
-#endif
 
 #ifdef MP_DEBUG
   assert(config != NULL);

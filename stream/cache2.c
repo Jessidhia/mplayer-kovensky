@@ -1,3 +1,21 @@
+/*
+ * This file is part of MPlayer.
+ *
+ * MPlayer is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * MPlayer is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with MPlayer; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ */
+
 #include "config.h"
 
 // Initial draft of my new cache system...
@@ -34,7 +52,6 @@ static void *ThreadProc(void *s);
 #endif
 
 #include "mp_msg.h"
-#include "help_mp.h"
 
 #include "stream.h"
 #include "cache2.h"
@@ -200,14 +217,14 @@ static int cache_fill(cache_vars_t* s){
 }
 
 static int cache_execute_control(cache_vars_t *s) {
-  int res = 1;
   static unsigned last;
-  if (!s->stream->control) {
+  int quit = s->control == -2;
+  if (quit || !s->stream->control) {
     s->stream_time_length = 0;
     s->control_new_pos = 0;
     s->control_res = STREAM_UNSUPPORTED;
     s->control = -1;
-    return res;
+    return !quit;
   }
   if (GetTimerMS() - last > 99) {
     double len;
@@ -217,7 +234,7 @@ static int cache_execute_control(cache_vars_t *s) {
       s->stream_time_length = 0;
     last = GetTimerMS();
   }
-  if (s->control == -1) return res;
+  if (s->control == -1) return 1;
   switch (s->control) {
     case STREAM_CTRL_GET_CURRENT_TIME:
     case STREAM_CTRL_SEEK_TO_TIME:
@@ -232,15 +249,13 @@ static int cache_execute_control(cache_vars_t *s) {
     case STREAM_CTRL_SET_ANGLE:
       s->control_res = s->stream->control(s->stream, s->control, &s->control_uint_arg);
       break;
-    case -2:
-      res = 0;
     default:
       s->control_res = STREAM_UNSUPPORTED;
       break;
   }
   s->control_new_pos = s->stream->pos;
   s->control = -1;
-  return res;
+  return 1;
 }
 
 static cache_vars_t* cache_init(int size,int sector){
@@ -292,9 +307,9 @@ void cache_uninit(stream_t *s) {
   }
   if(!c) return;
 #if defined(__MINGW32__) || defined(PTHREAD_CACHE) || defined(__OS2__)
-  free(c->stream);
   free(c->buffer);
   c->buffer = NULL;
+  c->stream = NULL;
   free(s->cache_data);
 #else
   shmem_free(c->buffer,c->buffer_size);
@@ -368,7 +383,7 @@ int stream_enable_cache(stream_t *stream,int size,int min,int seek_limit){
     mp_msg(MSGT_CACHE,MSGL_V,"CACHE_PRE_INIT: %"PRId64" [%"PRId64"] %"PRId64"  pre:%d  eof:%d  \n",
 	(int64_t)s->min_filepos,(int64_t)s->read_filepos,(int64_t)s->max_filepos,min,s->eof);
     while(s->read_filepos<s->min_filepos || s->max_filepos-s->read_filepos<min){
-	mp_tmsg(MSGT_CACHE,MSGL_STATUS,"\rCache fill: %5.2f%% (%"PRId64" bytes) ",
+	mp_tmsg(MSGT_CACHE,MSGL_STATUS,"\rCache fill: %5.2f%% (%"PRId64" bytes)   ",
 	    100.0*(float)(s->max_filepos-s->read_filepos)/(float)(s->buffer_size),
 	    (int64_t)s->max_filepos-s->read_filepos
 	);
@@ -405,12 +420,12 @@ static void ThreadProc( void *s ){
   } while (cache_execute_control(s));
 #if defined(__MINGW32__) || defined(__OS2__)
   _endthread();
-#endif
-#ifdef PTHREAD_CACHE
+#elif defined(PTHREAD_CACHE)
   return NULL;
-#endif
+#else
   // make sure forked code never leaves this function
   exit(0);
+#endif
 }
 
 int cache_stream_fill_buffer(stream_t *s){

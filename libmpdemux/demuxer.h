@@ -117,7 +117,7 @@ struct MPOpts;
 #define SEEK_FORWARD  (1 << 2)
 #define SEEK_BACKWARD (1 << 3)
 
-#define MP_INPUT_BUFFER_PADDING_SIZE 8
+#define MP_INPUT_BUFFER_PADDING_SIZE 64
 
 // Holds one packet/frame/whatever
 typedef struct demux_packet {
@@ -407,13 +407,9 @@ void ds_clear_parser(demux_stream_t *sh);
 stream_t* new_ds_stream(demux_stream_t *ds);
 
 static inline int avi_stream_id(unsigned int id){
-  unsigned char *p=(unsigned char *)&id;
   unsigned char a,b;
-#if HAVE_BIGENDIAN
-  a=p[3]-'0'; b=p[2]-'0';
-#else
-  a=p[0]-'0'; b=p[1]-'0';
-#endif
+  a = id - '0';
+  b = (id >> 8) - '0';
   if(a>9 || b>9) return 100; // invalid ID
   return a*10+b;
 }
@@ -435,12 +431,6 @@ int demux_info_add(demuxer_t *demuxer, const char *opt, const char *param);
 char* demux_info_get(demuxer_t *demuxer, const char *opt);
 int demux_info_print(demuxer_t *demuxer);
 int demux_control(demuxer_t *demuxer, int cmd, void *arg);
-
-#ifdef CONFIG_OGGVORBIS
-/* Found in demux_ogg.c */
-int demux_ogg_num_subs(demuxer_t *demuxer);
-int demux_ogg_sub_id(demuxer_t *demuxer, int index);
-#endif
 
 int demuxer_get_current_time(demuxer_t *demuxer);
 double demuxer_get_time_length(demuxer_t *demuxer);

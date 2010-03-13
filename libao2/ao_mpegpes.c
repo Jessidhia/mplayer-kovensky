@@ -30,11 +30,6 @@
 
 #include "config.h"
 
-#ifdef CONFIG_DVB
-#include <poll.h>
-#include <sys/ioctl.h>
-#endif
-
 #include "audio_out.h"
 #include "audio_out_internal.h"
 
@@ -43,16 +38,12 @@
 #include "subopt-helper.h"
 
 #include "mp_msg.h"
-#include "help_mp.h"
 
 #ifdef CONFIG_DVB
-#ifndef CONFIG_DVB_HEAD
-#include <ost/audio.h>
-audioMixer_t dvb_mixer={255,255};
-#else
+#include <poll.h>
+#include <sys/ioctl.h>
 #include <linux/dvb/audio.h>
 audio_mixer_t dvb_mixer={255,255};
-#endif
 #endif
 
 #define true 1
@@ -116,13 +107,8 @@ static int freq_id=0;
 static int init_device(int card)
 {
 	char ao_file[30];
-#ifndef CONFIG_DVB_HEAD
-	mp_msg(MSGT_VO,MSGL_INFO, "Opening /dev/ost/audio\n");
-	sprintf(ao_file, "/dev/ost/audio");
-#else
 	mp_msg(MSGT_VO,MSGL_INFO, "Opening /dev/dvb/adapter%d/audio0\n", card);
 	sprintf(ao_file, "/dev/dvb/adapter%d/audio0", card);
-#endif
 	if((vo_mpegpes_fd2 = open(ao_file,O_RDWR|O_NONBLOCK)) < 0)
 	{
         	mp_msg(MSGT_VO, MSGL_ERR, "DVB AUDIO DEVICE: %s\n", strerror(errno));
@@ -330,8 +316,6 @@ static int play(void* data,int len,int flags){
     if(ao_data.format==AF_FORMAT_MPEG2)
 	send_mpeg_pes_packet (data, len, 0x1C0, ao_data.pts, 1, my_ao_write);
     else {
-	int i;
-	unsigned short *s=data;
 //	if(len>2000) len=2000;
 //	printf("ao_mpegpes: len=%d  \n",len);
 	send_mpeg_lpcm_packet(data, len, 0xA0, ao_data.pts, freq_id, my_ao_write);

@@ -1,3 +1,20 @@
+/*
+ * This file is part of MPlayer.
+ *
+ * MPlayer is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * MPlayer is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with MPlayer; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ */
 
 #include "config.h"
 
@@ -5,9 +22,10 @@
 #include <windows.h>
 #endif
 
+#include "osdep/osdep.h"
+
 #include "mp_msg.h"
 #include "stream.h"
-#include "help_mp.h"
 #include "m_option.h"
 #include "m_struct.h"
 
@@ -25,6 +43,8 @@
 #include "vcd_read_darwin.h"
 #elif defined(__MINGW32__) || defined(__CYGWIN__)
 #include "vcd_read_win32.h"
+#elif defined(__OS2__)
+#include "vcd_read_os2.h"
 #else
 #include "vcd_read.h"
 #endif
@@ -75,7 +95,7 @@ static void close_s(stream_t *stream) {
 }
 
 static int open_s(stream_t *stream,int mode, void* opts, int* file_format) {
-  struct stream_priv_s* p = (struct stream_priv_s*)opts;
+  struct stream_priv_s* p = opts;
   int ret,ret2,f,sect,tmp;
   mp_vcd_priv_t* vcd;
 #if defined(__FreeBSD__) || defined(__FreeBSD_kernel__)
@@ -84,6 +104,12 @@ static int open_s(stream_t *stream,int mode, void* opts, int* file_format) {
 #if defined(__MINGW32__) || defined(__CYGWIN__)
   HANDLE hd;
   char device[] = "\\\\.\\?:";
+#endif
+#if defined(__OS2__)
+  char device[] = "X:";
+  HFILE hcd;
+  ULONG ulAction;
+  ULONG rc;
 #endif
 
   if(mode != STREAM_READ
@@ -108,6 +134,13 @@ static int open_s(stream_t *stream,int mode, void* opts, int* file_format) {
   hd = CreateFile(device, GENERIC_READ, FILE_SHARE_READ, NULL,
 	  OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN, NULL);
   f = _open_osfhandle((long)hd, _O_RDONLY);
+#elif defined(__OS2__)
+  device[0] = p->device[0];
+  rc = DosOpen(device, &hcd, &ulAction, 0, FILE_NORMAL,
+               OPEN_ACTION_OPEN_IF_EXISTS | OPEN_ACTION_FAIL_IF_NEW,
+               OPEN_ACCESS_READONLY | OPEN_SHARE_DENYNONE | OPEN_FLAGS_DASD,
+               NULL);
+  f = rc ? -1 : hcd;
 #else
   f=open(p->device,O_RDONLY);
 #endif
@@ -126,7 +159,8 @@ static int open_s(stream_t *stream,int mode, void* opts, int* file_format) {
   }
   ret2=vcd_get_track_end(vcd,p->track);
   if(ret2<0){
-    mp_tmsg(MSGT_OPEN,MSGL_ERR,"Error selecting VCD track." " (get)\n");
+      mp_msg(MSGT_OPEN, MSGL_ERR, "%s (get)\n",
+             mp_gtext("Error selecting VCD track."));
     close(f);
     free(vcd);
     m_struct_free(&stream_opts,opts);
@@ -134,7 +168,8 @@ static int open_s(stream_t *stream,int mode, void* opts, int* file_format) {
   }
   ret=vcd_seek_to_track(vcd,p->track);
   if(ret<0){
-    mp_tmsg(MSGT_OPEN,MSGL_ERR,"Error selecting VCD track." " (seek)\n");
+      mp_msg(MSGT_OPEN, MSGL_ERR, "%s (seek)\n",
+             mp_gtext("Error selecting VCD track."));
     close(f);
     free(vcd);
     m_struct_free(&stream_opts,opts);

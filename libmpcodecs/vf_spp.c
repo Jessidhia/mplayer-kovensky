@@ -401,7 +401,7 @@ static void filter(struct vf_priv_s *p, uint8_t *dst, uint8_t *src, int dst_stri
 				qp= p->qp;
 			else{
 				qp= qp_store[ (XMIN(x, width-1)>>qps) + (XMIN(y, height-1)>>qps) * qp_stride];
-				if(p->mpeg2) qp = FFMAX(1, qp>>1);
+				qp = FFMAX(1, norm_qscale(qp, p->mpeg2));
 			}
 			for(i=0; i<count; i++){
 				const int x1= x + offset[i+count-1][0];
@@ -557,7 +557,7 @@ static int control(struct vf_instance* vf, int request, void* data){
     return vf_next_control(vf,request,data);
 }
 
-static int open(vf_instance_t *vf, char* args){
+static int vf_open(vf_instance_t *vf, char *args){
 
     int log2c=-1;
 
@@ -609,6 +609,6 @@ const vf_info_t vf_info_spp = {
     "spp",
     "Michael Niedermayer",
     "",
-    open,
+    vf_open,
     NULL
 };

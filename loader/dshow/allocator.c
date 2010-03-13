@@ -58,7 +58,7 @@ static inline int avm_list_print(avm_list_t* head)
 
 static inline avm_list_t* avm_list_add_head(avm_list_t* head, void* member)
 {
-    avm_list_t* n = (avm_list_t*) malloc(sizeof(avm_list_t));
+    avm_list_t* n = malloc(sizeof(avm_list_t));
     n->member = member;
 
     if (!head)
@@ -116,7 +116,7 @@ static inline avm_list_t* avm_list_find(avm_list_t* head, void* member)
 
 static long MemAllocator_CreateAllocator(GUID* clsid, const GUID* iid, void** ppv)
 {
-    IMemAllocator* p;
+    IUnknown* p;
     int result;
     if (!ppv)
 	return -1;
@@ -124,9 +124,9 @@ static long MemAllocator_CreateAllocator(GUID* clsid, const GUID* iid, void** pp
     if (memcmp(clsid, &CLSID_MemoryAllocator, sizeof(GUID)))
 	return -1;
 
-    p = (IMemAllocator*) MemAllocatorCreate();
-    result = p->vt->QueryInterface((IUnknown*)p, iid, ppv);
-    p->vt->Release((IUnknown*)p);
+    p = (IUnknown*) MemAllocatorCreate();
+    result = p->vt->QueryInterface(p, iid, ppv);
+    p->vt->Release(p);
 
     return result;
 }
@@ -310,7 +310,7 @@ IMPLEMENT_IUNKNOWN(MemAllocator)
 
 MemAllocator* MemAllocatorCreate()
 {
-    MemAllocator* This = (MemAllocator*) malloc(sizeof(MemAllocator));
+    MemAllocator* This = malloc(sizeof(MemAllocator));
 
     if (!This)
         return NULL;
@@ -323,7 +323,7 @@ MemAllocator* MemAllocatorCreate()
     This->props.cbAlign = 1;
     This->props.cbPrefix = 0;
 
-    This->vt = (IMemAllocator_vt*) malloc(sizeof(IMemAllocator_vt));
+    This->vt = malloc(sizeof(IMemAllocator_vt));
 
     if (!This->vt)
     {

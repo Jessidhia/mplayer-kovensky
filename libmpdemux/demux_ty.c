@@ -37,10 +37,10 @@
 
 #include "config.h"
 #include "mp_msg.h"
-#include "help_mp.h"
 
 #include "stream/stream.h"
 #include "demuxer.h"
+#include "demux_ty_osd.h"
 #include "parse_es.h"
 #include "stheader.h"
 #include "sub_cc.h"
@@ -105,7 +105,6 @@ typedef struct
 } TiVoInfo;
 
 off_t vstream_streamsize( );
-void ty_ClearOSD( int start );
 
 // ===========================================================================
 #define TMF_SIG "showing.xml"
@@ -871,7 +870,8 @@ static demuxer_t* demux_open_ty(demuxer_t* demuxer)
 
     if(demuxer->audio->id!=-2) {
         if(!ds_fill_buffer(demuxer->audio)){
-            mp_tmsg(MSGT_DEMUXER,MSGL_INFO,"MPEG: " "No audio stream found -> no sound.\n");
+            mp_msg(MSGT_DEMUXER, MSGL_INFO, "MPEG: %s",
+                   mp_gtext("No audio stream found -> no sound.\n"));
             demuxer->audio->sh=NULL;
         } else {
             sh_audio=demuxer->audio->sh;sh_audio->ds=demuxer->audio;

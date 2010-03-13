@@ -28,7 +28,23 @@
  *
  * Probably is good to put the scale filter before the tile :-)
  *
- *     Daniele Forghieri ( guru@digitalfantasy.it )
+ * copyright (c) 2003 Daniele Forghieri ( guru@digitalfantasy.it )
+ *
+ * This file is part of MPlayer.
+ *
+ * MPlayer is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * MPlayer is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with MPlayer; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 // strtoi memcpy_pic
@@ -39,7 +55,6 @@
 
 #include "config.h"
 #include "mp_msg.h"
-#include "help_mp.h"
 #include "cpudetect.h"
 
 #include "img_format.h"
@@ -215,7 +230,7 @@ static int query_format(struct vf_instance* vf, unsigned int fmt)
  * If the value is less then 0 def_val is used.
  * Return 0 for ok
  *
- * Look below ( in open(...) ) for a use ...
+ * Look below ( in vf_open(...) ) for a use ...
  */
 static int parse_int(char **s, int *rt, int def_val)
 {
@@ -250,7 +265,7 @@ static int parse_int(char **s, int *rt, int def_val)
 }
 
 /* Main entry funct for the filter */
-static int open(vf_instance_t *vf, char* args)
+static int vf_open(vf_instance_t *vf, char *args)
 {
     struct vf_priv_s *p;
     int              er;
@@ -307,6 +322,6 @@ const vf_info_t vf_info_tile = {
     "tile",
     "Daniele Forghieri",
     "",
-    open,
+    vf_open,
     NULL
 };

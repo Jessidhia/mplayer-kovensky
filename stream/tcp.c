@@ -1,7 +1,23 @@
 /*
  * Network layer for MPlayer
- * by Bertrand BAUDET <bertrand_baudet@yahoo.com>
- * (C) 2001, MPlayer team.
+ *
+ * Copyright (C) 2001 Bertrand BAUDET <bertrand_baudet@yahoo.com>
+ *
+ * This file is part of MPlayer.
+ *
+ * MPlayer is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * MPlayer is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with MPlayer; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #include <stdlib.h>
@@ -18,7 +34,6 @@
 #include "config.h"
 
 #include "mp_msg.h"
-#include "help_mp.h"
 
 #if !HAVE_WINSOCK2_H
 #include <netdb.h>
@@ -87,6 +102,14 @@ connect2Server_with_af(char *host, int port, int af,int verb) {
 	int to;
 #else
 	struct timeval to;
+#endif
+
+#if HAVE_WINSOCK2_H && defined(HAVE_AF_INET6)
+	// our winsock name resolution code can not handle IPv6
+	if (af == AF_INET6) {
+		mp_msg(MSGT_NETWORK, MSGL_WARN, "IPv6 not supported for winsock2\n");
+		return TCP_ERROR_FATAL;
+	}
 #endif
 
 	socket_server_fd = socket(af, SOCK_STREAM, 0);

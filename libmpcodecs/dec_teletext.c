@@ -102,7 +102,6 @@
 
 #include "dec_teletext.h"
 #include "mp_msg.h"
-#include "help_mp.h"
 #include "libmpcodecs/img_format.h"
 #include "libavutil/common.h"
 #include "input/input.h"
@@ -952,7 +951,6 @@ static void render2text(tt_page* pt,FILE* f,int colored){
         color=-1;bkg=-1;
         fprintf(f,"|\n");
     }
-#if 1
     //for debug
     fprintf(f,"+====================raw=================+\n");
     for(i=0;i<VBI_ROWS;i++){
@@ -966,7 +964,6 @@ static void render2text(tt_page* pt,FILE* f,int colored){
             fprintf(f,"%02x ",dp[i*VBI_COLUMNS+j].lng);
         fprintf(f,"\n");
     }
-#endif
     fprintf(f,"+========================================+\n");
 }
 

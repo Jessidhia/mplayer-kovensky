@@ -1,3 +1,21 @@
+/*
+ * This file is part of MPlayer.
+ *
+ * MPlayer is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * MPlayer is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with MPlayer; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ */
+
 #define OSD_SUPPORT
 
 #include <stdio.h>
@@ -7,7 +25,6 @@
 
 #include "config.h"
 #include "mp_msg.h"
-#include "help_mp.h"
 #include "options.h"
 
 #include "img_format.h"
@@ -269,13 +286,11 @@ static void get_image(struct vf_instance* vf, mp_image_t *mpi){
 	    mpi->type, mpi->flags,
             FFMAX(vf->priv->exp_w, mpi->width +vf->priv->exp_x),
             FFMAX(vf->priv->exp_h, mpi->height+vf->priv->exp_y));
-#if 1
 	if((vf->dmpi->flags & MP_IMGFLAG_DRAW_CALLBACK) &&
 	  !(vf->dmpi->flags & MP_IMGFLAG_DIRECT)){
 	    mp_tmsg(MSGT_VFILTER, MSGL_INFO, "Full DR not possible, trying SLICES instead!\n");
 	    return;
 	}
-#endif
 	// set up mpi as a cropped-down image of dmpi:
 	if(mpi->flags&MP_IMGFLAG_PLANAR){
 	    mpi->planes[0]=vf->dmpi->planes[0]+
@@ -446,7 +461,7 @@ static int query_format(struct vf_instance* vf, unsigned int fmt){
   return vf_next_query_format(vf,fmt);
 }
 
-static int open(vf_instance_t *vf, char* args){
+static int vf_open(vf_instance_t *vf, char *args){
     vf->config=config;
     vf->control=control;
     vf->query_format=query_format;
@@ -495,7 +510,7 @@ const vf_info_t vf_info_expand = {
     "expand",
     "A'rpi",
     "",
-    open,
+    vf_open,
     &vf_opts
 };
 

@@ -1,3 +1,20 @@
+/*
+ * This file is part of MPlayer.
+ *
+ * MPlayer is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * MPlayer is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with MPlayer; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ */
 
 #include <ctype.h>
 #include <stdio.h>
@@ -9,7 +26,6 @@
 
 #include "config.h"
 #include "mp_msg.h"
-#include "help_mp.h"
 
 #ifdef __FreeBSD__
 #include <sys/cdrio.h>
@@ -30,7 +46,8 @@ int dvd_title=0;
 
 // Open a new stream  (stdin/file/vcd/url)
 
-stream_t* open_stream(char* filename, struct MPOpts *options, int* file_format)
+stream_t* open_stream(const char *filename, struct MPOpts *options,
+                      int *file_format)
 {
   // Check if playlist or unknown
   if (*file_format != DEMUXER_TYPE_PLAYLIST){

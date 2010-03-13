@@ -1,5 +1,25 @@
+/*
+ * This file is part of MPlayer.
+ *
+ * MPlayer is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * MPlayer is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with MPlayer; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ */
+
 #ifndef MPLAYER_ASXPARSER_H
 #define MPLAYER_ASXPARSER_H
+
+#include "playtree.h"
 
 typedef struct ASX_Parser_t ASX_Parser_t;
 
@@ -50,5 +70,8 @@ typedef void (*ASX_FreeFunc)(void* arg);
 
 void
 asx_list_free(void* list_ptr,ASX_FreeFunc free_func);
+
+play_tree_t*
+asx_parser_build_tree(struct m_config *mconfig, char* buffer, int ref);
 
 #endif /* MPLAYER_ASXPARSER_H */

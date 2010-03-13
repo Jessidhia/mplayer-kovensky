@@ -1,3 +1,20 @@
+/*
+ * This file is part of MPlayer.
+ *
+ * MPlayer is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * MPlayer is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with MPlayer; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -19,11 +36,11 @@
 #endif
 
 #include "mp_msg.h"
-#include "help_mp.h"
 #include "osdep/shmem.h"
 #include "network.h"
 #include "stream.h"
 #include "libmpdemux/demuxer.h"
+#include "ffmpeg_files/intreadwrite.h"
 
 #include "m_option.h"
 #include "m_struct.h"
@@ -125,7 +142,8 @@ static const stream_info_t* const auto_open_streams[] = {
   NULL
 };
 
-static stream_t *open_stream_plugin(const stream_info_t *sinfo, char *filename,
+static stream_t *open_stream_plugin(const stream_info_t *sinfo,
+                                    const char *filename,
                                     int mode, struct MPOpts *options,
                                     int *file_format, int *ret,
                                     char **redirected_url)
@@ -185,8 +203,8 @@ static stream_t *open_stream_plugin(const stream_info_t *sinfo, char *filename,
 }
 
 
-stream_t *open_stream_full(char *filename,int mode, struct MPOpts *options,
-                           int* file_format)
+stream_t *open_stream_full(const char *filename, int mode,
+                           struct MPOpts *options, int *file_format)
 {
   int i,j,l,r;
   const stream_info_t* sinfo;
@@ -229,7 +247,7 @@ stream_t *open_stream_full(char *filename,int mode, struct MPOpts *options,
   return NULL;
 }
 
-stream_t *open_output_stream(char *filename, struct MPOpts *options)
+stream_t *open_output_stream(const char *filename, struct MPOpts *options)
 {
   int file_format; //unused
   if(!filename) {
@@ -244,7 +262,7 @@ stream_t *open_output_stream(char *filename, struct MPOpts *options)
 
 int stream_fill_buffer(stream_t *s){
   int len;
-  if (/*s->fd == NULL ||*/ s->eof) { s->buf_pos = s->buf_len = 0; return 0; }
+  if (/*s->fd == NULL ||*/ s->eof) { return 0; }
   switch(s->type){
   case STREAMTYPE_STREAM:
 #ifdef CONFIG_NETWORK
@@ -265,7 +283,7 @@ int stream_fill_buffer(stream_t *s){
   default:
     len= s->fill_buffer ? s->fill_buffer(s,s->buffer,STREAM_BUFFER_SIZE) : 0;
   }
-  if(len<=0){ s->eof=1; s->buf_pos=s->buf_len=0; return 0; }
+  if(len<=0){ s->eof=1; return 0; }
   s->buf_pos=0;
   s->buf_len=len;
   s->pos+=len;
@@ -376,8 +394,8 @@ return 1;
 
 void stream_reset(stream_t *s){
   if(s->eof){
-    s->pos=0; //ftell(f);
-//    s->buf_pos=s->buf_len=0;
+    s->pos=0;
+    s->buf_pos=s->buf_len=0;
     s->eof=0;
   }
   if(s->control) s->control(s,STREAM_CTRL_RESET,NULL);
@@ -473,4 +491,125 @@ void stream_set_interrupt_callback(int (*cb)(struct input_ctx *, int),
 int stream_check_interrupt(int time) {
     if(!stream_check_interrupt_cb) return 0;
     return stream_check_interrupt_cb(stream_check_interrupt_ctx, time);
+}
+
+/**
+ * Helper function to read 16 bits little-endian and advance pointer
+ */
+static uint16_t get_le16_inc(const uint8_t **buf)
+{
+  uint16_t v = AV_RL16(*buf);
+  *buf += 2;
+  return v;
+}
+
+/**
+ * Helper function to read 16 bits big-endian and advance pointer
+ */
+static uint16_t get_be16_inc(const uint8_t **buf)
+{
+  uint16_t v = AV_RB16(*buf);
+  *buf += 2;
+  return v;
+}
+
+/**
+ * Find a newline character in buffer
+ * \param buf buffer to search
+ * \param len amount of bytes to search in buffer, may not overread
+ * \param utf16 chose between UTF-8/ASCII/other and LE and BE UTF-16
+ *              0 = UTF-8/ASCII/other, 1 = UTF-16-LE, 2 = UTF-16-BE
+ */
+static const uint8_t *find_newline(const uint8_t *buf, int len, int utf16)
+{
+  uint32_t c;
+  const uint8_t *end = buf + len;
+  switch (utf16) {
+  case 0:
+    return (uint8_t *)memchr(buf, '\n', len);
+  case 1:
+    while (buf < end - 1) {
+      GET_UTF16(c, buf < end - 1 ? get_le16_inc(&buf) : 0, return NULL;)
+      if (buf <= end && c == '\n')
+        return buf - 1;
+    }
+    break;
+  case 2:
+    while (buf < end - 1) {
+      GET_UTF16(c, buf < end - 1 ? get_be16_inc(&buf) : 0, return NULL;)
+      if (buf <= end && c == '\n')
+        return buf - 1;
+    }
+    break;
+  }
+  return NULL;
+}
+
+/**
+ * Copy a number of bytes, converting to UTF-8 if input is UTF-16
+ * \param dst buffer to copy to
+ * \param dstsize size of dst buffer
+ * \param src buffer to copy from
+ * \param len amount of bytes to copy from src
+ * \param utf16 chose between UTF-8/ASCII/other and LE and BE UTF-16
+ *              0 = UTF-8/ASCII/other, 1 = UTF-16-LE, 2 = UTF-16-BE
+ */
+static int copy_characters(uint8_t *dst, int dstsize,
+                           const uint8_t *src, int *len, int utf16)
+{
+  uint32_t c;
+  uint8_t *dst_end = dst + dstsize;
+  const uint8_t *end = src + *len;
+  switch (utf16) {
+  case 0:
+    if (*len > dstsize)
+      *len = dstsize;
+    memcpy(dst, src, *len);
+    return *len;
+  case 1:
+    while (src < end - 1 && dst_end - dst > 8) {
+      uint8_t tmp;
+      GET_UTF16(c, src < end - 1 ? get_le16_inc(&src) : 0, ;)
+      PUT_UTF8(c, tmp, *dst++ = tmp;)
+    }
+    *len -= end - src;
+    return dstsize - (dst_end - dst);
+  case 2:
+    while (src < end - 1 && dst_end - dst > 8) {
+      uint8_t tmp;
+      GET_UTF16(c, src < end - 1 ? get_be16_inc(&src) : 0, ;)
+      PUT_UTF8(c, tmp, *dst++ = tmp;)
+    }
+    *len -= end - src;
+    return dstsize - (dst_end - dst);
+  }
+  return 0;
+}
+
+unsigned char* stream_read_line(stream_t *s,unsigned char* mem, int max, int utf16) {
+  int len;
+  const unsigned char *end;
+  unsigned char *ptr = mem;
+  if (max < 1) return NULL;
+  max--; // reserve one for 0-termination
+  do {
+    len = s->buf_len-s->buf_pos;
+    // try to fill the buffer
+    if(len <= 0 &&
+       (!cache_stream_fill_buffer(s) ||
+        (len = s->buf_len-s->buf_pos) <= 0)) break;
+    end = find_newline(s->buffer+s->buf_pos, len, utf16);
+    if(end) len = end - (s->buffer+s->buf_pos) + 1;
+    if(len > 0 && max > 0) {
+      int l = copy_characters(ptr, max, s->buffer+s->buf_pos, &len, utf16);
+      max -= l;
+      ptr += l;
+      if (!len)
+        break;
+    }
+    s->buf_pos += len;
+  } while(!end);
+  if(s->eof && ptr == mem) return NULL;
+  ptr[0] = 0;
+  return mem;
 }

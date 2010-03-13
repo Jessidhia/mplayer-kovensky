@@ -36,7 +36,6 @@
 #include "old_vo_wrapper.h"
 
 #include "mp_msg.h"
-#include "help_mp.h"
 
 #include "osdep/shmem.h"
 #ifdef CONFIG_X11
@@ -88,6 +87,7 @@ extern struct vo_driver video_out_xover;
 extern struct vo_driver video_out_xvmc;
 extern struct vo_driver video_out_vdpau;
 extern struct vo_driver video_out_xv;
+extern struct vo_driver video_out_gl_nosw;
 extern struct vo_driver video_out_gl;
 extern struct vo_driver video_out_gl2;
 extern struct vo_driver video_out_matrixview;
@@ -181,15 +181,15 @@ const struct vo_driver *video_out_drivers[] =
         &video_out_xv,
 #endif
 #ifdef CONFIG_X11
+#ifdef CONFIG_GL
+        &video_out_gl_nosw,
+#endif
         &video_out_x11,
         &video_out_xover,
 #endif
 #ifdef CONFIG_GL
         &video_out_gl,
         &video_out_gl2,
-#endif
-#ifdef CONFIG_MATRIXVIEW
-        &video_out_matrixview,
 #endif
 #ifdef CONFIG_DGA
         &video_out_dga,
@@ -206,6 +206,9 @@ const struct vo_driver *video_out_drivers[] =
 #endif
 #ifdef CONFIG_SVGALIB
         &video_out_svga,
+#endif
+#ifdef CONFIG_MATRIXVIEW
+        &video_out_matrixview,
 #endif
 #ifdef CONFIG_AA
         &video_out_aa,
@@ -613,7 +616,7 @@ range_t *str2range(char *s)
 	for (i = 0; *endptr; i++) {
 		if (*s == ',')
 			goto out_err;
-		if (!(r = (range_t *) realloc(r, sizeof(*r) * (i + 2)))) {
+		if (!(r = realloc(r, sizeof(*r) * (i + 2)))) {
 			mp_msg(MSGT_GLOBAL, MSGL_WARN,"can't realloc 'r'\n");
 			return NULL;
 		}

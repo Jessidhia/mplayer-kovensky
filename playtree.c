@@ -1,3 +1,20 @@
+/*
+ * This file is part of MPlayer.
+ *
+ * MPlayer is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * MPlayer is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with MPlayer; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ */
 
 /// \file
 /// \ingroup Playtree
@@ -266,7 +283,7 @@ play_tree_add_file(play_tree_t* pt,char* file) {
     for(n = 0 ; pt->files[n] != NULL ; n++)
       /* NOTHING */;
   }
-  pt->files = (char**)realloc(pt->files,(n+2)*sizeof(char*));
+  pt->files = realloc(pt->files, (n + 2) * sizeof(char*));
   if(pt->files ==NULL) {
     mp_msg(MSGT_PLAYTREE,MSGL_ERR,"Can't allocate %d bytes of memory\n",(n+2)*(int)sizeof(char*));
     return;
@@ -305,7 +322,7 @@ play_tree_remove_file(play_tree_t* pt,char* file) {
 
   if(n > 1) {
     memmove(&pt->files[f],&pt->files[f+1],(n-f)*sizeof(char*));
-    pt->files = (char**)realloc(pt->files,n*sizeof(char*));
+    pt->files = realloc(pt->files, n * sizeof(char*));
     if(pt->files == NULL) {
       mp_msg(MSGT_PLAYTREE,MSGL_ERR,"Can't allocate %d bytes of memory\n",(n+2)*(int)sizeof(char*));
       return -1;
@@ -330,7 +347,7 @@ play_tree_set_param(play_tree_t* pt, char* name, char* val) {
   if(pt->params)
     for ( ; pt->params[n].name != NULL ; n++ ) { }
 
-  pt->params = (play_tree_param_t*)realloc(pt->params,(n+2)*sizeof(play_tree_param_t));
+  pt->params = realloc(pt->params, (n + 2) * sizeof(play_tree_param_t));
   if(pt->params == NULL) {
       mp_msg(MSGT_PLAYTREE,MSGL_ERR,"Can't realloc params (%d bytes of memory)\n",(n+2)*(int)sizeof(play_tree_param_t));
       return;
@@ -365,7 +382,7 @@ play_tree_unset_param(play_tree_t* pt, char* name) {
 
   if(n > 1) {
     memmove(&pt->params[ni],&pt->params[ni+1],(n-ni)*sizeof(play_tree_param_t));
-    pt->params = (play_tree_param_t*)realloc(pt->params,n*sizeof(play_tree_param_t));
+    pt->params = realloc(pt->params, n * sizeof(play_tree_param_t));
     if(pt->params == NULL) {
       mp_msg(MSGT_PLAYTREE,MSGL_ERR,"Can't allocate %d bytes of memory\n",n*(int)sizeof(play_tree_param_t));
       return -1;
@@ -395,20 +412,6 @@ play_tree_set_params_from(play_tree_t* dest,play_tree_t* src) {
   if(src->flags & PLAY_TREE_RND) // pass the random flag too
     dest->flags |= PLAY_TREE_RND;
 
-}
-
-// all children if deep < 0
-static void
-play_tree_set_flag(play_tree_t* pt, int flags , int deep) {
-  play_tree_t*  i;
-
-  pt->flags |= flags;
-
-  if(deep && pt->child) {
-    if(deep > 0) deep--;
-    for(i = pt->child ; i ; i = i->next)
-      play_tree_set_flag(i,flags,deep);
-  }
 }
 
 static void
@@ -690,7 +693,7 @@ play_tree_iter_up_step(play_tree_iter_t* iter, int d,int with_nodes) {
   iter->stack_size--;
   iter->loop = iter->status_stack[iter->stack_size];
   if(iter->stack_size > 0)
-    iter->status_stack = (int*)realloc(iter->status_stack,iter->stack_size*sizeof(int));
+    iter->status_stack = realloc(iter->status_stack, iter->stack_size * sizeof(int));
   else {
     free(iter->status_stack);
     iter->status_stack = NULL;
@@ -728,7 +731,7 @@ play_tree_iter_down_step(play_tree_iter_t* iter, int d,int with_nodes) {
     play_tree_iter_push_params(iter);
 
   iter->stack_size++;
-  iter->status_stack = (int*)realloc(iter->status_stack,iter->stack_size*sizeof(int));
+  iter->status_stack = realloc(iter->status_stack, iter->stack_size * sizeof(int));
   if(iter->status_stack == NULL) {
     mp_msg(MSGT_PLAYTREE,MSGL_ERR,"Can't allocate %d bytes of memory\n",iter->stack_size*(int)sizeof(int));
     return PLAY_TREE_ITER_ERROR;

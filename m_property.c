@@ -1,3 +1,20 @@
+/*
+ * This file is part of MPlayer.
+ *
+ * MPlayer is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * MPlayer is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with MPlayer; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ */
 
 /// \file
 /// \ingroup Properties
@@ -13,7 +30,6 @@
 #include "m_option.h"
 #include "m_property.h"
 #include "mp_msg.h"
-#include "help_mp.h"
 
 #define ROUND(x) ((int)((x)<0 ? (x)-0.5 : (x)+0.5))
 
@@ -181,7 +197,7 @@ void m_properties_print_help_list(const m_option_t* list) {
     char min[50],max[50];
     int i,count = 0;
 
-    mp_tmsg(MSGT_CFGPARSER, MSGL_INFO, "\n Name Type Min Max\n\n");
+    mp_tmsg(MSGT_CFGPARSER, MSGL_INFO, "\n Name                 Type            Min        Max\n\n");
     for(i = 0 ; list[i].name ; i++) {
         const m_option_t* opt = &list[i];
         if(opt->flags & M_OPT_MIN)

@@ -1,3 +1,20 @@
+/*
+ * This file is part of MPlayer.
+ *
+ * MPlayer is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * MPlayer is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with MPlayer; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ */
 
 /// \file
 /// \ingroup Config
@@ -16,15 +33,14 @@
 #include "m_config.h"
 #include "m_option.h"
 #include "mp_msg.h"
-#include "help_mp.h"
 
 #define MAX_PROFILE_DEPTH 20
 
 static int
-parse_profile(const m_option_t *opt, const char *name, char *param, void *dst, int src);
+parse_profile(const m_option_t *opt, const char *name, const char *param, void *dst, int src);
 
 static void
-set_profile(const m_option_t *opt, void* dst, void* src);
+set_profile(const m_option_t *opt, void* dst, const void* src);
 
 static int
 show_profile(m_option_t *opt, char* name, char *param);
@@ -39,13 +55,13 @@ static void m_option_save(const m_config_t *config, const m_option_t *opt,
                           void *dst)
 {
     if (opt->type->save) {
-        void *src = opt->new ? (char*)config->optstruct + opt->offset : opt->p;
+        const void *src = opt->new ? (char*)config->optstruct + opt->offset : opt->p;
         opt->type->save(opt, dst, src);
     }
 }
 
 static void m_option_set(const m_config_t *config, const m_option_t *opt,
-			 void *src)
+			 const void *src)
 {
     if (opt->type->set) {
         void *dst = opt->new ? (char*)config->optstruct + opt->offset : opt->p;
@@ -411,7 +427,7 @@ m_config_print_option_list(m_config_t *config) {
 
   if(!config->opts) return;
 
-  mp_tmsg(MSGT_CFGPARSER, MSGL_INFO, "\n Name Type Min Max Global CL Cfg\n\n");
+  mp_tmsg(MSGT_CFGPARSER, MSGL_INFO, "\n Name                 Type            Min        Max      Global  CL    Cfg\n\n");
   for(co = config->opts ; co ; co = co->next) {
     const m_option_t* opt = co->opt;
     if(opt->type->flags & M_OPT_TYPE_HAS_CHILD) continue;
@@ -488,7 +504,7 @@ m_config_set_profile(m_config_t* config, m_profile_t* p) {
 }
 
 static int
-parse_profile(const m_option_t *opt, const char *name, char *param, void *dst, int src)
+parse_profile(const m_option_t *opt, const char *name, const char *param, void *dst, int src)
 {
   m_config_t* config = opt->priv;
   char** list = NULL;
@@ -524,7 +540,7 @@ parse_profile(const m_option_t *opt, const char *name, char *param, void *dst, i
 }
 
 static void
-set_profile(const m_option_t *opt, void *dst, void *src) {
+set_profile(const m_option_t *opt, void *dst, const void *src) {
   m_config_t* config = opt->priv;
   m_profile_t* p;
   char** list = NULL;

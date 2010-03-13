@@ -1,3 +1,21 @@
+/*
+ * This file is part of MPlayer.
+ *
+ * MPlayer is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * MPlayer is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with MPlayer; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ */
+
 #define VCODEC_COPY 0
 #define VCODEC_FRAMENO 1
 // real codecs:
@@ -38,23 +56,23 @@
 
 #include "mp_msg.h"
 #include "av_log.h"
-#include "help_mp.h"
 
 #include "codec-cfg.h"
 #include "m_option.h"
 #include "m_config.h"
 #include "parser-mecmd.h"
 #include "parser-cfg.h"
-
+#include "mp_fifo.h"
 #include "get_path.h"
 
 #include "stream/stream.h"
+#include "libmpdemux/aviprint.h"
 #include "libmpdemux/demuxer.h"
 #include "libmpdemux/stheader.h"
 #include "libmpdemux/mp3_hdr.h"
 #include "libmpdemux/muxer.h"
 
-
+#include "input/input.h"
 #include "libvo/video_out.h"
 
 #include "libaf/af_format.h"
@@ -359,6 +377,44 @@ static void exit_sighandler(int x){
 
 static muxer_t* muxer=NULL;
 
+void add_subtitles(char *filename, float fps, int silent)
+{
+    sub_data *subd;
+#ifdef CONFIG_ASS
+    ASS_Track *asst = 0;
+#endif
+
+    if (!filename) return;
+
+    subd = sub_read_file(filename, fps);
+#ifdef CONFIG_ASS
+    if (opts.ass_enabled)
+#ifdef CONFIG_ICONV
+        asst = ass_read_file(ass_library, filename, sub_cp);
+#else
+        asst = ass_read_file(ass_library, filename, 0);
+#endif
+    if (opts.ass_enabled && subd && !asst)
+        asst = ass_read_subdata(ass_library, subd, fps);
+
+    if (!asst && !subd && !silent)
+#else
+    if (!subd && !silent)
+#endif
+        mp_tmsg(MSGT_CPLAYER, MSGL_ERR, "Cannot load subtitles: %s\n",
+                filename_recode(filename));
+
+#ifdef CONFIG_ASS
+    if (!asst && !subd) return;
+    ass_track = asst;
+#else
+    if (!subd) return;
+#endif
+    mp_msg(MSGT_IDENTIFY, MSGL_INFO, "ID_FILE_SUB_FILENAME=%s\n",
+	   filename_recode(filename));
+    subdata = subd;
+}
+
 void print_wave_header(WAVEFORMATEX *h, int verbose_level);
 
 #ifdef PTW32_STATIC_LIB
@@ -535,6 +591,10 @@ play_next_file:
   m_entry_set_options(mconfig,&filelist[curfile]);
   filename = filelist[curfile].name;
 
+#ifdef CONFIG_ASS
+  ass_library = ass_init();
+#endif
+
   if(!filename){
 	mp_tmsg(MSGT_CPLAYER, MSGL_FATAL, "\nFilename missing.\n\n");
 	mencoder_exit(1,NULL);
@@ -546,7 +606,7 @@ play_next_file:
 	mencoder_exit(1,NULL);
   }
 
-  mp_tmsg(MSGT_CPLAYER, MSGL_INFO, "success: format: %d data: 0x%X - 0x%x\n", file_format, (int)(stream->start_pos), (int)(stream->end_pos));
+  mp_tmsg(MSGT_CPLAYER, MSGL_INFO, "success: format: %d  data: 0x%X - 0x%x\n", file_format, (int)(stream->start_pos), (int)(stream->end_pos));
 
 #ifdef CONFIG_DVDREAD
 if(stream->type==STREAMTYPE_DVD){
@@ -624,7 +684,7 @@ sh_video=d_video->sh;
       mencoder_exit(1,NULL);
   }
 
-  mp_tmsg(MSGT_MENCODER,MSGL_INFO, "[V] filefmt:%d fourcc:0x%X size:%dx%d fps:%5.3f ftime:=%6.4f\n",
+  mp_tmsg(MSGT_MENCODER,MSGL_INFO, "[V] filefmt:%d  fourcc:0x%X  size:%dx%d  fps:%5.3f  ftime:=%6.4f\n",
    demuxer->file_format,sh_video->format, sh_video->disp_w,sh_video->disp_h,
    sh_video->fps,sh_video->frametime
   );
@@ -664,26 +724,6 @@ if(sh_audio && (out_audio_codec || seek_to_sec || !sh_audio->wf || opts.playback
         if (new_srate > 192000) new_srate = 192000;
         opts.playback_speed = (float)new_srate / (float)sh_audio->samplerate;
     }
-  }
-
-// after reading video params we should load subtitles because
-// we know fps so now we can adjust subtitles time to ~6 seconds AST
-// check .sub
-//  current_module="read_subtitles_file";
-  if(sub_name && sub_name[0]){
-    subdata=sub_read_file(sub_name[0], sh_video->fps);
-    if(!subdata) mp_tmsg(MSGT_CPLAYER,MSGL_ERR,"Cannot load subtitles: %s\n",sub_name[0]);
-  } else
-  if(sub_auto && filename) { // auto load sub file ...
-    char **tmp = NULL;
-    int i = 0;
-    char *psub = get_path( "sub/" );
-    tmp = sub_filenames((psub ? psub : ""), filename);
-    free(psub);
-    subdata=sub_read_file(tmp[0], sh_video->fps);
-    while (tmp[i])
-      free(tmp[i++]);
-    free(tmp);
   }
 
 // set up video encoder:
@@ -865,11 +905,76 @@ default: {
     ve = sh_video->vfilter;
   } else sh_video->vfilter = ve;
     // append 'expand' filter, it fixes stride problems and renders osd:
+#ifdef CONFIG_ASS
+    if (auto_expand && !opts.ass_enabled) { /* we do not want both */
+#else
     if (auto_expand) {
+#endif
       char* vf_args[] = { "osd", "1", NULL };
       sh_video->vfilter=vf_open_filter(&opts, sh_video->vfilter,"expand",vf_args);
     }
+
+#ifdef CONFIG_ASS
+  if(opts.ass_enabled) {
+    int i;
+    int insert = 1;
+    if (opts.vf_settings)
+      for (i = 0; opts.vf_settings[i].name; ++i)
+        if (strcmp(opts.vf_settings[i].name, "ass") == 0) {
+          insert = 0;
+          break;
+        }
+    if (insert) {
+      extern vf_info_t vf_info_ass;
+      vf_info_t* libass_vfs[] = {&vf_info_ass, NULL};
+      char* vf_arg[] = {"auto", "1", NULL};
+      vf_instance_t* vf_ass = vf_open_plugin(&opts,libass_vfs,sh_video->vfilter,"ass",vf_arg);
+      if (vf_ass)
+        sh_video->vfilter=(void*)vf_ass;
+      else
+        mp_msg(MSGT_CPLAYER,MSGL_ERR, "ASS: cannot add video filter\n");
+    }
+
+    if (ass_library) {
+      for (i = 0; i < demuxer->num_attachments; ++i) {
+        demux_attachment_t* att = demuxer->attachments + i;
+        if (use_embedded_fonts &&
+            att->name && att->type && att->data && att->data_size &&
+            (strcmp(att->type, "application/x-truetype-font") == 0 ||
+             strcmp(att->type, "application/x-font") == 0))
+          ass_add_font(ass_library, att->name, att->data, att->data_size);
+      }
+    }
+  }
+#endif
+
     sh_video->vfilter=append_filters(sh_video->vfilter, opts.vf_settings);
+
+#ifdef CONFIG_ASS
+  if (opts.ass_enabled)
+    ((vf_instance_t *)sh_video->vfilter)->control(sh_video->vfilter, VFCTRL_INIT_EOSD, ass_library);
+#endif
+
+// after reading video params we should load subtitles because
+// we know fps so now we can adjust subtitles time to ~6 seconds AST
+// check .sub
+  if(sub_name && sub_name[0]){
+    for (i = 0; sub_name[i] != NULL; ++i)
+        add_subtitles (sub_name[i], sh_video->fps, 0);
+  } else
+  if(sub_auto && filename) { // auto load sub file ...
+    char **tmp = NULL;
+    int i = 0;
+    char *psub = get_path( "sub/" );
+    tmp = sub_filenames((psub ? psub : ""), filename);
+    free(psub);
+    while (tmp[i])
+    {
+      add_subtitles (tmp[i], sh_video->fps, 0);
+      free(tmp[i++]);
+    }
+    free(tmp);
+  }
 
     mp_msg(MSGT_CPLAYER,MSGL_INFO,"==========================================================================\n");
     init_best_video_codec(sh_video,video_codec_list,video_fm_list);
@@ -1234,7 +1339,7 @@ if(sh_audio){
 	    }
 	}
 	if(len<=0) break; // EOF?
-	muxer_write_chunk(mux_a,len,0x10, MP_NOPTS_VALUE, MP_NOPTS_VALUE);
+	muxer_write_chunk(mux_a,len,AVIIF_KEYFRAME, MP_NOPTS_VALUE, MP_NOPTS_VALUE);
 	if(!mux_a->h.dwSampleSize && mux_a->timer>0)
 	    mux_a->wf->nAvgBytesPerSec=0.5f+(double)mux_a->size/mux_a->timer; // avg bps (VBR)
 	if(mux_a->buffer_len>=len){
@@ -1320,11 +1425,11 @@ ptimer_start = GetTimerMS();
 switch(mux_v->codec){
 case VCODEC_COPY:
     mux_v->buffer=frame_data.start;
-    if(skip_flag<=0) muxer_write_chunk(mux_v,frame_data.in_size,(sh_video->ds->flags&1)?0x10:0, MP_NOPTS_VALUE, MP_NOPTS_VALUE);
+    if(skip_flag<=0) muxer_write_chunk(mux_v,frame_data.in_size,(sh_video->ds->flags&1)?AVIIF_KEYFRAME:0, MP_NOPTS_VALUE, MP_NOPTS_VALUE);
     break;
 case VCODEC_FRAMENO:
     mux_v->buffer=(unsigned char *)&decoded_frameno; // tricky
-    if(skip_flag<=0) muxer_write_chunk(mux_v,sizeof(int),0x10, MP_NOPTS_VALUE, MP_NOPTS_VALUE);
+    if(skip_flag<=0) muxer_write_chunk(mux_v,sizeof(int),AVIIF_KEYFRAME, MP_NOPTS_VALUE, MP_NOPTS_VALUE);
     break;
 default:
     // decode_video will callback down to ve_*.c encoders, through the video filters
@@ -1573,10 +1678,10 @@ if(out_video_codec==VCODEC_FRAMENO && mux_v->timer>100){
     mp_tmsg(MSGT_MENCODER, MSGL_INFO, "Recommended video bitrate for %s CD: %d\n","2 x 800MB",(int)((2*800*1024*1024-muxer_f_size)/mux_v->timer/125));
 }
 
-mp_tmsg(MSGT_MENCODER, MSGL_INFO, "\nVideo stream: %8.3f kbit/s (%d B/s) size: %"PRIu64" bytes %5.3f secs %d frames\n",
+mp_tmsg(MSGT_MENCODER, MSGL_INFO, "\nVideo stream: %8.3f kbit/s  (%d B/s)  size: %"PRIu64" bytes  %5.3f secs  %d frames\n",
     (float)(mux_v->size/mux_v->timer*8.0f/1000.0f), (int)(mux_v->size/mux_v->timer), (uint64_t)mux_v->size, (float)mux_v->timer, decoded_frameno);
 if(sh_audio)
-mp_tmsg(MSGT_MENCODER, MSGL_INFO, "\nAudio stream: %8.3f kbit/s (%d B/s) size: %"PRIu64" bytes %5.3f secs\n",
+mp_tmsg(MSGT_MENCODER, MSGL_INFO, "\nAudio stream: %8.3f kbit/s  (%d B/s)  size: %"PRIu64" bytes  %5.3f secs\n",
     (float)(mux_a->size/mux_a->timer*8.0f/1000.0f), (int)(mux_a->size/mux_a->timer), (uint64_t)mux_a->size, (float)mux_a->timer);
 
 if(sh_audio){ uninit_audio(sh_audio);sh_audio=NULL; }

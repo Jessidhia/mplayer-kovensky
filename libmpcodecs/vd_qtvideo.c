@@ -1,3 +1,21 @@
+/*
+ * This file is part of MPlayer.
+ *
+ * MPlayer is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * MPlayer is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with MPlayer; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <inttypes.h>
@@ -72,7 +90,7 @@ static    OSErr           (*QTNewGWorldFromPtr)(GWorldPtr *gw,
                                GWorldFlags flags,
                                void *baseAddr,
                                long rowBytes);
-static    OSErr           (*NewHandleClear)(Size byteCount);
+static    Handle          (*NewHandleClear)(Size byteCount);
 #endif /* #ifndef CONFIG_QUICKTIME */
 
 // to set/get/query special features/parameters
@@ -85,7 +103,7 @@ static int codec_initialized=0;
 // init driver
 static int init(sh_video_t *sh){
 #ifndef CONFIG_QUICKTIME
-    long result = 1;
+    OSErr result = 1;
 #endif
     ComponentResult cres;
     ComponentDescription desc;
@@ -138,7 +156,7 @@ static int init(sh_video_t *sh){
 
     result=InitializeQTML(6+16);
 //    result=InitializeQTML(0);
-    mp_msg(MSGT_DECVIDEO,MSGL_DBG2,"InitializeQTML returned %li\n",result);
+    mp_msg(MSGT_DECVIDEO,MSGL_DBG2,"InitializeQTML returned %d\n",result);
 //    result=EnterMovies();
 //    printf("EnterMovies->%d\n",result);
 #endif /* CONFIG_QUICKTIME */
@@ -287,7 +305,7 @@ static void uninit(sh_video_t *sh){
 
 // decode a frame
 static mp_image_t* decode(sh_video_t *sh,void* data,int len,int flags){
-    long result = 1;
+    OSErr result = 1;
     int i;
     mp_image_t* mpi;
     ComponentResult cres;
@@ -297,6 +315,10 @@ static mp_image_t* decode(sh_video_t *sh,void* data,int len,int flags){
     mpi=mpcodecs_get_image(sh, MP_IMGTYPE_STATIC, MP_IMGFLAG_PRESERVE,
 	sh->disp_w, sh->disp_h);
     if(!mpi) return NULL;
+
+#ifdef WIN32_LOADER
+    Setup_FS_Segment();
+#endif
 
     decpar.data = (char*)data;
     decpar.bufferSize = len;
@@ -313,7 +335,7 @@ if(!codec_initialized){
         0,
         mpi->planes[0],
         mpi->stride[0]);
-    mp_msg(MSGT_DECVIDEO,MSGL_DBG2,"NewGWorldFromPtr returned:%ld\n",65536-(result&0xffff));
+    mp_msg(MSGT_DECVIDEO,MSGL_DBG2,"NewGWorldFromPtr returned:%d\n",result);
 //    if (65536-(result&0xFFFF) != 10000)
 //	return NULL;
 
@@ -384,7 +406,7 @@ if(!codec_initialized){
 
     ++decpar.frameNumber;
 
-    if(cres&0xFFFF){
+    if(cres) {
 	mp_msg(MSGT_DECVIDEO,MSGL_DBG2,"ImageCodecBandDecompress cres=0x%X (-0x%X) %d\n",cres,-cres,cres);
 	return NULL;
     }

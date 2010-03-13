@@ -1,3 +1,21 @@
+/*
+ * This file is part of MPlayer.
+ *
+ * MPlayer is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * MPlayer is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with MPlayer; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,7 +30,6 @@
 #endif
 
 #include "mp_msg.h"
-#include "help_mp.h"
 #include "m_option.h"
 #include "m_struct.h"
 
@@ -101,6 +118,7 @@ extern const vf_info_t vf_info_blackframe;
 extern const vf_info_t vf_info_geq;
 extern const vf_info_t vf_info_ow;
 extern const vf_info_t vf_info_tcdump;
+extern const vf_info_t vf_info_fixpts;
 
 // list of available filters:
 static const vf_info_t* const filter_list[]={
@@ -203,6 +221,7 @@ static const vf_info_t* const filter_list[]={
     &vf_info_blackframe,
     &vf_info_ow,
     &vf_info_tcdump,
+    &vf_info_fixpts,
     NULL
 };
 
@@ -459,7 +478,7 @@ struct vf_instance *vf_open_plugin_noerr(struct MPOpts *opts,
 	args = (char**)args[1];
       else
 	args = NULL;
-    *retcode = vf->info->open(vf,(char*)args);
+    *retcode = vf->info->vf_open(vf,(char*)args);
     if (*retcode > 0)
         return vf;
     free(vf);
@@ -491,15 +510,16 @@ vf_instance_t* vf_open_filter(struct MPOpts *opts, vf_instance_t* next, const ch
       p += sprintf(str,"%s",name);
       for(i = 0 ; args && args[2*i] ; i++)
 	p += sprintf(p," %s=%s",args[2*i],args[2*i+1]);
-      mp_tmsg(MSGT_VFILTER,MSGL_INFO,"Opening video filter: " "[%s]\n",str);
+      mp_msg(MSGT_VFILTER, MSGL_INFO, "%s[%s]\n",
+             mp_gtext("Opening video filter: "), str);
     }
   } else if(strcmp(name,"vo")) {
     if(args && strcmp(args[0],"_oldargs_") == 0)
-      mp_tmsg(MSGT_VFILTER,MSGL_INFO,"Opening video filter: "
-	     "[%s=%s]\n", name,args[1]);
+        mp_msg(MSGT_VFILTER, MSGL_INFO, "%s[%s=%s]\n",
+               mp_gtext("Opening video filter: "), name, args[1]);
     else
-      mp_tmsg(MSGT_VFILTER,MSGL_INFO,"Opening video filter: "
-	     "[%s]\n", name);
+        mp_msg(MSGT_VFILTER, MSGL_INFO, "%s[%s]\n",
+               mp_gtext("Opening video filter: "), name);
   }
   return vf_open_plugin(opts, filter_list,next,name,args);
 }

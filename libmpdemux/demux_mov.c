@@ -55,7 +55,6 @@
 #endif
 
 #include "mp_msg.h"
-#include "help_mp.h"
 
 #include "stream/stream.h"
 #include "demuxer.h"
@@ -67,6 +66,7 @@
 
 #include "libvo/sub.h"
 
+#include "demux_mov.h"
 #include "qtpalette.h"
 #include "parse_mp4.h" // .MP4 specific stuff
 

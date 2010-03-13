@@ -1,3 +1,20 @@
+/*
+ * This file is part of MPlayer.
+ *
+ * MPlayer is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * MPlayer is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with MPlayer; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ */
 
 /// \file
 /// \ingroup Properties Command2Property OSDMsgStack
@@ -42,8 +59,6 @@
 #include "mp_msg.h"
 #include "av_log.h"
 
-#define HELP_MP_DEFINE_STATIC
-#include "help_mp.h"
 
 #include "m_option.h"
 #include "m_config.h"
@@ -161,6 +176,47 @@ static int max_framesize=0;
 #include "mp_core.h"
 #include "options.h"
 #include "defaultopts.h"
+
+static const char help_text[]=_(
+"Usage:   mplayer [options] [url|path/]filename\n"
+"\n"
+"Basic options: (complete list in the man page)\n"
+" -vo <drv>        select video output driver ('-vo help' for a list)\n"
+" -ao <drv>        select audio output driver ('-ao help' for a list)\n"
+#ifdef CONFIG_VCD
+" vcd://<trackno>  play (S)VCD (Super Video CD) track (raw device, no mount)\n"
+#endif
+#ifdef CONFIG_DVDREAD
+" dvd://<titleno>  play DVD title from device instead of plain file\n"
+#endif
+" -alang/-slang    select DVD audio/subtitle language (by 2-char country code)\n"
+" -ss <position>   seek to given (seconds or hh:mm:ss) position\n"
+" -nosound         do not play sound\n"
+" -fs              fullscreen playback (or -vm, -zoom, details in the man page)\n"
+" -x <x> -y <y>    set display resolution (for use with -vm or -zoom)\n"
+" -sub <file>      specify subtitle file to use (also see -subfps, -subdelay)\n"
+" -playlist <file> specify playlist file\n"
+" -vid x -aid y    select video (x) and audio (y) stream to play\n"
+" -fps x -srate y  change video (x fps) and audio (y Hz) rate\n"
+" -pp <quality>    enable postprocessing filter (details in the man page)\n"
+" -framedrop       enable frame dropping (for slow machines)\n"
+"\n"
+"Basic keys: (complete list in the man page, also check input.conf)\n"
+" <-  or  ->       seek backward/forward 10 seconds\n"
+" down or up       seek backward/forward  1 minute\n"
+" pgdown or pgup   seek backward/forward 10 minutes\n"
+" < or >           step backward/forward in playlist\n"
+" p or SPACE       pause movie (press any key to continue)\n"
+" q or ESC         stop playing and quit program\n"
+" + or -           adjust audio delay by +/- 0.1 second\n"
+" o                cycle OSD mode:  none / seekbar / seekbar + timer\n"
+" * or /           increase or decrease PCM volume\n"
+" x or z           adjust subtitle delay by +/- 0.1 second\n"
+" r or t           adjust subtitle position up/down, also see -vf expand\n"
+"\n"
+" * * * SEE THE MAN PAGE FOR DETAILS, FURTHER (ADVANCED) OPTIONS AND KEYS * * *\n"
+"\n");
+
 
 #define Exit_SIGILL_RTCpuSel _(\
 "- MPlayer crashed by an 'Illegal Instruction'.\n"\
@@ -319,7 +375,6 @@ char* current_module=NULL; // for debugging
 #ifdef CONFIG_MENU
 #include "m_struct.h"
 #include "libmenu/menu.h"
-void vf_menu_pause_update(struct vf_instance* vf);
 extern vf_info_t vf_info_menu;
 static const vf_info_t* const libmenu_vfs[] = {
   &vf_info_menu,
@@ -671,7 +726,7 @@ void uninit_player(struct MPContext *mpctx, unsigned int mask){
   current_module=NULL;
 }
 
-void exit_player_with_rc(struct MPContext *mpctx, exit_reason_t how, int rc)
+void exit_player_with_rc(struct MPContext *mpctx, enum exit_reason how, int rc)
 {
   uninit_player(mpctx, INITIALIZED_ALL);
 #if defined(__MINGW32__) || defined(__CYGWIN__)
@@ -742,7 +797,7 @@ void exit_player_with_rc(struct MPContext *mpctx, exit_reason_t how, int rc)
   exit(rc);
 }
 
-static void exit_player(struct MPContext *mpctx, exit_reason_t how)
+static void exit_player(struct MPContext *mpctx, enum exit_reason how)
 {
   exit_player_with_rc(mpctx, how, 1);
 }
@@ -781,9 +836,10 @@ static void exit_sighandler(int x){
     kill(getpid(),SIGKILL);
 #endif
   }
-  mp_tmsg(MSGT_CPLAYER,MSGL_FATAL,"\n" "\nMPlayer interrupted by signal %d in module: %s\n",x,
-      current_module?current_module:"unknown"
-  );
+  mp_msg(MSGT_CPLAYER, MSGL_FATAL, "\n");
+  mp_tmsg(MSGT_CPLAYER,MSGL_FATAL,
+          "\nMPlayer interrupted by signal %d in module: %s\n", x,
+          current_module ? current_module : "unknown");
   mp_msg(MSGT_IDENTIFY, MSGL_INFO, "ID_SIGNAL=%d\n", x);
   if(sig_count<=1)
   switch(x){
@@ -1060,9 +1116,9 @@ void add_subtitles(struct MPContext *mpctx, char *filename, float fps, int noerr
 #ifdef CONFIG_ASS
     if (opts->ass_enabled) {
 #ifdef CONFIG_ICONV
-        asst = ass_read_file(ass_library, filename, sub_cp);
+        asst = ass_read_stream(ass_library, filename, sub_cp);
 #else
-        asst = ass_read_file(ass_library, filename, 0);
+        asst = ass_read_stream(ass_library, filename, 0);
 #endif
         if (!asst) {
             subd = sub_read_file(filename, fps);
@@ -1101,6 +1157,11 @@ void init_vo_spudec(struct MPContext *mpctx)
     spudec_free(vo_spudec);
   mpctx->initialized_flags &= ~INITIALIZED_SPUDEC;
   vo_spudec = NULL;
+
+  // we currently can't work without video stream
+  if (!mpctx->sh_video)
+    return;
+
   if (spudec_ifo) {
     unsigned int palette[16], width, height;
     current_module="spudec_init_vobsub";
@@ -1178,7 +1239,7 @@ static void saddf(char *buf, unsigned *pos, int len, const char *format, ...)
  * \param time time value to convert/append
  */
 static void sadd_hhmmssf(char *buf, unsigned *pos, int len, float time) {
-  long tenths = 10 * time;
+  int64_t tenths = 10 * time;
   int f1 = tenths % 10;
   int ss = (tenths /  10) % 60;
   int mm = (tenths / 600) % 60;
@@ -1666,7 +1727,6 @@ void reinit_audio_chain(struct MPContext *mpctx)
     ao_data.samplerate=force_srate;
     ao_data.channels=0;
     ao_data.format=audio_output_format;
-#if 1
     // first init to detect best values
     if(!init_audio_filters(mpctx->sh_audio,   // preliminary init
                            // input:
@@ -1677,7 +1737,6 @@ void reinit_audio_chain(struct MPContext *mpctx)
                 "pre-init!\n");
         exit_player(mpctx, EXIT_ERROR);
     }
-#endif
     current_module="ao2_init";
     mpctx->audio_out = init_best_audio_out(opts->audio_driver_list,
                                            0, // plugin flag
@@ -1699,13 +1758,11 @@ void reinit_audio_chain(struct MPContext *mpctx)
     if(strlen(mpctx->audio_out->info->comment) > 0)
         mp_msg(MSGT_CPLAYER,MSGL_V,"AO: Comment: %s\n", mpctx->audio_out->info->comment);
     // init audio filters:
-#if 1
     current_module="af_init";
     if(!build_afilter_chain(mpctx, mpctx->sh_audio, &ao_data)) {
         mp_tmsg(MSGT_CPLAYER,MSGL_ERR,"Couldn't find matching filter/ao format!\n");
         goto init_error;
     }
-#endif
     mpctx->mixer.audio_out = mpctx->audio_out;
     mpctx->mixer.volstep = volstep;
     return;
@@ -2507,13 +2564,13 @@ static void pause_loop(struct MPContext *mpctx)
         // The pause string is: "\n == PAUSE == \r" so we need to
         // take the first and the last char out
 	if (term_osd && !mpctx->sh_video) {
-	    char msg[128] = _("\n ===== PAUSE =====\r");
+	    char msg[128] = _("\n  =====  PAUSE  =====\r");
 	    int mlen = strlen(msg);
 	    msg[mlen-1] = '\0';
 	    set_osd_msg(OSD_MSG_PAUSE, 1, 0, "%s", msg+1);
 	    update_osd_msg(mpctx);
 	} else
-	    mp_tmsg(MSGT_CPLAYER,MSGL_STATUS,"\n ===== PAUSE =====\r");
+	    mp_tmsg(MSGT_CPLAYER,MSGL_STATUS,"\n  =====  PAUSE  =====\r");
         mp_msg(MSGT_IDENTIFY, MSGL_INFO, "ID_PAUSED\n");
     }
 
@@ -3155,7 +3212,7 @@ if(!codecs_file || !parse_codec_cfg(codecs_file)){
 
     if(!mpctx->filename && !player_idle_mode){
 	// no file/vcd/dvd -> show HELP:
-	mp_msg(MSGT_CPLAYER, MSGL_INFO, help_text);
+	mp_msg(MSGT_CPLAYER, MSGL_INFO, "%s", mp_gtext(help_text));
         exit_player_with_rc(mpctx, EXIT_NONE, 0);
     }
 
@@ -3339,6 +3396,8 @@ if(!noconsolecontrols && !slave_mode){
 while (player_idle_mode && !mpctx->filename) {
     play_tree_t * entry = NULL;
     mp_cmd_t * cmd;
+    if (mpctx->video_out && mpctx->video_out->config_ok)
+	vo_control(mpctx->video_out, VOCTRL_PAUSE, NULL);
     while (!(cmd = mp_input_get_cmd(mpctx->input, 0,1,0))) { // wait for command
         if (mpctx->video_out)
 	    vo_check_events(mpctx->video_out);
@@ -3390,6 +3449,9 @@ while (player_idle_mode && !mpctx->filename) {
     }
 }
 //---------------------------------------------------------------------------
+
+    if (mpctx->video_out && mpctx->sh_video && mpctx->video_out->config_ok)
+	vo_control(mpctx->video_out, VOCTRL_RESUME, NULL);
 
     if (mpctx->filename) {
 	mp_tmsg(MSGT_CPLAYER,MSGL_INFO,"\nPlaying %s.\n",
@@ -3759,7 +3821,7 @@ if(mpctx->sh_video){
     mp_tmsg(MSGT_CPLAYER,MSGL_ERR,"Video: Cannot read properties.\n");
     mpctx->sh_video=mpctx->d_video->sh=NULL;
   } else {
-    mp_tmsg(MSGT_CPLAYER,MSGL_V,"[V] filefmt:%d fourcc:0x%X size:%dx%d fps:%5.3f ftime:=%6.4f\n",
+    mp_tmsg(MSGT_CPLAYER,MSGL_V,"[V] filefmt:%d  fourcc:0x%X  size:%dx%d  fps:%5.3f  ftime:=%6.4f\n",
 	   mpctx->demuxer->file_format,mpctx->sh_video->format, mpctx->sh_video->disp_w,mpctx->sh_video->disp_h,
 	   mpctx->sh_video->fps,mpctx->sh_video->frametime
 	   );
@@ -3804,7 +3866,7 @@ if(!mpctx->sh_video && !mpctx->sh_audio){
 demux_info_print(mpctx->demuxer);
 
 //================== Read SUBTITLES (DVD & TEXT) ==========================
-if(vo_spudec==NULL && mpctx->sh_video &&
+if(vo_spudec==NULL &&
      (mpctx->stream->type==STREAMTYPE_DVD || mpctx->stream->type == STREAMTYPE_DVDNAV)){
   init_vo_spudec(mpctx);
 }
@@ -3973,7 +4035,7 @@ if (!mpctx->sh_video && !mpctx->sh_audio)
 if(force_fps && mpctx->sh_video){
   vo_fps = mpctx->sh_video->fps=force_fps;
   mpctx->sh_video->frametime=1.0f/mpctx->sh_video->fps;
-  mp_tmsg(MSGT_CPLAYER,MSGL_INFO,"FPS forced to be %5.3f (ftime: %5.3f).\n",mpctx->sh_video->fps,mpctx->sh_video->frametime);
+  mp_tmsg(MSGT_CPLAYER,MSGL_INFO,"FPS forced to be %5.3f  (ftime: %5.3f).\n",mpctx->sh_video->fps,mpctx->sh_video->frametime);
 }
 
  mp_input_set_section(mpctx->input, NULL);

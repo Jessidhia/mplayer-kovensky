@@ -1,3 +1,20 @@
+/*
+ * This file is part of MPlayer.
+ *
+ * MPlayer is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * MPlayer is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with MPlayer; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ */
 
 /// \file
 /// \ingroup PlaytreeParser
@@ -13,6 +30,8 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <ctype.h>
+#include <limits.h>
+#include "asxparser.h"
 #include "m_config.h"
 #include "playtree.h"
 #include "playtreeparser.h"
@@ -20,9 +39,6 @@
 #include "libmpdemux/demuxer.h"
 #include "mp_msg.h"
 
-struct m_config;
-extern play_tree_t*
-asx_parser_build_tree(struct m_config *mconfig, char* buffer, int ref);
 
 #define BUF_STEP 1024
 
@@ -65,8 +81,15 @@ play_tree_parser_get_line(play_tree_parser_t* p) {
   while(1) {
 
     if(resize) {
+      char *tmp;
       r = p->iter - p->buffer;
-      p->buffer = (char*)realloc(p->buffer,p->buffer_size+BUF_STEP);
+      end = p->buffer + p->buffer_end;
+      if (p->buffer_size > INT_MAX - BUF_STEP)
+        break;
+      tmp = realloc(p->buffer, p->buffer_size + BUF_STEP);
+      if (!tmp)
+        break;
+      p->buffer = tmp;
       p->iter = p->buffer + r;
       p->buffer_size += BUF_STEP;
       resize = 0;
@@ -98,7 +121,7 @@ play_tree_parser_get_line(play_tree_parser_t* p) {
 
   line_end = (end > p->iter && *(end-1) == '\r') ? end-1 : end;
   if(line_end - p->iter >= 0)
-    p->line = (char*)realloc(p->line,line_end - p->iter+1);
+    p->line = realloc(p->line, line_end - p->iter + 1);
   else
     return NULL;
   if(line_end - p->iter > 0)
@@ -223,21 +246,28 @@ static int
 pls_read_entry(char* line,pls_entry_t** _e,int* _max_entry,char** val) {
   int num,max_entry = (*_max_entry);
   pls_entry_t* e = (*_e);
+  int limit = INT_MAX / sizeof(*e);
   char* v;
 
   v = pls_entry_get_value(line);
   if(!v) {
     mp_msg(MSGT_PLAYTREE,MSGL_ERR,"No value in entry %s\n",line);
-    return 0;
+    return -1;
   }
 
   num = atoi(line);
-  if(num < 0) {
+  if(num <= 0 || num > limit) {
+    if (max_entry >= limit) {
+        mp_msg(MSGT_PLAYTREE, MSGL_WARN, "Too many index entries\n");
+        return -1;
+    }
     num = max_entry+1;
-    mp_msg(MSGT_PLAYTREE,MSGL_WARN,"No entry index in entry %s\nAssuming %d\n",line,num);
+    mp_msg(MSGT_PLAYTREE,MSGL_WARN,"No or invalid entry index in entry %s\nAssuming %d\n",line,num);
   }
   if(num > max_entry) {
-    e = (pls_entry_t*)realloc(e,num*sizeof(pls_entry_t));
+    e = realloc(e, num * sizeof(pls_entry_t));
+    if (!e)
+      return -1;
     memset(&e[max_entry],0,(num-max_entry)*sizeof(pls_entry_t));
     max_entry = num;
   }
@@ -698,12 +728,12 @@ play_tree_add_basepath(play_tree_t* pt, char* bp) {
     if (pt->files[i][0] == '\\') {
       if (pt->files[i][1] == '\\')
         continue;
-      pt->files[i] = (char*)realloc(pt->files[i],2+fl+1);
+      pt->files[i] = realloc(pt->files[i], 2 + fl + 1);
       memmove(pt->files[i] + 2,pt->files[i],fl+1);
       memcpy(pt->files[i],bp,2);
       continue;
     }
-    pt->files[i] = (char*)realloc(pt->files[i],bl+fl+1);
+    pt->files[i] = realloc(pt->files[i], bl + fl + 1);
     memmove(pt->files[i] + bl,pt->files[i],fl+1);
     memcpy(pt->files[i],bp,bl);
   }

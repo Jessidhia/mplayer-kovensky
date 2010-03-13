@@ -1,7 +1,23 @@
 /*
  * HTTP Helper
- * by Bertrand Baudet <bertrand_baudet@yahoo.com>
- * (C) 2001, MPlayer team.
+ *
+ * Copyright (C) 2001 Bertrand Baudet <bertrand_baudet@yahoo.com>
+ *
+ * This file is part of MPlayer.
+ *
+ * MPlayer is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * MPlayer is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with MPlayer; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #include "config.h"
@@ -24,14 +40,11 @@
 #include "stream.h"
 #include "libmpdemux/demuxer.h"
 #include "network.h"
-#include "help_mp.h"
 
 
 extern const mime_struct_t mime_type_table[];
 extern int stream_cache_size;
 extern int network_bandwidth;
-
-int http_seek(stream_t *stream, off_t pos);
 
 typedef struct {
   unsigned metaint;
@@ -318,7 +331,7 @@ http_response_append( HTTP_header_t *http_hdr, char *response, int length ) {
 		mp_msg(MSGT_NETWORK,MSGL_FATAL,"Bad size in memory (re)allocation\n");
 		return -1;
 	}
-	http_hdr->buffer = (char*)realloc( http_hdr->buffer, http_hdr->buffer_size+length+1 );
+	http_hdr->buffer = realloc( http_hdr->buffer, http_hdr->buffer_size+length+1 );
 	if( http_hdr->buffer==NULL ) {
 		mp_msg(MSGT_NETWORK,MSGL_FATAL,"Memory (re)allocation failed\n");
 		return -1;
@@ -414,7 +427,7 @@ http_response_parse( HTTP_header_t *http_hdr ) {
 		while( *ptr!='\r' && *ptr!='\n' ) ptr++;
 		len = ptr-hdr_ptr;
 		if( len==0 ) break;
-		field = (char*)realloc(field, len+1);
+		field = realloc(field, len+1);
 		if( field==NULL ) {
 			mp_msg(MSGT_NETWORK,MSGL_ERR,"Memory allocation failed\n");
 			return -1;
@@ -506,7 +519,7 @@ char *
 http_get_field( HTTP_header_t *http_hdr, const char *field_name ) {
 	if( http_hdr==NULL || field_name==NULL ) return NULL;
 	http_hdr->field_search_pos = http_hdr->first_field;
-	http_hdr->field_search = (char*)realloc( http_hdr->field_search, strlen(field_name)+1 );
+	http_hdr->field_search = realloc( http_hdr->field_search, strlen(field_name)+1 );
 	if( http_hdr->field_search==NULL ) {
 		mp_msg(MSGT_NETWORK,MSGL_FATAL,"Memory allocation failed\n");
 		return NULL;

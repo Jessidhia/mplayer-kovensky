@@ -168,7 +168,7 @@ static void filter(struct vf_priv_s *p, uint8_t *dst[3], uint8_t *src[3], int ds
     if(p->qp)
         p->frame->quality= p->qp * FF_QP2LAMBDA;
     else
-        p->frame->quality= (qp_store[0] * FF_QP2LAMBDA)>>p->mpeg2;
+        p->frame->quality= norm_qscale(qp_store[0], p->mpeg2) * FF_QP2LAMBDA;
 //    init per MB qscale stuff FIXME
 
     for(i=0; i<count; i++){
@@ -340,7 +340,7 @@ static int control(struct vf_instance* vf, int request, void* data){
     return vf_next_control(vf,request,data);
 }
 
-static int open(vf_instance_t *vf, char* args){
+static int vf_open(vf_instance_t *vf, char *args){
 
     int log2c=-1;
 
@@ -380,6 +380,6 @@ const vf_info_t vf_info_uspp = {
     "uspp",
     "Michael Niedermayer",
     "",
-    open,
+    vf_open,
     NULL
 };

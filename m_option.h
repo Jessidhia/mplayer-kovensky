@@ -1,3 +1,21 @@
+/*
+ * This file is part of MPlayer.
+ *
+ * MPlayer is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * MPlayer is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with MPlayer; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ */
+
 #ifndef MPLAYER_M_OPTION_H
 #define MPLAYER_M_OPTION_H
 
@@ -51,7 +69,7 @@ extern const m_option_type_t m_option_type_func;
 typedef void (*m_opt_default_func_t)(const m_option_t *, const char*);
 
 /// Callback used by m_option_type_func_full options.
-typedef int (*m_opt_func_full_t)(const m_option_t *, const char *, char *);
+typedef int (*m_opt_func_full_t)(const m_option_t *, const char *, const char *);
 
 /// Callback used by m_option_type_func_param options.
 typedef int (*m_opt_func_param_t)(const m_option_t *, const char *);
@@ -181,9 +199,9 @@ extern const m_obj_params_t m_span_params_def;
 
 /// Option type description
 struct m_option_type {
-  char* name;
+  const char* name;
   /// Syntax description, etc
-  char* comments;
+  const char* comments;
   /// Size needed for the data.
   unsigned int size;
   /// See \ref OptionTypeFlags.
@@ -201,7 +219,7 @@ struct m_option_type {
    *  \return On error a negative value is returned, on success the number of arguments
    *          consumed. For details see \ref OptionParserReturn.
    */
-  int (*parse)(const m_option_t* opt,const char *name, char *param, void* dst, int src);
+  int (*parse)(const m_option_t* opt,const char *name, const char *param, void* dst, int src);
 
   /// Print back a value in string form.
   /** \param opt The option to print.
@@ -224,21 +242,21 @@ struct m_option_type {
    *  \param dst Pointer to the destination memory.
    *  \param src Pointer to the source memory.
    */
-  void (*save)(const m_option_t* opt,void* dst, void* src);
+  void (*save)(const m_option_t* opt,void* dst, const void* src);
 
   /// Set the value in the program (dst) from a save slot.
   /** \param opt The option to copy.
    *  \param dst Pointer to the destination memory.
    *  \param src Pointer to the source memory.
    */
-  void (*set)(const m_option_t* opt,void* dst, void* src);
+  void (*set)(const m_option_t* opt,void* dst, const void* src);
 
   /// Copy the data between two save slots. If NULL and size is > 0 a memcpy will be used.
   /** \param opt The option to copy.
    *  \param dst Pointer to the destination memory.
    *  \param src Pointer to the source memory.
    */
-  void (*copy)(const m_option_t* opt,void* dst, void* src);
+  void (*copy)(const m_option_t* opt,void* dst, const void* src);
   //@}
 
   /// Free the data allocated for a save slot.
@@ -470,7 +488,7 @@ const m_option_t* m_option_list_find(const m_option_t* list,const char* name);
 
 /// Helper to parse options, see \ref m_option_type::parse.
 inline static int
-m_option_parse(const m_option_t* opt,const char *name, char *param, void* dst, int src) {
+m_option_parse(const m_option_t* opt,const char *name, const char *param, void* dst, int src) {
   return opt->type->parse(opt,name,param,dst,src);
 }
 
@@ -485,7 +503,7 @@ m_option_print(const m_option_t* opt, const void* val_ptr) {
 
 /// Helper around \ref m_option_type::copy.
 inline  static void
-m_option_copy(const m_option_t* opt,void* dst, void* src) {
+m_option_copy(const m_option_t* opt,void* dst, const void* src) {
   if(opt->type->copy)
     opt->type->copy(opt,dst,src);
   else if(opt->type->size > 0)

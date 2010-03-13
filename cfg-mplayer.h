@@ -1,3 +1,21 @@
+/*
+ * This file is part of MPlayer.
+ *
+ * MPlayer is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * MPlayer is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with MPlayer; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ */
+
 #ifndef MPLAYER_CFG_MPLAYER_H
 #define MPLAYER_CFG_MPLAYER_H
 
@@ -8,6 +26,7 @@
 #include <stddef.h>
 
 #include "cfg-common.h"
+#include "libvo/vo_zr.h"
 #include "options.h"
 
 extern char *fb_mode_cfgfile;
@@ -35,14 +54,9 @@ extern int menu_fribidi_flip_commas;
 
 extern char *unrar_executable;
 
-int vo_zr_parseoption(const m_option_t* conf, char *opt, char * param);
-void vo_zr_revertoption(const m_option_t* opt,char* pram);
-
 extern m_option_t dxr2_opts[];
 
 extern int sws_flags;
-int readPPOpt(void *conf, char *arg);
-void revertPPOpt(void *conf, char* opt);
 extern char* pp_help;
 
 const m_option_t vd_conf[]={

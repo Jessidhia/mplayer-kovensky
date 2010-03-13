@@ -22,7 +22,6 @@
 #include "libswscale/rgb2rgb.h"
 #include "libmpcodecs/vf_scale.h"
 #include "mp_msg.h"
-#include "help_mp.h"
 #include "old_vo_wrapper.h"
 
 // mga_vid drawing functions
@@ -143,11 +142,9 @@ vo_mga_flip_page(void)
 
 //    printf("-- flip to %d --\n",mga_next_frame);
 
-#if 1
 	ioctl(f,MGA_VID_FSEL,&mga_next_frame);
 	mga_next_frame=(mga_next_frame+1)%mga_vid_config.num_frames;
 	vid_data=frames[mga_next_frame];
-#endif
 
 }
 

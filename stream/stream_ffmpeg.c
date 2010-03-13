@@ -1,3 +1,21 @@
+/*
+ * This file is part of MPlayer.
+ *
+ * MPlayer is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * MPlayer is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with MPlayer; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ */
+
 #include "config.h"
 
 #include "libavformat/avformat.h"
@@ -57,6 +75,7 @@ static int open_f(stream_t *stream, int mode, void *opts, int *file_format)
     URLContext *ctx = NULL;
     int res = STREAM_ERROR;
     int64_t size;
+    int dummy;
 
     av_register_all();
     if (mode == STREAM_READ)
@@ -77,25 +96,28 @@ static int open_f(stream_t *stream, int mode, void *opts, int *file_format)
     }
     if (!strncmp(filename, prefix, strlen(prefix)))
         filename += strlen(prefix);
+    dummy = !strncmp(filename, "rtsp:", 5);
     mp_msg(MSGT_OPEN, MSGL_V, "[ffmpeg] Opening %s\n", filename);
 
-    if (url_open(&ctx, filename, flags) < 0)
+    if (!dummy && url_open(&ctx, filename, flags) < 0)
         goto out;
 
     stream->priv = ctx;
-    size = url_filesize(ctx);
+    size = dummy ? 0 : url_filesize(ctx);
     if (size >= 0)
         stream->end_pos = size;
     stream->type = STREAMTYPE_FILE;
     stream->seek = seek;
-    if (ctx->is_streamed) {
+    if (dummy || ctx->is_streamed) {
         stream->type = STREAMTYPE_STREAM;
         stream->seek = NULL;
     }
-    stream->fill_buffer = fill_buffer;
-    stream->write_buffer = write_buffer;
-    stream->control = control;
-    stream->close = close_f;
+    if (!dummy) {
+        stream->fill_buffer = fill_buffer;
+        stream->write_buffer = write_buffer;
+        stream->control = control;
+        stream->close = close_f;
+    }
     res = STREAM_OK;
 
 out:

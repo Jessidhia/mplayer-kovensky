@@ -197,7 +197,6 @@ case $(echo -n) in
   *)    _echo_n='-n '   _echo_c=        ;;      # BSD echo
 esac
 
-msg_lang_all=$(echo help/help_mp-??.h help/help_mp-??_??.h | sed -e "s:help/help_mp-\(..\).h:\1:g" -e "s:help/help_mp-\(.....\).h:\1:g")
 man_lang_all=$(echo DOCS/man/??/mplayer.1 DOCS/man/??_??/mplayer.1 | sed -e "s:DOCS/man/\(..\)/mplayer.1:\1:g" -e "s:DOCS/man/\(.._..\)/mplayer.1:\1:g")
 doc_lang_all=$(echo DOCS/xml/??/ DOCS/xml/??_??/ | sed -e "s:DOCS/xml/\(..\)/:\1:g" -e "s:DOCS/xml/\(.._..\)/:\1:g")
 
@@ -216,6 +215,7 @@ Installation directories:
   --mandir=DIR           directory for installing man pages [PREFIX/share/man]
   --confdir=DIR          directory for installing configuration files
                          [PREFIX/etc/mplayer]
+  --localedir=DIR        directory for locale tree [PREFIX/share/locale]
   --libdir=DIR           directory for object code libraries [PREFIX/lib]
   --codecsdir=DIR        directory for binary codecs [LIBDIR/codecs]
   --win32codecsdir=DIR   directory for Windows DLLs [LIBDIR/codecs]
@@ -288,7 +288,7 @@ Codecs:
   --enable-jpeg             enable JPEG input/output support [autodetect]
   --enable-libcdio          enable libcdio support [autodetect]
   --enable-liblzo           enable liblzo support [autodetect]
-  --disable-win32dll        disable Win32 DLL support [enabled]
+  --disable-win32dll        disable Win32 DLL support [autodetect]
   --disable-qtx             disable QuickTime codecs support [enabled]
   --disable-xanim           disable XAnim codecs support [enabled]
   --disable-real            disable RealPlayer codecs support [enabled]
@@ -352,7 +352,6 @@ Video output:
   --enable-ivtv            enable IVTV TV-Out video output [autodetect]
   --enable-v4l2            enable V4L2 Decoder audio/video output [autodetect]
   --enable-dvb             enable DVB video output [autodetect]
-  --enable-dvbhead         enable DVB video output (HEAD version) [autodetect]
   --enable-mga             enable mga_vid video output [autodetect]
   --enable-xmga            enable mga_vid X11 video output [autodetect]
   --enable-xv              enable Xv video output [autodetect]
@@ -392,16 +391,17 @@ Audio output:
   --disable-nas          disable NAS audio output [autodetect]
   --disable-sgiaudio     disable SGI audio output [autodetect]
   --disable-sunaudio     disable Sun audio output [autodetect]
+  --disable-kai          disable KAI audio output [autodetect]
   --disable-dart         disable DART audio output [autodetect]
   --disable-win32waveout disable Windows waveout audio output [autodetect]
   --disable-coreaudio    disable CoreAudio audio output [autodetect]
   --disable-select       disable using select() on the audio device [enable]
 
 Language options:
+  --enable-translation   enable support for translated output [disable]
   --charset=charset      convert the console messages to this character set
   --language-doc=lang    language to use for the documentation [en]
   --language-man=lang    language to use for the man pages [en]
-  --language-msg=lang    language to use for the messages [en]
   --language=lang        default language to use [en]
 Specific options override --language. You can pass a list of languages separated
 by whitespace or commas instead of a single language. Nonexisting translations
@@ -409,7 +409,7 @@ will be dropped from each list. All documentation and man page translations
 available in the list will be installed, for the messages the first available
 translation will be used. The value "all" will activate all translations. The
 LINGUAS environment variable is honored. In all cases the fallback is English.
-Available values are: all $msg_lang_all
+Available values are: all $man_lang_all
 
 Miscellaneous options:
   --enable-runtime-cpudetection    enable runtime CPU detection [disable]
@@ -548,7 +548,6 @@ _svga=auto
 _vesa=auto
 _fbdev=auto
 _dvb=auto
-_dvbhead=auto
 _dxr2=auto
 _dxr3=auto
 _ivtv=auto
@@ -561,6 +560,7 @@ _arts=auto
 _esd=auto
 _pulse=auto
 _jack=auto
+_kai=auto
 _dart=auto
 _openal=no
 _libcdio=auto
@@ -656,6 +656,7 @@ _largefiles=yes
 #language=en
 _shm=auto
 _linux_devfs=no
+_translation=no
 _charset="UTF-8"
 _dynamic_plugins=no
 _crash_debug=no
@@ -732,6 +733,9 @@ for ac_option do
     ;;
   --realcodecsdir=*)
     _realcodecsdir=$(echo $ac_option | cut -d '=' -f 2)
+    ;;
+  --localedir=*)
+    _localedir=$(echo $ac_option | cut -d '=' -f 2)
     ;;
 
   --with-install=*)
@@ -815,9 +819,6 @@ for ac_option do
   --language-man=*)
     language_man=$(echo $ac_option | cut -d '=' -f 2)
     ;;
-  --language-msg=*)
-    language_msg=$(echo $ac_option | cut -d '=' -f 2)
-    ;;
   --language=*)
     language=$(echo $ac_option | cut -d '=' -f 2)
     ;;
@@ -843,6 +844,8 @@ for ac_option do
   --disable-debug)
     _debug=
     ;;
+  --enable-translation)              _translation=yes           ;;
+  --disable-translation)             _translation=no            ;;
   --enable-runtime-cpudetection)    _runtime_cpudetection=yes   ;;
   --disable-runtime-cpudetection)   _runtime_cpudetection=no    ;;
   --enable-cross-compile)           _cross_compile=yes          ;;
@@ -911,8 +914,6 @@ for ac_option do
   --disable-fbdev)      _fbdev=no       ;;
   --enable-dvb)         _dvb=yes        ;;
   --disable-dvb)        _dvb=no         ;;
-  --enable-dvbhead)     _dvbhead=yes    ;;
-  --disable-dvbhead)    _dvbhead=no     ;;
   --enable-dxr2)        _dxr2=yes       ;;
   --disable-dxr2)       _dxr2=no        ;;
   --enable-dxr3)        _dxr3=yes       ;;
@@ -941,6 +942,8 @@ for ac_option do
   --disable-jack)       _jack=no        ;;
   --enable-openal)      _openal=yes     ;;
   --disable-openal)     _openal=no      ;;
+  --enable-kai)         _kai=yes        ;;
+  --disable-kai)        _kai=no         ;;
   --enable-dart)        _dart=yes       ;;
   --disable-dart)       _dart=no        ;;
   --enable-mad)         _mad=yes        ;;
@@ -1265,6 +1268,7 @@ test -z "$_datadir" && _datadir="$_prefix/share/mplayer"
 test -z "$_mandir"  && _mandir="$_prefix/share/man"
 test -z "$_confdir" && _confdir="$_prefix/etc/mplayer"
 test -z "$_libdir"  && _libdir="$_prefix/lib"
+test -z "$_localedir"  && _localedir="$_prefix/share/locale"
 
 # Determine our OS name and CPU architecture
 if test -z "$_target" ; then
@@ -2416,6 +2420,7 @@ if test "$cc_vendor" = "gnu" ; then
   cc_check -Wno-pointer-sign && CFLAGS="-Wno-pointer-sign $CFLAGS"
   cc_check -Wdisabled-optimization && CFLAGS="-Wdisabled-optimization $CFLAGS"
   cc_check -Wundef && CFLAGS="-Wundef $CFLAGS"
+  cc_check -Wmissing-prototypes && CFLAGS="-Wmissing-prototypes $CFLAGS"
 else
   CFLAGS="-D_ISOC99_SOURCE -D_BSD_SOURCE $CFLAGS"
 fi
@@ -2825,19 +2830,24 @@ fi
 echores "$_langinfo"
 
 
+echocheck "translation support"
+if test "$_translation" = yes; then
+  def_translation="#define CONFIG_TRANSLATION 1"
+else
+  def_translation="#undef CONFIG_TRANSLATION"
+fi
+echores "$_translation"
+
 echocheck "language"
 # Set preferred languages, "all" uses English as main language.
 test -z "$language" && language=$LINGUAS
 test -z "$language_doc" && language_doc=$language
 test -z "$language_man" && language_man=$language
-test -z "$language_msg" && language_msg=$language
 language_doc=$(echo $language_doc | tr , " ")
 language_man=$(echo $language_man | tr , " ")
-language_msg=$(echo $language_msg | tr , " ")
 
 test "$language_doc" = "all" && language_doc=$doc_lang_all
 test "$language_man" = "all" && language_man=$man_lang_all
-test "$language_msg" = "all" && language_msg=en
 
 # Prune non-existing translations from language lists.
 # Set message translation to the first available language.
@@ -2854,13 +2864,7 @@ done
 language_man=$tmp_language_man
 test -z "$language_man" && language_man=en
 
-for lang in $language_msg ; do
-  test -f "help/help_mp-${lang}.h" && tmp_language_msg=$lang && break
-done
-language_msg=$tmp_language_msg
-test -z "$language_msg" && language_msg=en
-_mp_help="help/help_mp-${language_msg}.h"
-echores "messages: $language_msg - man pages: $language_man - documentation: $language_doc"
+echores "man pages: $language_man - documentation: $language_doc"
 
 
 echocheck "enable sighandler"
@@ -3819,6 +3823,17 @@ fi
 echores "$_setenv"
 
 
+echocheck "setmode()"
+_setmode=no
+def_setmode='#define HAVE_SETMODE 0'
+cat > $TMPC << EOF
+#include <io.h>
+int main(void) { setmode(0, 0); return 0; }
+EOF
+cc_check && _setmode=yes && def_setmode='#define HAVE_SETMODE 1'
+echores "$_setmode"
+
+
 if sunos; then
 echocheck "sysi86()"
 cat > $TMPC << EOF
@@ -4709,36 +4724,6 @@ cat >$TMPC << EOF
 #include <stdio.h>
 #include <time.h>
 #include <unistd.h>
-#include <ost/dmx.h>
-#include <ost/frontend.h>
-#include <ost/sec.h>
-#include <ost/video.h>
-#include <ost/audio.h>
-int main(void) {return 0;}
-EOF
-  for _inc_tmp in "" "-I/usr/src/DVB/ost/include" ; do
-    cc_check $_inc_tmp && _dvb=yes && \
-     extra_cflags="$extra_cflags $_inc_tmp" && break
-  done
-fi
-echores "$_dvb"
-if test "$_dvb" = yes ; then
-  def_dvb='#define CONFIG_DVB 1'
-  def_dvbin='#define CONFIG_DVBIN 1'
-  _aomodules="mpegpes(dvb) $_aomodules"
-  _vomodules="mpegpes(dvb) $_vomodules"
-fi
-
-echocheck "DVB HEAD"
-if test "$_dvbhead" = auto ; then
-  _dvbhead=no
-
-cat >$TMPC << EOF
-#include <poll.h>
-#include <sys/ioctl.h>
-#include <stdio.h>
-#include <time.h>
-#include <unistd.h>
 #include <linux/dvb/dmx.h>
 #include <linux/dvb/frontend.h>
 #include <linux/dvb/video.h>
@@ -4746,33 +4731,25 @@ cat >$TMPC << EOF
 int main(void) {return 0;}
 EOF
   for _inc_tmp in "" "-I/usr/src/DVB/include" ; do
-    cc_check $_inc_tmp && _dvbhead=yes && \
+    cc_check $_inc_tmp && _dvb=yes && \
       extra_cflags="$extra_cflags $_inc_tmp" && break
   done
 fi
-echores "$_dvbhead"
-if test "$_dvbhead" = yes ; then
+echores "$_dvb"
+if test "$_dvb" = yes ; then
+  _dvbin=yes
+  _inputmodules="dvb $_inputmodules"
   def_dvb='#define CONFIG_DVB 1'
-  def_dvb_head='#define CONFIG_DVB_HEAD 1'
   def_dvbin='#define CONFIG_DVBIN 1'
   _aomodules="mpegpes(dvb) $_aomodules"
   _vomodules="mpegpes(dvb) $_vomodules"
-fi
-
-if test "$_dvbhead" = no && test "$_dvb" = no ; then
+else
+  _dvbin=no
+  _noinputmodules="dvb $_noinputmodules"
   def_dvb='#undef CONFIG_DVB'
-  def_dvb_head='#undef CONFIG_DVB_HEAD'
   def_dvbin='#undef CONFIG_DVBIN '
   _aomodules="mpegpes(file) $_aomodules"
   _vomodules="mpegpes(file) $_vomodules"
-fi
-
-if test "$_dvb" = yes || test "$_dvbhead" = yes ; then
-    _dvbin=yes
-    _inputmodules="dvb $_inputmodules"
-else
-    _dvbin=no
-    _noinputmodules="dvb $_noinputmodules"
 fi
 
 
@@ -5809,6 +5786,26 @@ fi #if irix
 
 
 if os2 ; then
+echocheck "KAI (UNIAUD/DART)"
+if test "$_kai" = auto; then
+  cat > $TMPC << EOF
+#include <os2.h>
+#include <kai.h>
+int main(void) { return 0; }
+EOF
+  _kai=no;
+  cc_check -lkai && _kai=yes
+fi
+if test "$_kai" = yes ; then
+  def_kai='#define CONFIG_KAI 1'
+  libs_mplayer="$libs_mplayer -lkai"
+  _aomodules="kai $_aomodules"
+else
+  def_kai='#undef CONFIG_KAI'
+  _noaomodules="kai $_noaomodules"
+fi
+echores "$_kai"
+
 echocheck "DART"
 if test "$_dart" = auto; then
   cat > $TMPC << EOF
@@ -5865,7 +5862,7 @@ fi
 echocheck "VCD support"
 if test "$_vcd" = auto; then
   _vcd=no
-  if linux || freebsd || netbsd || openbsd || dragonfly || bsdos || darwin || sunos; then
+  if linux || freebsd || netbsd || openbsd || dragonfly || bsdos || darwin || sunos || os2; then
     _vcd=yes
   elif mingw32; then
     cat > $TMPC << EOF
@@ -6121,6 +6118,9 @@ if test "$_fontconfig" = auto ; then
 #include <stdio.h>
 #include <stdlib.h>
 #include <fontconfig/fontconfig.h>
+#if FC_VERSION < 20402
+#error At least version 2.4.2 of fontconfig required
+#endif
 int main(void) {
     int err = FcInit();
     if (err == FcFalse) {
@@ -6827,7 +6827,7 @@ if test "$_real" = auto ; then
   _real=no
   _res_comment="dynamic loader support needed"
   if test "$_dl" = yes || test "$_win32dll" = yes &&
-     (linux || freebsd || netbsd || openbsd || dragonfly || darwin || win32) ; then
+     (linux || freebsd || netbsd || openbsd || dragonfly || darwin || win32 || os2) ; then
     _real=yes
   fi
 fi
@@ -6940,7 +6940,7 @@ if test "$_libavutil" = auto ; then
   _libavutil=no
   cat > $TMPC << EOF
 #include <libavutil/common.h>
-int main(void) { av_gcd(1,1); return 0; }
+int main(void) { av_clip(1, 1, 1); return 0; }
 EOF
   if $_pkg_config --exists libavutil ; then
     _inc_libavutil=$($_pkg_config --cflags libavutil)
@@ -7639,20 +7639,6 @@ else
   _charset="UTF-8"
 fi
 
-if test -n "$_charset" && test "$_charset" != "UTF-8" ; then
-echocheck "iconv program"
-iconv -f UTF-8 -t $_charset ${_mp_help} > /dev/null 2>> "$TMPLOG"
-if test "$?" -ne 0 ; then
-  echores "no"
-    echo "No working iconv program found, use "
-    echo "--charset=UTF-8 to continue anyway."
-    echo "If you also have problems with iconv library functions use --charset=noconv."
-    exit 1
-else
-  echores "yes"
-fi
-fi
-
 #############################################################################
 
 echocheck "automatic gdb attach"
@@ -7875,6 +7861,7 @@ DATADIR = \$(DESTDIR)$_datadir
 LIBDIR = \$(DESTDIR)$_libdir
 MANDIR = \$(DESTDIR)$_mandir
 CONFDIR = \$(DESTDIR)$_confdir
+LOCALEDIR = \$(DESTDIR)$_localedir
 
 AR = $_ar
 AS = $_cc
@@ -7908,7 +7895,6 @@ MPDEPEND_CMD     = \$(CC) -MM \$(CFLAGS)   \$(filter-out %.xpm,\$(filter-out %.h
 MPDEPEND_CMD_CXX = \$(CC) -MM \$(CXXFLAGS) \$(filter-out %.hh,\$(filter-out %.h,$^))  | sed -e "s,[0-9a-z._-]*: \([a-z0-9/]*/\)[^/]* ,\1&," -e "s,\(.*\)\.o: ,\1.d &,"
 
 GETCH = $_getch
-HELP_FILE = $_mp_help
 TIMER = $_timer
 
 EXESUF = $_exesuf
@@ -7980,6 +7966,7 @@ IVTV = $_ivtv
 JACK = $_jack
 JOYSTICK = $_joystick
 JPEG = $_jpeg
+KAI = $_kai
 KVA = $_kva
 LADSPA = $_ladspa
 LIBA52 = $_liba52
@@ -8172,6 +8159,9 @@ cat > $TMPH << EOF
 #define MPLAYER_DATADIR "$_datadir"
 #define MPLAYER_CONFDIR "$_confdir"
 #define MPLAYER_LIBDIR "$_libdir"
+#define MPLAYER_LOCALEDIR "$_localedir"
+
+$def_translation
 
 /* definitions needed by included libraries */
 #define HAVE_INTTYPES_H 1
@@ -8215,25 +8205,18 @@ $def_winsock2_h
 
 
 /* system functions */
-$def_exp2
-$def_exp2f
 $def_gethostbyname2
 $def_gettimeofday
 $def_glob
 $def_langinfo
-$def_llrint
-$def_log2
-$def_log2f
-$def_lrint
 $def_lrintf
 $def_map_memalign
 $def_memalign
 $def_nanosleep
 $def_posix_select
-$def_round
-$def_roundf
 $def_select
 $def_setenv
+$def_setmode
 $def_shm
 $def_strsep
 $def_swab
@@ -8241,7 +8224,6 @@ $def_sysi86
 $def_sysi86_iv
 $def_termcap
 $def_termios
-$def_truncf
 $def_vsscanf
 
 
@@ -8249,6 +8231,7 @@ $def_vsscanf
 $def_asmalign_pot
 $def_builtin_expect
 $def_dl
+$def_dos_paths
 $def_extern_asm
 $def_extern_prefix
 $def_iconv
@@ -8362,6 +8345,7 @@ $def_dart
 $def_esd
 $def_esd_latency
 $def_jack
+$def_kai
 $def_nas
 $def_openal
 $def_openal_h
@@ -8437,7 +8421,6 @@ $def_directfb
 $def_directfb_version
 $def_directx
 $def_dvb
-$def_dvb_head
 $def_dvbin
 $def_dxr2
 $def_dxr3
@@ -8519,16 +8502,24 @@ $def_arpa_inet_h
 $def_bswap
 $def_bzlib
 $def_dcbzl
-$def_dos_paths
+$def_exp2
+$def_exp2f
 $def_fast_64bit
 $def_fast_unaligned
+$def_llrint
+$def_log2
+$def_log2f
+$def_lrint
 $def_memalign_hack
 $def_mlib
 $def_mkstemp
 $def_posix_memalign
 $def_pthreads
+$def_round
+$def_roundf
 $def_ten_operands
 $def_threads
+$def_truncf
 $def_xform_asm
 $def_yasm
 
@@ -8597,7 +8588,6 @@ Config files successfully generated by ./configure $_configuration !
   Optimizing for: $_optimizing
 
   Languages:
-    Messages: $language_msg
     Manual pages: $language_man
     Documentation: $language_doc
 

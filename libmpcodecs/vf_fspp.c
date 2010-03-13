@@ -454,7 +454,7 @@ static void filter(struct vf_priv_s *p, uint8_t *dst, uint8_t *src,
 		    t=x+x0-2; //correct t=x+x0-2-(y&1), but its the same
 		    if (t<0) t=0;//t always < width-2
 		    t=qp_store[qy+(t>>qps)];
-		    if(p->mpeg2) t>>=1; //copy p->mpeg2,prev_q to locals?
+		    t=norm_qscale(t, p->mpeg2);
 		    if (t!=p->prev_q) p->prev_q=t, mul_thrmat_s(p, t);
 		    column_fidct_s((int16_t*)(&p->threshold_mtx[0]), block+x*8, block3+x*8, 8); //yes, this is a HOTSPOT
 		}
@@ -622,7 +622,7 @@ static int control(struct vf_instance* vf, int request, void* data)
     return vf_next_control(vf,request,data);
 }
 
-static int open(vf_instance_t *vf, char* args)
+static int vf_open(vf_instance_t *vf, char *args)
 {
     int i=0, bias;
     int custom_threshold_m[64];
@@ -683,7 +683,7 @@ const vf_info_t vf_info_fspp = {
     "fspp",
     "Michael Niedermayer, Nikolaj Poroshin",
     "",
-    open,
+    vf_open,
     NULL
 };
 

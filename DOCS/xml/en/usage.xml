@@ -550,7 +550,8 @@ DVDs usually have surround audio encoded in AC-3 (Dolby Digital) or DTS
 (Digital Theater System) format. Some modern audio equipment is capable of
 decoding these formats internally. <application>MPlayer</application> can be
 configured to relay the audio data without decoding it. This will only work if
-you have a S/PDIF (Sony/Philips Digital Interface) jack in your sound card.
+you have a S/PDIF (Sony/Philips Digital Interface) jack in your sound card, or
+if you are passing audio over HDMI.
 </para>
 
 <para>
@@ -930,8 +931,8 @@ more. Unfortunately, the suboptions are much more complicated.
   <para>
   The remaining suboptions specify how much of each channel gets mixed into each
   other channel. This is the complicated part. To break the task down, split the
-  suboptions into several sets, one set for each output channel. Each suboption
-  within a set corresponds to an input channel. The number you specify will be
+  suboptions into several sets, one set for each input channel. Each suboption
+  within a set corresponds to an output channel. The number you specify will be
   the percentage of the input channel that gets mixed into the output channel.
   </para>
   <para>

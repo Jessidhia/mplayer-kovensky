@@ -37,14 +37,9 @@
 #include "config.h"
 #include "options.h"
 #include "mp_msg.h"
-#include "help_mp.h"
 
 #if HAVE_WINSOCK2_H
 #include <winsock2.h>
-#endif
-
-#ifndef CONFIG_SETLOCALE
-#undef CONFIG_ICONV
 #endif
 
 #ifdef CONFIG_ICONV
@@ -55,7 +50,7 @@
 #include "libmpdemux/asf.h"
 
 #include "stream.h"
-
+#include "asf_mmst_streaming.h"
 #include "network.h"
 #include "tcp.h"
 

@@ -39,7 +39,6 @@
 #include "subopt-helper.h"
 #include "mixer.h"
 #include "mp_msg.h"
-#include "help_mp.h"
 
 #define ALSA_PCM_NEW_HW_PARAMS_API
 #define ALSA_PCM_NEW_SW_PARAMS_API
@@ -553,7 +552,8 @@ static int init(int rate_hz, int channels, int format, int flags)
 	}
 
       /* workaround for buggy rate plugin (should be fixed in ALSA 1.0.11)
-         prefer our own resampler */
+         prefer our own resampler, since that allows users to choose the resampler,
+         even per file if desired */
 #if SND_LIB_VERSION >= 0x010009
       if ((err = snd_pcm_hw_params_set_rate_resample(alsa_handler, alsa_hwparams,
 						     0)) < 0)

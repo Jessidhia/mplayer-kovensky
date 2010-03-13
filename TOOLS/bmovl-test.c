@@ -1,4 +1,20 @@
-/* Small program to test the features of vf_bmovl */
+/* small program to test the features of vf_bmovl
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ */
+
 
 #include <unistd.h>
 #include <fcntl.h>
@@ -88,7 +104,7 @@ int main(int argc, char **argv) {
 		blit(fifo, image->pixels, image->w, image->h, i, i, 0, 1);
 
 	// Create a 75x75 bitmap
-	bitmap = (unsigned char*)malloc(75*75*4);
+	bitmap = malloc(75 * 75 * 4);
 
 	// Paint bitmap red, 50% transparent and blit at position 50,50
 	paint(bitmap, (75*75*4), 255, 0, 0, 128);

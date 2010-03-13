@@ -1,10 +1,25 @@
-
 /*
  * Common stuff for netstream
  * Packets and so on are defined here along with a few helpers
  * wich are used by both the client and the server
  *
  * Data is always low endian
+ *
+ * This file is part of MPlayer.
+ *
+ * MPlayer is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * MPlayer is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with MPlayer; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #ifndef MPLAYER_NETSTREAM_H
@@ -74,8 +89,7 @@ static int net_read(int fd, char* buf, int len) {
 
 static mp_net_stream_packet_t* read_packet(int fd) {
   uint16_t len;
-  mp_net_stream_packet_t* pack =
-    (mp_net_stream_packet_t*)malloc(sizeof(mp_net_stream_packet_t));
+  mp_net_stream_packet_t* pack = malloc(sizeof(mp_net_stream_packet_t));
 
   if(!net_read(fd,(char*)pack,sizeof(mp_net_stream_packet_t))) {
     free(pack);

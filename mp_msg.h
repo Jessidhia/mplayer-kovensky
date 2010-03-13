@@ -1,3 +1,21 @@
+/*
+ * This file is part of MPlayer.
+ *
+ * MPlayer is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * MPlayer is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with MPlayer; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ */
+
 #ifndef MPLAYER_MP_MSG_H
 #define MPLAYER_MP_MSG_H
 
@@ -118,12 +136,12 @@ int mp_msg_test(int mod, int lev);
 #include "config.h"
 
 char *mp_gtext(const char *string);
-#define mp_tmsg mp_msg
 
 void mp_msg_va(int mod, int lev, const char *format, va_list va);
 
 #ifdef __GNUC__
 void mp_msg(int mod, int lev, const char *format, ... ) __attribute__ ((format (printf, 3, 4)));
+void mp_tmsg(int mod, int lev, const char *format, ... ) __attribute__ ((format (printf, 3, 4)));
 #   ifdef MP_DEBUG
 #      define mp_dbg(mod,lev, args... ) mp_msg(mod, lev, ## args )
 #   else
@@ -131,6 +149,7 @@ void mp_msg(int mod, int lev, const char *format, ... ) __attribute__ ((format (
 #   endif
 #else // not GNU C
 void mp_msg(int mod, int lev, const char *format, ... );
+void mp_tmsg(int mod, int lev, const char *format, ...)
 #   ifdef MP_DEBUG
 #      define mp_dbg(mod,lev, ... ) mp_msg(mod, lev, __VA_ARGS__)
 #   else

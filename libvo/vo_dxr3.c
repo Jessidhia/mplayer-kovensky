@@ -36,7 +36,6 @@
 
 #include "config.h"
 #include "mp_msg.h"
-#include "help_mp.h"
 #include "fastmemcpy.h"
 
 #include "video_out.h"
@@ -437,13 +436,13 @@ static int config(uint32_t width, uint32_t height, uint32_t d_width, uint32_t d_
 		mp_tmsg(MSGT_VO,MSGL_ERR, "[VO_DXR3] out of memory\n");
 		return -1;
 	}
-	spued = (encodedata *) malloc(sizeof(encodedata));
+	spued = malloc(sizeof(encodedata));
 	if (spued == NULL) {
 	        free( osdpicbuf );
 		mp_tmsg(MSGT_VO,MSGL_ERR, "[VO_DXR3] out of memory\n");
 		return -1;
 	}
-	spubuf = (encodedata *) malloc(sizeof(encodedata));
+	spubuf = malloc(sizeof(encodedata));
 	if (spubuf == NULL) {
 	        free( osdpicbuf );
 		free( spued );
@@ -596,9 +595,7 @@ static void draw_osd(void)
 		 */
 /*		Subpics are not stable yet =(
 		expect lockups if you enable */
-#if 1
 		write(fd_spu, spued->data, spued->count);
-#endif
 	}
 	disposd++;
 #endif
@@ -903,7 +900,7 @@ static overlay_t *overlay_init(int dev)
 {
     overlay_t *o;
 
-    o = (overlay_t *) malloc(sizeof(overlay_t));
+    o = malloc(sizeof(overlay_t));
 
     if(!o)
 	return NULL;

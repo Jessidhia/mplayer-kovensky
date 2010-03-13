@@ -47,7 +47,6 @@
 #include "audio_out_internal.h"
 #include "libaf/af_format.h"
 #include "mp_msg.h"
-#include "help_mp.h"
 
 static const ao_info_t info =
 {
@@ -494,7 +493,7 @@ static int init(int rate,int channels,int format,int flags){
 
     audio_fd=open(audio_dev, O_WRONLY);
     if(audio_fd<0){
-	mp_tmsg(MSGT_AO, MSGL_ERR, "[AO SUN] Can't open audio device %s, %s -> nosound.\n", audio_dev, strerror(errno));
+	mp_tmsg(MSGT_AO, MSGL_ERR, "[AO SUN] Can't open audio device %s, %s  -> nosound.\n", audio_dev, strerror(errno));
 	return 0;
     }
 

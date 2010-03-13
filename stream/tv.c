@@ -1,14 +1,29 @@
 /*
- TV Interface for MPlayer
-
- (C) Alex Beregszaszi
-
- API idea based on libvo2
-
- Feb 19, 2002: Significant rewrites by Charles R. Henrich (henrich@msu.edu)
-				to add support for audio, and bktr *BSD support.
-
-*/
+ * TV Interface for MPlayer
+ *
+ * API idea based on libvo2
+ *
+ * Copyright (C) 2001 Alex Beregszaszi
+ *
+ * Feb 19, 2002: Significant rewrites by Charles R. Henrich (henrich@msu.edu)
+ *               to add support for audio, and bktr *BSD support.
+ *
+ * This file is part of MPlayer.
+ *
+ * MPlayer is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * MPlayer is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with MPlayer; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -21,7 +36,6 @@
 
 
 #include "mp_msg.h"
-#include "help_mp.h"
 
 #include "stream.h"
 #include "libmpdemux/demuxer.h"
@@ -444,7 +458,7 @@ static int open_tv(tvi_handle_t *tvh)
             tvh->tv_param->height = 480/tvh->tv_param->decimation;
         }
       mp_tmsg(MSGT_TV, MSGL_INFO,
-	       " MJP: width %d height %d\n", tvh->tv_param->width, tvh->tv_param->height);
+	       "  MJP: width %d height %d\n", tvh->tv_param->width, tvh->tv_param->height);
     }
 #endif
 
@@ -798,7 +812,7 @@ static demuxer_t* demux_open_tv(demuxer_t *demuxer)
 	sh_audio->wf->nBlockAlign = sh_audio->samplesize * sh_audio->channels;
 	sh_audio->wf->nAvgBytesPerSec = sh_audio->i_bps;
 
-	mp_tmsg(MSGT_DECVIDEO, MSGL_V, " TV audio: %d channels, %d bits, %d Hz\n",
+	mp_tmsg(MSGT_DECVIDEO, MSGL_V, "  TV audio: %d channels, %d bits, %d Hz\n",
           sh_audio->wf->nChannels, sh_audio->wf->wBitsPerSample,
           sh_audio->wf->nSamplesPerSec);
 

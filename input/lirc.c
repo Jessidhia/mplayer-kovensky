@@ -27,8 +27,8 @@
 #include <stdlib.h>
 
 #include "mp_msg.h"
-#include "help_mp.h"
 #include "input.h"
+#include "lirc.h"
 
 static struct lirc_config *lirc_config;
 char *lirc_configfile;
