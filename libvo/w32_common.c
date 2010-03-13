@@ -447,7 +447,6 @@ int vo_w32_init(void) {
     PIXELFORMATDESCRIPTOR pfd;
     HDC vo_hdc;
     int pf;
-    HICON mplayerIcon = 0;
     char exedir[MAX_PATH];
     HINSTANCE user32;
     HICON mplayerIcon = NULL;

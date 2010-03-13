@@ -238,8 +238,8 @@ void mplayer_put_key(struct mp_fifo *fifo, int code)
 }
 
 #ifdef CONFIG_ASS
-#include "libass/ass.h"
-#include "libass/ass_mp.h"
+#include "ass/ass.h"
+#include "ass_mp.h"
 #endif
 char *current_module;
 #include "mpcommon.h"
