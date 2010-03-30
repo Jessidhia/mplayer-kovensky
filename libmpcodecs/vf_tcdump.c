@@ -6,12 +6,10 @@
 
 #include "config.h"
 #include "mp_msg.h"
-#include "help_mp.h"
 
 #include "img_format.h"
 #include "mp_image.h"
 #include "vf.h"
-
 
 struct vf_priv_s {
     char *tcv2filename;
@@ -48,13 +46,13 @@ static int put_image(struct vf_instance* vf, mp_image_t *mpi, double pts){
     if (pts == MP_NOPTS_VALUE) {
         if (!priv->noptswarn) {
             priv->noptswarn = 1;
-            mp_msg(MSGT_VFILTER, MSGL_WARN, MSGTR_MPCODECS_TCDumpNoPTS);
+            mp_msg(MSGT_VFILTER, MSGL_WARN, "Stream contains frames with no PTS, timecode file not valid (if already written)\n");
         }
     } else {
         if (!priv->tcv2file && priv->tcv2filename) {
             priv->tcv2file = fopen(priv->tcv2filename,"w");
             if (!priv->tcv2file) {
-                mp_msg(MSGT_VFILTER, MSGL_WARN, MSGTR_MPCODECS_TCDumpOpenFail,
+                mp_msg(MSGT_VFILTER, MSGL_WARN, "Unable to open timecode file: %s\n",
                     strerror(errno));
                 free(priv->tcv2filename);
                 priv->tcv2filename = NULL;
