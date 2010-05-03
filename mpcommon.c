@@ -314,3 +314,4 @@ const m_option_t noconfig_opts[] = {
     {"user", &disable_user_conf, CONF_TYPE_FLAG, CONF_GLOBAL|CONF_NOCFG|CONF_PRE_PARSE, 0, 1, NULL},
     {NULL, NULL, 0, 0, 0, 0, NULL}
 };
+

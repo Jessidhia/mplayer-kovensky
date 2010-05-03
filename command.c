@@ -45,10 +45,11 @@
 #include "mpcommon.h"
 #include "mixer.h"
 #include "libmpcodecs/dec_video.h"
+#include "libmpcodecs/dec_audio.h"
 #include "libmpcodecs/dec_teletext.h"
 #include "vobsub.h"
 #include "spudec.h"
-#include "get_path.h"
+#include "path.h"
 #include "ass_mp.h"
 #include "stream/tv.h"
 #include "stream/stream_radio.h"
@@ -395,7 +396,7 @@ static int mp_property_chapter(m_option_t *prop, int action, void *arg,
 
     if (mpctx->demuxer)
         chapter = get_current_chapter(mpctx);
-    if (chapter < 0)
+    if (chapter < -1)
         return M_PROPERTY_UNAVAILABLE;
 
     switch (action) {
@@ -523,6 +524,16 @@ static int mp_property_angle(m_option_t *prop, int action, void *arg,
         return M_PROPERTY_NOT_IMPLEMENTED;
     }
     angle = demuxer_set_angle(mpctx->demuxer, angle);
+    if (angle >= 0) {
+        struct sh_video *sh_video = mpctx->demuxer->video->sh;
+        if (sh_video)
+            resync_video_stream(sh_video);
+
+        struct sh_audio *sh_audio = mpctx->demuxer->audio->sh;
+        if (sh_audio)
+            resync_audio_stream(sh_audio);
+    }
+
     set_osd_tmsg(OSD_MSG_TEXT, 1, opts->osd_duration,
                  "Angle: %d/%d", angle, angles);
     if (angle_name)
@@ -2906,6 +2917,17 @@ void run_command(MPContext *mpctx, mp_cmd_t *cmd)
 	    mpctx->stop_play = PT_STOP;
 	    break;
 
+	case MP_CMD_OSD_SHOW_PROGRESSION:{
+		int len = demuxer_get_time_length(mpctx->demuxer);
+		int pts = demuxer_get_current_time(mpctx->demuxer);
+		set_osd_bar(mpctx, 0, "Position", 0, 100, demuxer_get_percent_pos(mpctx->demuxer));
+		set_osd_msg(OSD_MSG_TEXT, 1, osd_duration,
+			    "%c %02d:%02d:%02d / %02d:%02d:%02d",
+			    mpctx->osd_function, pts/3600, (pts/60)%60, pts%60,
+			    len/3600, (len/60)%60, len%60);
+	    }
+	    break;
+
 #ifdef CONFIG_RADIO
 	case MP_CMD_RADIO_STEP_CHANNEL:
 	    if (mpctx->demuxer->stream->type == STREAMTYPE_RADIO) {
@@ -3383,6 +3405,43 @@ void run_command(MPContext *mpctx, mp_cmd_t *cmd)
 
 #endif
 
+    case MP_CMD_AF_SWITCH:
+        if (sh_audio)
+        {
+            af_uninit(mpctx->mixer.afilter);
+            af_init(mpctx->mixer.afilter);
+        }
+    case MP_CMD_AF_ADD:
+    case MP_CMD_AF_DEL:
+        if (!sh_audio)
+            break;
+        {
+            char* af_args = strdup(cmd->args[0].v.s);
+            char* af_commands = af_args;
+            char* af_command;
+            af_instance_t* af;
+            while ((af_command = strsep(&af_commands, ",")) != NULL)
+            {
+                if (cmd->id == MP_CMD_AF_DEL)
+                {
+                    af = af_get(mpctx->mixer.afilter, af_command);
+                    if (af != NULL)
+                        af_remove(mpctx->mixer.afilter, af);
+                }
+                else
+                    af_add(mpctx->mixer.afilter, af_command);
+            }
+            build_afilter_chain(mpctx, sh_audio, &ao_data);
+            free(af_args);
+        }
+        break;
+    case MP_CMD_AF_CLR:
+        if (!sh_audio)
+            break;
+        af_uninit(mpctx->mixer.afilter);
+        af_init(mpctx->mixer.afilter);
+        build_afilter_chain(mpctx, sh_audio, &ao_data);
+        break;
 	default:
 		mp_msg(MSGT_CPLAYER, MSGL_V,
 		       "Received unknown cmd %s\n", cmd->name);

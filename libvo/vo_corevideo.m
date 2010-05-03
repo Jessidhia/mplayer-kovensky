@@ -83,7 +83,6 @@ static uint32_t image_format;
 static int isFullscreen;
 static int isOntop;
 static int isRootwin;
-extern int enable_mouse_movements;
 
 static float winAlpha = 1;
 static int int_pause = 0;
@@ -104,7 +103,11 @@ static void draw_alpha(int x0, int y0, int w, int h, unsigned char *src, unsigne
 {
 	switch (image_format)
 	{
-		case IMGFMT_RGB32:
+		case IMGFMT_RGB24:
+			vo_draw_alpha_rgb24(w,h,src,srca,stride,image_data+3*(y0*image_width+x0),3*image_width);
+			break;
+		case IMGFMT_ARGB:
+		case IMGFMT_BGRA:
 			vo_draw_alpha_rgb32(w,h,src,srca,stride,image_data+4*(y0*image_width+x0),4*image_width);
 			break;
 		case IMGFMT_YUY2:
@@ -170,8 +173,11 @@ static int config(uint32_t width, uint32_t height, uint32_t d_width, uint32_t d_
 	image_height = height;
 	switch (image_format)
 	{
-		case IMGFMT_BGR32:
-		case IMGFMT_RGB32:
+		case IMGFMT_RGB24:
+			image_depth = 24;
+			break;
+		case IMGFMT_ARGB:
+		case IMGFMT_BGRA:
 			image_depth = 32;
 			break;
 		case IMGFMT_YUY2:
@@ -287,35 +293,38 @@ static int draw_slice(uint8_t *src[], int stride[], int w,int h,int x,int y)
 
 static int draw_frame(uint8_t *src[])
 {
-	switch (image_format)
-	{
-		case IMGFMT_BGR32:
-		case IMGFMT_RGB32:
-			fast_memcpy(image_data, src[0], image_width*image_height*image_bytes);
-			break;
+	return 0;
+}
 
-		case IMGFMT_YUY2:
-			memcpy_pic(image_data, src[0], image_width * 2, image_height, image_width * 2, image_width * 2);
-			break;
-	}
+static uint32_t draw_image(mp_image_t *mpi)
+{
+	memcpy_pic(image_data, mpi->planes[0], image_width*image_bytes, image_height, image_width*image_bytes, mpi->stride[0]);
 
 	return 0;
 }
 
 static int query_format(uint32_t format)
 {
+    const int supportflags = VFCAP_CSP_SUPPORTED | VFCAP_CSP_SUPPORTED_BY_HW | VFCAP_OSD | VFCAP_HWSCALE_UP | VFCAP_HWSCALE_DOWN;
 	image_format = format;
 
     switch(format)
 	{
 		case IMGFMT_YUY2:
 			pixelFormat = kYUVSPixelFormat;
-			return VFCAP_CSP_SUPPORTED | VFCAP_CSP_SUPPORTED_BY_HW | VFCAP_OSD | VFCAP_HWSCALE_UP | VFCAP_HWSCALE_DOWN;
+			return supportflags;
 
-		case IMGFMT_RGB32:
-		case IMGFMT_BGR32:
+		case IMGFMT_RGB24:
+			pixelFormat = k24RGBPixelFormat;
+			return supportflags;
+
+		case IMGFMT_ARGB:
 			pixelFormat = k32ARGBPixelFormat;
-			return VFCAP_CSP_SUPPORTED | VFCAP_CSP_SUPPORTED_BY_HW | VFCAP_OSD | VFCAP_HWSCALE_UP | VFCAP_HWSCALE_DOWN;
+			return supportflags;
+
+		case IMGFMT_BGRA:
+			pixelFormat = k32BGRAPixelFormat;
+			return supportflags;
     }
     return 0;
 }
@@ -386,23 +395,7 @@ static int preinit(const char *arg)
 		NSApp = [NSApplication sharedApplication];
 		isLeopardOrLater = floor(NSAppKitVersionNumber) > 824;
 
-		#if !defined (CONFIG_MACOSX_FINDER) || !defined (CONFIG_SDL)
-		//this chunk of code is heavily based off SDL_macosx.m from SDL
-		ProcessSerialNumber myProc, frProc;
-		Boolean sameProc;
-
-		if (GetFrontProcess(&frProc) == noErr)
-		{
-			if (GetCurrentProcess(&myProc) == noErr)
-			{
-				if (SameProcess(&frProc, &myProc, &sameProc) == noErr && !sameProc)
-				{
-					TransformProcessType(&myProc, kProcessTransformToForegroundApplication);
-				}
-				SetFrontProcess(&myProc);
-			}
-		}
-		#endif
+		osx_foreground_hack();
 
 		if(!mpGLView)
 		{
@@ -421,6 +414,7 @@ static int control(uint32_t request, void *data)
 {
 	switch (request)
 	{
+		case VOCTRL_DRAW_IMAGE: return draw_image(data);
 		case VOCTRL_PAUSE: return int_pause = 1;
 		case VOCTRL_RESUME: return int_pause = 0;
 		case VOCTRL_QUERY_FORMAT: return query_format(*((uint32_t*)data));
@@ -959,11 +953,8 @@ static int control(uint32_t request, void *data)
 	if (enable_mouse_movements && !isRootwin) {
 		NSPoint p =[self convertPoint:[theEvent locationInWindow] fromView:nil];
 		if ([self mouse:p inRect:textureFrame]) {
-                	char cmdstr[40];
-                	snprintf(cmdstr, sizeof(cmdstr), "set_mouse_pos %i %i",
-			         (int)(vo_fs ? p.x : (p.x - textureFrame.origin.x)),
-			         (int)(vo_fs ? [self frame].size.height - p.y: (NSMaxY(textureFrame) - p.y)));
-                	mp_input_queue_cmd(global_vo->input_ctx, mp_input_parse_cmd(cmdstr));
+                       vo_mouse_movement(global_vo, vo_fs ? p.x : p.x - textureFrame.origin.x,
+			                  vo_fs ? [self frame].size.height - p.y : NSMaxY(textureFrame) - p.y);
 		}
 	}
 }

@@ -29,6 +29,7 @@ typedef struct MPOpts {
     int osd_duration;
     int loop_times;
     int ordered_chapters;
+    int chapterrange[2];
     int edition_id;
     int correct_pts;
     int user_correct_pts;
@@ -67,6 +68,15 @@ typedef struct MPOpts {
         int bitexact;
         char *avopt;
     } lavc_param;
+
+    struct lavfdopts {
+        unsigned int probesize;
+        unsigned int analyzeduration;
+        char *format;
+        char *cryptokey;
+        char *avopt;
+    } lavfdopts;
+
     struct input_conf {
         char *config_file;
         unsigned int ar_delay;

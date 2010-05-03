@@ -49,6 +49,7 @@ for DLL to know too much about its environment.
 #include "loader.h"
 #include "com.h"
 #include "ext.h"
+#include "path.h"
 
 #include <stdlib.h>
 #include <assert.h>
@@ -76,8 +77,6 @@ for DLL to know too much about its environment.
 #endif
 #include "osdep/mmap_anon.h"
 #include "libavutil/avstring.h"
-
-char* def_path = WIN32_PATH;
 
 static void do_cpuid(unsigned int ax, unsigned int *regs)
 {
@@ -146,7 +145,7 @@ static void longcount_stub(long long*);
 static unsigned int (*localcount)()=localcount_stub;
 static void (*longcount)(long long*)=longcount_stub;
 
-static pthread_mutex_t memmut;
+static pthread_mutex_t memmut = PTHREAD_MUTEX_INITIALIZER;
 
 static unsigned int localcount_stub(void)
 {
@@ -366,14 +365,9 @@ void* mreq_private(int size, int to_zero, int type)
     if (to_zero)
 	memset(header, 0, nsize);
 #ifdef GARBAGE
-    if (!last_alloc)
+    pthread_mutex_lock(&memmut);
+    if (last_alloc)
     {
-	pthread_mutex_init(&memmut, NULL);
-	pthread_mutex_lock(&memmut);
-    }
-    else
-    {
-	pthread_mutex_lock(&memmut);
 	last_alloc->next = header;  /* set next */
     }
 
@@ -442,10 +436,7 @@ static int my_release(void* memory)
 
     alccnt--;
 
-    if (last_alloc)
-	pthread_mutex_unlock(&memmut);
-    else
-	pthread_mutex_destroy(&memmut);
+    pthread_mutex_unlock(&memmut);
 
     //if (alccnt < 40000) printf("MY_RELEASE: %p\t%ld    (%d)\n", header, header->size, alccnt);
 #else
@@ -790,6 +781,18 @@ static void* WINAPI expCreateEventA(void* pSecAttr, char bManualReset,
     ret = mlist;
     pthread_mutex_unlock(&mlist_lock);
     return ret;
+}
+
+static void* WINAPI expCreateEventW(void* pSecAttr, char bManualReset,
+                                    char bInitialState, const WCHAR* name)
+{
+    char ascii_name[256];
+    char *aname = NULL;
+    if (name) {
+        WideCharToMultiByte(65001, 0x0, name, -1, ascii_name, 256, NULL, NULL);
+        aname = ascii_name;
+    }
+    return expCreateEventA(pSecAttr, bManualReset, bInitialState, aname);
 }
 
 static void* WINAPI expSetEvent(void* event)
@@ -1170,13 +1173,6 @@ static void WINAPI expGetSystemInfo(SYSTEM_INFO* si)
 	    }
 	}
 	fclose (f);
-	/*
-	 *	ad hoc fix for smp machines.
-	 *	some problems on WaitForSingleObject,CreateEvent,SetEvent
-	 *			CreateThread ...etc..
-	 *
-	 */
-	cachedsi.dwNumberOfProcessors=1;
     }
 #endif /* __linux__ */
     cache = 1;
@@ -1400,9 +1396,10 @@ static void WINAPI expInitializeCriticalSection(CRITICAL_SECTION* c)
     return;
 }
 
-static void WINAPI expInitializeCriticalSectionAndSpinCount(CRITICAL_SECTION* c, DWORD spin)
+static WIN_BOOL WINAPI expInitializeCriticalSectionAndSpinCount(CRITICAL_SECTION* c, DWORD spin)
 {
     expInitializeCriticalSection(c);
+    return 1;
 }
 
 static void WINAPI expEnterCriticalSection(CRITICAL_SECTION* c)
@@ -1798,25 +1795,37 @@ static long WINAPI expWideCharToMultiByte(long v1, long v2, short* s1, long siz1
     if(s2)dbgprintf("  dest: %s\n", s2);
     return result;
 }
+
 static long WINAPI expGetVersionExA(OSVERSIONINFOA* c)
 {
-    dbgprintf("GetVersionExA(0x%x) => 1\n");
+    dbgprintf("GetVersionExA(0x%x) => 1\n", c);
     c->dwOSVersionInfoSize=sizeof(*c);
-    c->dwMajorVersion=4;
-    c->dwMinorVersion=0;
-    c->dwBuildNumber=0x4000457;
-#if 1
-    // leave it here for testing win9x-only codecs
-    c->dwPlatformId=VER_PLATFORM_WIN32_WINDOWS;
-    strcpy(c->szCSDVersion, " B");
-#else
-    c->dwPlatformId=VER_PLATFORM_WIN32_NT; // let's not make DLL assume that it can read CR* registers
-    strcpy(c->szCSDVersion, "Service Pack 3");
-#endif
-    dbgprintf("  Major version: 4\n  Minor version: 0\n  Build number: 0x4000457\n"
-	      "  Platform Id: VER_PLATFORM_WIN32_NT\n Version string: 'Service Pack 3'\n");
+    c->dwMajorVersion=5;
+    c->dwMinorVersion=1;
+    c->dwBuildNumber=0x5010a28;
+    c->dwPlatformId=VER_PLATFORM_WIN32_NT;
+    strcpy(c->szCSDVersion, "Service Pack 2");
+    dbgprintf("  Major version: 5\n  Minor version: 1\n  Build number: 0x5010a28\n"
+	      "  Platform Id: VER_PLATFORM_WIN32_NT\n Version string: 'Service Pack 2'\n");
     return 1;
 }
+
+static long WINAPI expGetVersionExW(OSVERSIONINFOW* c)
+{
+    char CSDVersion[128];
+    dbgprintf("GetVersionExW(0x%x) => 1\n", c);
+    c->dwOSVersionInfoSize=sizeof(*c);
+    c->dwMajorVersion=5;
+    c->dwMinorVersion=1;
+    c->dwBuildNumber=0x5010a28;
+    c->dwPlatformId=VER_PLATFORM_WIN32_NT;
+    strcpy(CSDVersion, "Service Pack 2");
+    MultiByteToWideChar(65001, 0x0, CSDVersion, -1, c->szCSDVersion, 128);
+    dbgprintf("  Major version: 5\n  Minor version: 1\n  Build number: 0x5010a28\n"
+	      "  Platform Id: VER_PLATFORM_WIN32_NT\n Version string: 'Service Pack 2'\n");
+    return 1;
+}
+
 static HANDLE WINAPI expCreateSemaphoreA(char* v1, long init_count,
 					 long max_count, char* name)
 {
@@ -1889,6 +1898,18 @@ static HANDLE WINAPI expCreateSemaphoreA(char* v1, long init_count,
     ret = (HANDLE)mlist;
     pthread_mutex_unlock(&mlist_lock);
     return ret;
+}
+
+static HANDLE WINAPI expCreateSemaphoreW(char* v1, long init_count,
+                                         long max_count, const WCHAR* name)
+{
+    char ascii_name[256];
+    char *aname = NULL;
+    if (name) {
+        WideCharToMultiByte(65001, 0x0, name, -1, ascii_name, 256, NULL, NULL);
+        aname = ascii_name;
+    }
+    return expCreateSemaphoreA(v1, init_count, max_count, aname);
 }
 
 static long WINAPI expReleaseSemaphore(long hsem, long increment, long* prev_count)
@@ -1975,6 +1996,17 @@ static HANDLE WINAPI expCreateMutexA(void *pSecAttr,
     ret = (HANDLE)mlist;
     pthread_mutex_unlock(&mlist_lock);
     return ret;
+}
+
+static HANDLE WINAPI expCreateMutexW(void *pSecAttr, char bInitialOwner, const WCHAR *name)
+{
+    char ascii_name[256];
+    char *aname = NULL;
+    if (name) {
+        WideCharToMultiByte(65001, 0x0, name, -1, ascii_name, 256, NULL, NULL);
+        aname = ascii_name;
+    }
+    return expCreateMutexA(pSecAttr, bInitialOwner, aname);
 }
 
 static int WINAPI expReleaseMutex(HANDLE hMutex)
@@ -2540,7 +2572,8 @@ static int WINAPI expLoadLibraryA(char* name)
 	return MODULE_HANDLE_psapi;
 
     result=LoadLibraryA(name);
-    dbgprintf("Returned LoadLibraryA(0x%x='%s'), def_path=%s => 0x%x\n", name, name, def_path, result);
+    dbgprintf("Returned LoadLibraryA(0x%x='%s'), codec_path=%s => 0x%x\n",
+              name, name, codec_path, result);
 
     return result;
 }
@@ -3554,13 +3587,15 @@ static HANDLE WINAPI expFindFirstFileA(LPCSTR s, LPWIN32_FIND_DATAA lpfd)
 #ifdef CONFIG_QTX_CODECS
     if(strstr(s, "quicktime\\*.QTX")){
 	dbgprintf("FindFirstFileA(0x%x='%s', 0x%x) => QTX\n", s, s, lpfd);
-	dbgprintf("\n### Searching for QuickTime plugins (*.qtx) at %s...\n",def_path);
-	qtx_dir=opendir(def_path);
+	dbgprintf("\n### Searching for QuickTime plugins (*.qtx) at %s...\n",
+	          codec_path);
+	qtx_dir = opendir(codec_path);
 	if(!qtx_dir) return (HANDLE)-1;
 	memset(lpfd,0,sizeof(*lpfd));
 	if(expFindNextFileA(FILE_HANDLE_quicktimeqtx,lpfd))
 	    return FILE_HANDLE_quicktimeqtx;
-	printf("loader: Couldn't find the QuickTime plugins (.qtx files) at %s\n",def_path);
+	printf("loader: Couldn't find the QuickTime plugins (.qtx files) at %s\n",
+	       codec_path);
 	return (HANDLE)-1;
     }
 #if 0
@@ -3697,8 +3732,8 @@ static HANDLE WINAPI expCreateFileA(LPCSTR cs1,DWORD i1,DWORD i2,
     if(strstr(cs1, "QuickTime.qts"))
     {
 	int result;
-	char* tmp=malloc(strlen(def_path)+50);
-	strcpy(tmp, def_path);
+	char* tmp = malloc(strlen(codec_path) + 50);
+	strcpy(tmp, codec_path);
 	strcat(tmp, "/");
 	strcat(tmp, "QuickTime.qts");
 	result=open(tmp, O_RDONLY);
@@ -3708,9 +3743,9 @@ static HANDLE WINAPI expCreateFileA(LPCSTR cs1,DWORD i1,DWORD i2,
     if(strstr(cs1, ".qtx"))
     {
 	int result;
-	char* tmp=malloc(strlen(def_path)+250);
+	char* tmp = malloc(strlen(codec_path) + 250);
 	char* x=strrchr(cs1,'\\');
-	sprintf(tmp,"%s/%s",def_path,x?(x+1):cs1);
+	sprintf(tmp, "%s/%s", codec_path, x ? (x + 1) : cs1);
 //	printf("### Open: %s -> %s\n",cs1,tmp);
 	result=open(tmp, O_RDONLY);
 	free(tmp);
@@ -3721,8 +3756,8 @@ static HANDLE WINAPI expCreateFileA(LPCSTR cs1,DWORD i1,DWORD i2,
     if(strncmp(cs1, "AP", 2) == 0)
     {
 	int result;
-	char* tmp=malloc(strlen(def_path)+50);
-	strcpy(tmp, def_path);
+	char* tmp = malloc(strlen(codec_path) + 50);
+	strcpy(tmp, codec_path);
 	strcat(tmp, "/");
 	strcat(tmp, "APmpg4v1.apl");
 	result=open(tmp, O_RDONLY);
@@ -5130,6 +5165,7 @@ struct exports exp_kernel32[]=
     FF(CreateThread, -1)
     FF(ResumeThread, -1)
     FF(CreateEventA, -1)
+    FF(CreateEventW, -1)
     FF(SetEvent, -1)
     FF(ResetEvent, -1)
     FF(WaitForSingleObject, -1)
@@ -5169,7 +5205,9 @@ struct exports exp_kernel32[]=
     FF(MultiByteToWideChar, 427)
     FF(WideCharToMultiByte, -1)
     FF(GetVersionExA, -1)
+    FF(GetVersionExW, -1)
     FF(CreateSemaphoreA, -1)
+    FF(CreateSemaphoreW, -1)
     FF(QueryPerformanceCounter, -1)
     FF(QueryPerformanceFrequency, -1)
     FF(LocalHandle, -1)
@@ -5181,6 +5219,7 @@ struct exports exp_kernel32[]=
     FF(LoadResource, -1)
     FF(ReleaseSemaphore, -1)
     FF(CreateMutexA, -1)
+    FF(CreateMutexW, -1)
     FF(ReleaseMutex, -1)
     FF(SignalObjectAndWait, -1)
     FF(FindResourceA, -1)

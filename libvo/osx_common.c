@@ -19,6 +19,7 @@
 
 // only to get keycode definitions from HIToolbox/Events.h
 #include <Carbon/Carbon.h>
+#include "config.h"
 #include "osx_common.h"
 #include "old_vo_defines.h"
 #include "video_out.h"
@@ -76,7 +77,7 @@
 #define kVK_UpArrow 0x7e
 #endif /* MAC_OS_X_VERSION_MAX_ALLOWED <= 1040 */
 
-static const struct keymap keymap[] = {
+static const struct mp_keymap keymap[] = {
     // special keys
     {0x34, KEY_ENTER}, // Enter key on some iBooks?
     {kVK_Return, KEY_ENTER},
@@ -140,4 +141,26 @@ void config_movie_aspect(float config_aspect)
     if (!our_aspect_change)
         old_movie_aspect = config_aspect;
     our_aspect_change = 0;
+}
+
+/** This chunk of code is heavily based off SDL_macosx.m from SDL.
+ *  The CPSEnableForegroundOperation that was here before is private
+ *  and should not be used.
+ *  Replaced by a call to the 10.3+ TransformProcessType.
+ */
+void osx_foreground_hack(void)
+{
+#if !defined (CONFIG_MACOSX_FINDER) || !defined (CONFIG_SDL)
+    ProcessSerialNumber myProc, frProc;
+    Boolean sameProc;
+
+    if (GetFrontProcess(&frProc)   == noErr &&
+        GetCurrentProcess(&myProc) == noErr) {
+        if (SameProcess(&frProc, &myProc, &sameProc) == noErr && !sameProc) {
+            TransformProcessType(&myProc,
+                                 kProcessTransformToForegroundApplication);
+        }
+        SetFrontProcess(&myProc);
+    }
+#endif
 }

@@ -1,4 +1,6 @@
 /*
+ * common SDL routines
+ *
  * This file is part of MPlayer.
  *
  * MPlayer is free software; you can redistribute it and/or modify
@@ -16,12 +18,20 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-#ifndef MPLAYER_OSX_COMMON_H
-#define MPLAYER_OSX_COMMON_H
+#ifndef MPLAYER_SDL_COMMON_H
+#define MPLAYER_SDL_COMMON_H
 
-int convert_key(unsigned key, unsigned charcode);
-void change_movie_aspect(float new_aspect);
-void config_movie_aspect(float config_aspect);
-void osx_foreground_hack(void);
+#include "config.h"
+#ifdef CONFIG_SDL_SDL_H
+#include <SDL/SDL.h>
+#else
+#include <SDL.h>
+#endif
 
-#endif /* MPLAYER_OSX_COMMON_H */
+int vo_sdl_init(void);
+void vo_sdl_uninit(void);
+void vo_sdl_fullscreen(void);
+int sdl_set_mode(int bpp, uint32_t flags);
+int sdl_default_handle_event(SDL_Event *event);
+
+#endif /* MPLAYER_SDL_COMMON_H */

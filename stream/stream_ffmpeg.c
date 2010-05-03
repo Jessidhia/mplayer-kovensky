@@ -24,10 +24,11 @@
 #include "stream.h"
 #include "m_option.h"
 #include "m_struct.h"
+#include "libmpdemux/demuxer.h"
 
 static int fill_buffer(stream_t *s, char *buffer, int max_len)
 {
-    int r = url_read(s->priv, buffer, max_len);
+    int r = url_read_complete(s->priv, buffer, max_len);
     return (r <= 0) ? -1 : r;
 }
 
@@ -49,7 +50,8 @@ static int seek(stream_t *s, off_t newpos)
 
 static int control(stream_t *s, int cmd, void *arg)
 {
-    int64_t size;
+    int64_t size, ts;
+    double pts;
     switch(cmd) {
     case STREAM_CTRL_GET_SIZE:
         size = url_filesize(s->priv);
@@ -57,6 +59,14 @@ static int control(stream_t *s, int cmd, void *arg)
             *(off_t *)arg = size;
             return 1;
         }
+        break;
+    case STREAM_CTRL_SEEK_TO_TIME:
+        pts = *(double *)arg;
+        ts = pts * AV_TIME_BASE;
+        ts = av_url_read_seek(s->priv, -1, ts, 0);
+        if (ts >= 0)
+            return 1;
+        break;
     }
     return STREAM_UNSUPPORTED;
 }
@@ -102,6 +112,12 @@ static int open_f(stream_t *stream, int mode, void *opts, int *file_format)
     if (!dummy && url_open(&ctx, filename, flags) < 0)
         goto out;
 
+    mp_msg(MSGT_OPEN, MSGL_V, "[ffmpeg] libavformat URL type: %s\n",
+           ctx->prot->name);
+    if (!strncmp("rtmp", ctx->prot->name, 4)) {
+        *file_format = DEMUXER_TYPE_LAVF;
+        stream->lavf_type = "flv";
+    }
     stream->priv = ctx;
     size = dummy ? 0 : url_filesize(ctx);
     if (size >= 0)

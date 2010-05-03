@@ -59,8 +59,6 @@
 #define PARSE_ON_ADD 0
 
 static void clear_parser(sh_common_t *sh);
-void resync_video_stream(sh_video_t *sh_video);
-void resync_audio_stream(sh_audio_t *sh_audio);
 
 // Demuxer list
 extern const demuxer_desc_t demuxer_desc_rawaudio;
@@ -308,8 +306,6 @@ sh_audio_t *new_sh_audio_aid(demuxer_t *demuxer, int id, int aid)
         // set some defaults
         sh->samplesize = 2;
         sh->sample_format = AF_FORMAT_S16_NE;
-        sh->audio_out_minsize = 8192;   /* default size, maybe not enough for Win32/ACM */
-        sh->pts = MP_NOPTS_VALUE;
         sh->opts = demuxer->opts;
         mp_msg(MSGT_IDENTIFY, MSGL_INFO, "ID_AUDIO_ID=%d\n", aid);
     }
@@ -1218,13 +1214,6 @@ void demux_flush(demuxer_t *demuxer)
 int demux_seek(demuxer_t *demuxer, float rel_seek_secs, float audio_delay,
                int flags)
 {
-    demux_stream_t *d_audio = demuxer->audio;
-    demux_stream_t *d_video = demuxer->video;
-    sh_audio_t *sh_audio = d_audio->sh;
-    sh_video_t *sh_video = d_video->sh;
-    double tmp = 0;
-    double pts;
-
     if (!demuxer->seekable) {
         if (demuxer->file_format == DEMUXER_TYPE_AVI)
             mp_tmsg(MSGT_SEEK, MSGL_WARN, "Cannot seek in raw AVI streams. (Index required, try with the -idx switch.)\n");
@@ -1238,44 +1227,44 @@ int demux_seek(demuxer_t *demuxer, float rel_seek_secs, float audio_delay,
     }
     // clear demux buffers:
     demux_flush(demuxer);
-    if (sh_audio)
-        sh_audio->a_buffer_len = 0;
-
-    demuxer->stream->eof = 0;
     demuxer->video->eof = 0;
     demuxer->audio->eof = 0;
 
-    if (sh_video)
-        sh_video->timer = 0;    // !!!!!!
+    /* HACK: assume any demuxer used with these streams can cope with
+     * the stream layer suddenly seeking to a different position under it
+     * (nothing actually implements DEMUXER_CTRL_RESYNC now).
+     */
+    struct stream *stream = demuxer->stream;
+    if (stream->type == STREAMTYPE_DVD || stream->type == STREAMTYPE_DVDNAV) {
+        double pts;
 
-    if (flags & SEEK_ABSOLUTE)
-        pts = 0.0f;
-    else {
-        if (demuxer->stream_pts == MP_NOPTS_VALUE)
-            goto dmx_seek;
-        pts = demuxer->stream_pts;
-    }
+        if (flags & SEEK_ABSOLUTE)
+            pts = 0.0f;
+        else {
+            if (demuxer->stream_pts == MP_NOPTS_VALUE)
+                goto dmx_seek;
+            pts = demuxer->stream_pts;
+        }
 
-    if (flags & SEEK_FACTOR) {
-        if (stream_control(demuxer->stream, STREAM_CTRL_GET_TIME_LENGTH, &tmp)
-            == STREAM_UNSUPPORTED)
-            goto dmx_seek;
-        pts += tmp * rel_seek_secs;
-    } else
-        pts += rel_seek_secs;
+        if (flags & SEEK_FACTOR) {
+            double tmp = 0;
+            if (stream_control(demuxer->stream, STREAM_CTRL_GET_TIME_LENGTH,
+                               &tmp) == STREAM_UNSUPPORTED)
+                goto dmx_seek;
+            pts += tmp * rel_seek_secs;
+        } else
+            pts += rel_seek_secs;
 
-    if (stream_control(demuxer->stream, STREAM_CTRL_SEEK_TO_TIME, &pts) !=
-        STREAM_UNSUPPORTED) {
-        demux_control(demuxer, DEMUXER_CTRL_RESYNC, NULL);
-        return 1;
+        if (stream_control(demuxer->stream, STREAM_CTRL_SEEK_TO_TIME, &pts)
+            != STREAM_UNSUPPORTED) {
+            demux_control(demuxer, DEMUXER_CTRL_RESYNC, NULL);
+            return 1;
+        }
     }
 
   dmx_seek:
     if (demuxer->desc->seek)
         demuxer->desc->seek(demuxer, rel_seek_secs, audio_delay, flags);
-
-    if (sh_audio)
-        resync_audio_stream(sh_audio);
 
     return 1;
 }
@@ -1497,8 +1486,6 @@ int demuxer_seek_chapter(demuxer_t *demuxer, int chapter, double *seek_pts,
                          char **chapter_name)
 {
     int ris;
-    sh_video_t *sh_video = demuxer->video->sh;
-    sh_audio_t *sh_audio = demuxer->audio->sh;
 
     if (!demuxer->num_chapters || !demuxer->chapters) {
         demux_flush(demuxer);
@@ -1507,15 +1494,7 @@ int demuxer_seek_chapter(demuxer_t *demuxer, int chapter, double *seek_pts,
                              &chapter);
         if (ris != STREAM_UNSUPPORTED)
             demux_control(demuxer, DEMUXER_CTRL_RESYNC, NULL);
-        if (sh_video) {
-            ds_fill_buffer(demuxer->video);
-            resync_video_stream(sh_video);
-        }
 
-        if (sh_audio) {
-            ds_fill_buffer(demuxer->audio);
-            resync_audio_stream(sh_audio);
-        }
         // exit status may be ok, but main() doesn't have to seek itself
         // (because e.g. dvds depend on sectors, not on pts)
         *seek_pts = -1.0;
@@ -1550,11 +1529,11 @@ int demuxer_seek_chapter(demuxer_t *demuxer, int chapter, double *seek_pts,
 
 int demuxer_get_current_chapter(demuxer_t *demuxer)
 {
-    int chapter = -1;
+    int chapter = -2;
     if (!demuxer->num_chapters || !demuxer->chapters) {
         if (stream_control(demuxer->stream, STREAM_CTRL_GET_CURRENT_CHAPTER,
                            &chapter) == STREAM_UNSUPPORTED)
-            chapter = -1;
+            chapter = -2;
     } else {
         sh_video_t *sh_video = demuxer->video->sh;
         sh_audio_t *sh_audio = demuxer->audio->sh;
@@ -1644,8 +1623,6 @@ int demuxer_get_current_angle(demuxer_t *demuxer)
 int demuxer_set_angle(demuxer_t *demuxer, int angle)
 {
     int ris, angles = -1;
-    sh_video_t *sh_video = demuxer->video->sh;
-    sh_audio_t *sh_audio = demuxer->audio->sh;
 
     angles = demuxer_angles_count(demuxer);
     if ((angles < 1) || (angle > angles))
@@ -1658,15 +1635,6 @@ int demuxer_set_angle(demuxer_t *demuxer, int angle)
         return -1;
 
     demux_control(demuxer, DEMUXER_CTRL_RESYNC, NULL);
-    if (sh_video) {
-        ds_fill_buffer(demuxer->video);
-        resync_video_stream(sh_video);
-    }
-
-    if (sh_audio) {
-        ds_fill_buffer(demuxer->audio);
-        resync_audio_stream(sh_audio);
-    }
 
     return angle;
 }

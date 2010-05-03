@@ -93,6 +93,7 @@ typedef enum {
   MP_CMD_SET_PROPERTY_OSD,
   MP_CMD_GET_PROPERTY,
   MP_CMD_OSD_SHOW_PROPERTY_TEXT,
+  MP_CMD_OSD_SHOW_PROGRESSION,
   MP_CMD_SEEK_CHAPTER,
   MP_CMD_FILE_FILTER,
   MP_CMD_GET_FILENAME,
@@ -150,6 +151,13 @@ typedef enum {
   MP_CMD_CHELP = 7000,
   MP_CMD_CEXIT,
   MP_CMD_CHIDE,
+
+  /// Audio Filter commands
+  MP_CMD_AF_SWITCH,
+  MP_CMD_AF_ADD,
+  MP_CMD_AF_DEL,
+  MP_CMD_AF_CLR,
+
 } mp_command_type;
 
 // The arg types
@@ -220,7 +228,7 @@ typedef void (*mp_close_func_t)(int fd);
 // Set this to grab all incoming key codes
 extern int (*mp_input_key_cb)(int code);
 // Should return 1 if the command was processed
-typedef int (*mp_input_cmd_filter)(mp_cmd_t* cmd, int paused, void* ctx);
+typedef int (*mp_input_cmd_filter)(mp_cmd_t *cmd, void *ctx);
 
 // This function adds a new key driver.
 // The first arg is a file descriptor (use a negative value if you don't use any fd)
@@ -255,7 +263,7 @@ int mp_input_queue_cmd(struct input_ctx *ictx, mp_cmd_t* cmd);
 // This function retrieves the next available command waiting no more than time msec.
 // If pause is true, the next input will always return a pause command.
 mp_cmd_t*
-mp_input_get_cmd(struct input_ctx *ictx, int time, int paused, int peek_only);
+mp_input_get_cmd(struct input_ctx *ictx, int time, int peek_only);
 
 mp_cmd_t*
 mp_input_parse_cmd(char* str);

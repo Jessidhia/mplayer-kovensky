@@ -16,12 +16,11 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-#ifndef MPLAYER_OSX_COMMON_H
-#define MPLAYER_OSX_COMMON_H
+#ifndef MPLAYER_X264_H
+#define MPLAYER_X264_H
 
-int convert_key(unsigned key, unsigned charcode);
-void change_movie_aspect(float new_aspect);
-void config_movie_aspect(float config_aspect);
-void osx_foreground_hack(void);
+#include "m_option.h"
 
-#endif /* MPLAYER_OSX_COMMON_H */
+void x264enc_set_param(const m_option_t* opt, char* arg);
+
+#endif /* MPLAYER_X264_H */

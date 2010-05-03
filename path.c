@@ -28,7 +28,7 @@
 #include <string.h>
 #include "config.h"
 #include "mp_msg.h"
-#include "get_path.h"
+#include "path.h"
 
 #ifdef CONFIG_MACOSX_BUNDLE
 #include <CoreFoundation/CoreFoundation.h>
@@ -44,10 +44,8 @@
 #if defined(__CYGWIN__)
 #include <sys/cygwin.h>
 #endif
-#elif defined(__OS2__)
-#define INCL_DOS
-#include <os2.h>
-#endif
+
+#include "osdep/osdep.h"
 
 char *get_path(const char *filename){
 	char *homedir;
@@ -182,36 +180,37 @@ char *get_path(const char *filename){
 void set_path_env(void)
 {
 	/*make our codec dirs available for LoadLibraryA()*/
-	char tmppath[MAX_PATH*2 + 1];
 	char win32path[MAX_PATH];
-	char realpath[MAX_PATH];
 #ifdef __CYGWIN__
-	cygwin_conv_to_full_win32_path(WIN32_PATH,win32path);
-	strcpy(tmppath,win32path);
-#ifdef CONFIG_REALCODECS
-	cygwin_conv_to_full_win32_path(REALCODEC_PATH,realpath);
-	sprintf(tmppath,"%s;%s",win32path,realpath);
-#endif /*CONFIG_REALCODECS*/
+	cygwin_conv_to_full_win32_path(BINARY_CODECS_PATH, win32path);
 #else /*__CYGWIN__*/
 	/* Expand to absolute path unless it's already absolute */
-	if (!strstr(WIN32_PATH,":") && WIN32_PATH[0] != '\\'){
+	if (!strstr(BINARY_CODECS_PATH,":") && BINARY_CODECS_PATH[0] != '\\') {
 		GetModuleFileNameA(NULL, win32path, MAX_PATH);
-		strcpy(strrchr(win32path, '\\') + 1, WIN32_PATH);
+		strcpy(strrchr(win32path, '\\') + 1, BINARY_CODECS_PATH);
 	}
-	else strcpy(win32path,WIN32_PATH);
-	strcpy(tmppath,win32path);
-#ifdef CONFIG_REALCODECS
-	/* Expand to absolute path unless it's already absolute */
-	if (!strstr(REALCODEC_PATH,":") && REALCODEC_PATH[0] != '\\'){
-		GetModuleFileNameA(NULL, realpath, MAX_PATH);
-		strcpy(strrchr(realpath, '\\') + 1, REALCODEC_PATH);
-	}
-	else strcpy(realpath,REALCODEC_PATH);
-	sprintf(tmppath,"%s;%s",win32path,realpath);
-#endif /*CONFIG_REALCODECS*/
+	else strcpy(win32path, BINARY_CODECS_PATH);
 #endif /*__CYGWIN__*/
-	mp_msg(MSGT_WIN32, MSGL_V,"Setting PATH to %s\n",tmppath);
-	if (!SetEnvironmentVariableA("PATH", tmppath))
+	mp_msg(MSGT_WIN32, MSGL_V, "Setting PATH to %s\n", win32path);
+	if (!SetEnvironmentVariableA("PATH", win32path))
 		mp_msg(MSGT_WIN32, MSGL_WARN, "Cannot set PATH!");
 }
 #endif /* (defined(__MINGW32__) || defined(__CYGWIN__)) && defined(CONFIG_WIN32DLL) */
+
+char *codec_path = BINARY_CODECS_PATH;
+
+static int needs_free = 0;
+
+void set_codec_path(const char *path)
+{
+    if (needs_free)
+        free(codec_path);
+    if (path == 0) {
+        codec_path = BINARY_CODECS_PATH;
+        needs_free = 0;
+        return;
+    }
+    codec_path = malloc(strlen(path) + 1);
+    strcpy(codec_path, path);
+    needs_free = 1;
+}

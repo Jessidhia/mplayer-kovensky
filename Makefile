@@ -337,13 +337,13 @@ SRCS_COMMON = asxparser.c \
               edl.c \
               find_sub.c \
               fmt-conversion.c \
-              get_path.c \
               m_config.c \
               m_option.c \
               m_struct.c \
               mp_msg.c \
               mpcommon.c \
               parser-cfg.c \
+              path.c \
               playtree.c \
               playtreeparser.c \
               spudec.c \
@@ -550,7 +550,9 @@ SRCS_MPLAYER-$(ESD)          += libao2/ao_esd.c
 SRCS_MPLAYER-$(FBDEV)        += libvo/vo_fbdev.c libvo/vo_fbdev2.c
 SRCS_MPLAYER-$(GGI)          += libvo/vo_ggi.c
 SRCS_MPLAYER-$(GIF)          += libvo/vo_gif89a.c
-SRCS_MPLAYER-$(GL)           += libvo/gl_common.c libvo/vo_gl.c libvo/vo_gl2.c libvo/csputils.c
+SRCS_MPLAYER-$(GL)           += libvo/gl_common.c libvo/vo_gl.c \
+                                libvo/vo_gl2.c libvo/csputils.c
+SRCS_MPLAYER-$(GL_SDL)       += libvo/sdl_common.c
 SRCS_MPLAYER-$(GL_WIN32)     += libvo/w32_common.c
 SRCS_MPLAYER-$(GL_X11)       += libvo/x11_common.c
 SRCS_MPLAYER-$(MATRIXVIEW)   += libvo/vo_matrixview.c libvo/matrixview.c
@@ -584,7 +586,7 @@ SRCS_MPLAYER-$(PNM)           += libvo/vo_pnm.c
 SRCS_MPLAYER-$(PULSE)         += libao2/ao_pulse.c
 SRCS_MPLAYER-$(QUARTZ)        += libvo/vo_quartz.c libvo/osx_common.c
 SRCS_MPLAYER-$(S3FB)          += libvo/vo_s3fb.c
-SRCS_MPLAYER-$(SDL)           += libao2/ao_sdl.c libvo/vo_sdl.c
+SRCS_MPLAYER-$(SDL)           += libao2/ao_sdl.c libvo/vo_sdl.c libvo/sdl_common.c
 SRCS_MPLAYER-$(SGIAUDIO)      += libao2/ao_sgi.c
 SRCS_MPLAYER-$(SUNAUDIO)      += libao2/ao_sun.c
 SRCS_MPLAYER-$(SVGA)          += libvo/vo_svga.c
@@ -622,7 +624,8 @@ SRCS_MPLAYER-$(VIDIX_UNICHROME)     += vidix/unichrome_vid.c
 SRCS_MPLAYER-$(WII)           += libvo/vo_wii.c
 SRCS_MPLAYER-$(WIN32WAVEOUT)  += libao2/ao_win32.c
 SRCS_MPLAYER-$(WINVIDIX)      += libvo/vo_winvidix.c
-SRCS_MPLAYER-$(X11)           += libvo/vo_x11.c libvo/vo_xover.c libvo/x11_common.c
+SRCS_MPLAYER-$(X11)           += libvo/vo_x11.c libvo/vo_xover.c \
+                                 libvo/x11_common.c
 SRCS_MPLAYER-$(XMGA)          += libvo/vo_xmga.c
 SRCS_MPLAYER-$(XV)            += libvo/vo_xv.c
 SRCS_MPLAYER-$(XVIDIX)        += libvo/vo_xvidix.c
@@ -656,7 +659,8 @@ SRCS_MENCODER-$(FAAC)             += libmpcodecs/ae_faac.c
 SRCS_MENCODER-$(LIBAVCODEC)       += libmpcodecs/ae_lavc.c libmpcodecs/ve_lavc.c
 SRCS_MENCODER-$(LIBAVFORMAT)      += libmpdemux/muxer_lavf.c
 SRCS_MENCODER-$(LIBDV)            += libmpcodecs/ve_libdv.c
-SRCS_MENCODER-$(LIBLZO)           += libmpcodecs/ve_nuv.c libmpcodecs/native/rtjpegn.c
+SRCS_MENCODER-$(LIBLZO)           += libmpcodecs/ve_nuv.c \
+                                     libmpcodecs/native/rtjpegn.c
 SRCS_MENCODER-$(MP3LAME)          += libmpcodecs/ae_lame.c
 SRCS_MENCODER-$(QTX_CODECS_WIN32) += libmpcodecs/ve_qtvideo.c
 SRCS_MENCODER-$(TOOLAME)          += libmpcodecs/ae_toolame.c
@@ -695,7 +699,9 @@ ALL_PRG-$(MPLAYER)  += mplayer$(EXESUF)
 ALL_PRG-$(MENCODER) += mencoder$(EXESUF)
 
 INSTALL_TARGETS-$(MENCODER) += install-mencoder install-mencoder-man
-INSTALL_TARGETS-$(MPLAYER)  += install-mplayer  install-mplayer-man
+INSTALL_TARGETS-$(MPLAYER)  += install-mplayer \
+                               install-mplayer-man \
+                               install-mplayer-msg
 
 DIRS =  . \
         input \
@@ -734,6 +740,8 @@ DIRS =  . \
         TOOLS \
         vidix \
 
+MOFILES := $(MSG_LANGS:%=locale/%/LC_MESSAGES/mplayer.mo)
+
 ALLHEADERS = $(foreach dir,$(DIRS),$(wildcard $(dir)/*.h))
 
 ADDSUFFIXES     = $(foreach suf,$(1),$(addsuffix $(suf),$(2)))
@@ -742,21 +750,21 @@ ADD_ALL_EXESUFS = $(1) $(call ADDSUFFIXES,$(EXESUFS_ALL),$(1))
 
 ###### generic rules #######
 
-all: $(ALL_PRG-yes)
-
-%.o: %.c
-	$(CC) $(CFLAGS) -c -o $@ -MD -MP -MF $*.d $<
-
-%.o: %.cpp
-	$(CXX) $(CXXFLAGS) -c -o $@ -MD -MP -MF $*.d $<
-
-%.o: %.m
-	$(CC) $(CFLAGS) -c -o $@ -MD -MP -MF $*.d $<
+all: $(ALL_PRG-yes) locales
 
 %.ho: %.h
 	$(CC) $(CFLAGS) -Wno-unused -c -o $@ -x c $<
 
 %.o: %.S
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+%.o: %.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+%.o: %.cpp
+	$(CC) $(CXXFLAGS) -c -o $@ $<
+
+%.o: %.m
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 %-rc.o: %.rc
@@ -789,6 +797,12 @@ version.h: version.sh
 	./$< `$(CC) -dumpversion`
 
 %(EXESUF): %.c
+
+locales: $(MOFILES)
+
+locale/%/LC_MESSAGES/mplayer.mo: po/%.po
+	mkdir -p $(dir $@)
+	msgfmt -c -o $@ $<
 
 
 
@@ -853,6 +867,7 @@ install-%: %$(EXESUF) install-dirs
 
 install-mencoder-man: $(foreach lang,$(MAN_LANGS),install-mencoder-man-$(lang))
 install-mplayer-man:  $(foreach lang,$(MAN_LANGS),install-mplayer-man-$(lang))
+install-mplayer-msg:  $(foreach lang,$(MSG_LANGS),install-mplayer-msg-$(lang))
 
 install-mencoder-man-en: install-mplayer-man-en
 	cd $(MANDIR)/man1 && ln -sf mplayer.1 mencoder.1
@@ -875,6 +890,14 @@ endef
 $(foreach lang,$(filter-out en,$(MAN_LANG_ALL)),$(eval $(MENCODER_MAN_RULE)))
 $(foreach lang,$(filter-out en,$(MAN_LANG_ALL)),$(eval $(MPLAYER_MAN_RULE)))
 
+define MPLAYER_MSG_RULE
+install-mplayer-msg-$(lang):
+	if test ! -d $(LOCALEDIR)/$(lang)/LC_MESSAGES ; then $(INSTALL) -d $(LOCALEDIR)/$(lang)/LC_MESSAGES ; fi
+	$(INSTALL) -m 644 locale/$(lang)/LC_MESSAGES/mplayer.mo $(LOCALEDIR)/$(lang)/LC_MESSAGES/
+endef
+
+$(foreach lang,$(MSG_LANG_ALL),$(eval $(MPLAYER_MSG_RULE)))
+
 uninstall:
 	rm -f $(BINDIR)/mplayer$(EXESUF) $(BINDIR)/gmplayer$(EXESUF)
 	rm -f $(BINDIR)/mencoder$(EXESUF)
@@ -883,6 +906,7 @@ uninstall:
 	rm -f $(prefix)/share/applications/mplayer.desktop
 	rm -f $(MANDIR)/man1/mplayer.1 $(MANDIR)/man1/mencoder.1
 	rm -f $(foreach lang,$(MAN_LANGS),$(foreach man,mplayer.1 mencoder.1,$(MANDIR)/$(lang)/man1/$(man)))
+	rm -f $(foreach lang,$(MSG_LANGS),$(LOCALEDIR)/$(lang)/LC_MESSAGES/mplayer.1)
 
 clean:
 	-rm -f $(call ADD_ALL_DIRS,/*.o /*.a /*.ho /*~)

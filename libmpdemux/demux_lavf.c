@@ -44,27 +44,22 @@
 
 #include "mp_taglists.h"
 
-#define INITIAL_PROBE_SIZE (32*1024)
+#define INITIAL_PROBE_SIZE STREAM_BUFFER_SIZE
+#define SMALL_MAX_PROBE_SIZE (32 * 1024)
 #define PROBE_BUF_SIZE (2*1024*1024)
 
-static unsigned int opt_probesize = 0;
-static unsigned int opt_analyzeduration = 0;
-static char *opt_format;
-static char *opt_cryptokey;
-static char *opt_avopt = NULL;
-
 const m_option_t lavfdopts_conf[] = {
-	{"probesize", &(opt_probesize), CONF_TYPE_INT, CONF_RANGE, 32, INT_MAX, NULL},
-	{"format",    &(opt_format),    CONF_TYPE_STRING,       0,  0,       0, NULL},
-	{"analyzeduration",    &(opt_analyzeduration),    CONF_TYPE_INT,       CONF_RANGE,  0,       INT_MAX, NULL},
-	{"cryptokey", &(opt_cryptokey), CONF_TYPE_STRING,       0,  0,       0, NULL},
-        {"o",                  &opt_avopt,                CONF_TYPE_STRING,    0,           0,             0, NULL},
-	{NULL, NULL, 0, 0, 0, 0, NULL}
+    OPT_INTRANGE("probesize", lavfdopts.probesize, 0, 32, INT_MAX),
+    OPT_STRING("format", lavfdopts.format, 0),
+    OPT_INTRANGE("analyzeduration", lavfdopts.analyzeduration, 0, 0, INT_MAX),
+    OPT_STRING("cryptokey", lavfdopts.cryptokey, 0),
+    OPT_STRING("o", lavfdopts.avopt, 0),
+    {NULL, NULL, 0, 0, 0, 0, NULL}
 };
 
 #define BIO_BUFFER_SIZE 32768
 
-typedef struct lavf_priv_t{
+typedef struct lavf_priv {
     AVInputFormat *avif;
     AVFormatContext *avfc;
     ByteIOContext *pb;
@@ -80,7 +75,8 @@ typedef struct lavf_priv_t{
 }lavf_priv_t;
 
 static int mp_read(void *opaque, uint8_t *buf, int size) {
-    stream_t *stream = opaque;
+    struct demuxer *demuxer = opaque;
+    struct stream *stream = demuxer->stream;
     int ret;
 
     if(stream_eof(stream)) //needed?
@@ -92,7 +88,8 @@ static int mp_read(void *opaque, uint8_t *buf, int size) {
 }
 
 static int64_t mp_seek(void *opaque, int64_t pos, int whence) {
-    stream_t *stream = opaque;
+    struct demuxer *demuxer = opaque;
+    struct stream *stream = demuxer->stream;
     int64_t current_pos;
     mp_msg(MSGT_HEADER,MSGL_DBG2,"mp_seek(%p, %"PRId64", %d)\n", stream, pos, whence);
     if(whence == SEEK_CUR)
@@ -120,6 +117,20 @@ static int64_t mp_seek(void *opaque, int64_t pos, int whence) {
     return pos - stream->start_pos;
 }
 
+static int64_t mp_read_seek(void *opaque, int stream_idx, int64_t ts, int flags)
+{
+    struct demuxer *demuxer = opaque;
+    struct stream *stream = demuxer->stream;
+    struct lavf_priv *priv = demuxer->priv;
+
+    AVStream *st = priv->avfc->streams[stream_idx];
+    double pts = (double)ts * st->time_base.num / st->time_base.den;
+    int ret = stream_control(stream, STREAM_CTRL_SEEK_TO_TIME, &pts);
+    if (ret < 0)
+        ret = AVERROR(ENOSYS);
+    return ret;
+}
+
 static void list_formats(void) {
     AVInputFormat *fmt;
     mp_msg(MSGT_DEMUX, MSGL_INFO, "Available lavf input formats:\n");
@@ -128,6 +139,8 @@ static void list_formats(void) {
 }
 
 static int lavf_check_file(demuxer_t *demuxer){
+    struct MPOpts *opts = demuxer->opts;
+    struct lavfdopts *lavfdopts = &opts->lavfdopts;
     AVProbeData avpd;
     lavf_priv_t *priv;
     int probe_data_size = 0;
@@ -139,14 +152,17 @@ static int lavf_check_file(demuxer_t *demuxer){
 
     av_register_all();
 
-    if (opt_format) {
-        if (strcmp(opt_format, "help") == 0) {
+    char *format = lavfdopts->format;
+    if (!format)
+        format = demuxer->stream->lavf_type;
+    if (format) {
+        if (strcmp(format, "help") == 0) {
            list_formats();
            return 0;
         }
-        priv->avif= av_find_input_format(opt_format);
+        priv->avif = av_find_input_format(format);
         if (!priv->avif) {
-            mp_msg(MSGT_DEMUX,MSGL_FATAL,"Unknown lavf format %s\n", opt_format);
+            mp_msg(MSGT_DEMUX, MSGL_FATAL, "Unknown lavf format %s\n", format);
             return 0;
         }
         mp_msg(MSGT_DEMUX,MSGL_INFO,"Forced lavf %s demuxer\n", priv->avif->long_name);
@@ -156,20 +172,21 @@ static int lavf_check_file(demuxer_t *demuxer){
     avpd.buf = av_mallocz(FFMAX(BIO_BUFFER_SIZE, PROBE_BUF_SIZE) +
                           FF_INPUT_BUFFER_PADDING_SIZE);
     do {
-    read_size = stream_read(demuxer->stream, avpd.buf + probe_data_size, read_size);
-    if(read_size < 0) {
-        av_free(avpd.buf);
-        return 0;
-    }
-    probe_data_size += read_size;
-    avpd.filename= demuxer->stream->url;
-    if (!strncmp(avpd.filename, "ffmpeg://", 9))
-        avpd.filename += 9;
-    avpd.buf_size= probe_data_size;
+        read_size = stream_read(demuxer->stream, avpd.buf + probe_data_size, read_size);
+        if(read_size < 0) {
+            av_free(avpd.buf);
+            return 0;
+        }
+        probe_data_size += read_size;
+        avpd.filename= demuxer->stream->url;
+        if (!strncmp(avpd.filename, "ffmpeg://", 9))
+            avpd.filename += 9;
+        avpd.buf_size= probe_data_size;
 
-    priv->avif= av_probe_input_format(&avpd, probe_data_size > 0);
-    read_size = FFMIN(2*read_size, PROBE_BUF_SIZE - probe_data_size);
-    } while (demuxer->desc->type != DEMUXER_TYPE_LAVF_PREFERRED &&
+        priv->avif= av_probe_input_format(&avpd, probe_data_size > 0);
+        read_size = FFMIN(2*read_size, PROBE_BUF_SIZE - probe_data_size);
+    } while ((demuxer->desc->type != DEMUXER_TYPE_LAVF_PREFERRED ||
+              probe_data_size < SMALL_MAX_PROBE_SIZE) &&
              !priv->avif && read_size > 0 && probe_data_size < PROBE_BUF_SIZE);
     av_free(avpd.buf);
 
@@ -433,6 +450,7 @@ static void handle_stream(demuxer_t *demuxer, AVFormatContext *avfc, int i) {
 
 static demuxer_t* demux_open_lavf(demuxer_t *demuxer){
     struct MPOpts *opts = demuxer->opts;
+    struct lavfdopts *lavfdopts = &opts->lavfdopts;
     AVFormatContext *avfc;
     AVFormatParameters ap;
     const AVOption *opt;
@@ -447,26 +465,29 @@ static demuxer_t* demux_open_lavf(demuxer_t *demuxer){
 
     avfc = avformat_alloc_context();
 
-    if (opt_cryptokey)
-        parse_cryptokey(avfc, opt_cryptokey);
+    if (lavfdopts->cryptokey)
+        parse_cryptokey(avfc, lavfdopts->cryptokey);
     if (opts->user_correct_pts != 0)
         avfc->flags |= AVFMT_FLAG_GENPTS;
     if (index_mode == 0)
         avfc->flags |= AVFMT_FLAG_IGNIDX;
 
     ap.prealloced_context = 1;
-    if(opt_probesize) {
-        opt = av_set_int(avfc, "probesize", opt_probesize);
-        if(!opt) mp_msg(MSGT_HEADER,MSGL_ERR, "demux_lavf, couldn't set option probesize to %u\n", opt_probesize);
+    if (lavfdopts->probesize) {
+        opt = av_set_int(avfc, "probesize", lavfdopts->probesize);
+        if(!opt) mp_msg(MSGT_HEADER,MSGL_ERR, "demux_lavf, couldn't set option probesize to %u\n", lavfdopts->probesize);
     }
-    if(opt_analyzeduration) {
-        opt = av_set_int(avfc, "analyzeduration", opt_analyzeduration * AV_TIME_BASE);
-        if(!opt) mp_msg(MSGT_HEADER,MSGL_ERR, "demux_lavf, couldn't set option analyzeduration to %u\n", opt_analyzeduration);
+    if (lavfdopts->analyzeduration) {
+        opt = av_set_int(avfc, "analyzeduration",
+                         lavfdopts->analyzeduration * AV_TIME_BASE);
+        if (!opt)
+            mp_msg(MSGT_HEADER, MSGL_ERR, "demux_lavf, couldn't set option "
+                   "analyzeduration to %u\n", lavfdopts->analyzeduration);
     }
 
-    if(opt_avopt){
-        if(parse_avopts(avfc, opt_avopt) < 0){
-            mp_msg(MSGT_HEADER,MSGL_ERR, "Your options /%s/ look like gibberish to me pal\n", opt_avopt);
+    if (lavfdopts->avopt){
+        if(parse_avopts(avfc, lavfdopts->avopt) < 0){
+            mp_msg(MSGT_HEADER,MSGL_ERR, "Your options /%s/ look like gibberish to me pal\n", lavfdopts->avopt);
             return NULL;
         }
     }
@@ -480,7 +501,8 @@ static demuxer_t* demux_open_lavf(demuxer_t *demuxer){
         av_strlcat(mp_filename, "foobar.dummy", sizeof(mp_filename));
 
     priv->pb = av_alloc_put_byte(priv->buffer, BIO_BUFFER_SIZE, 0,
-                                 demuxer->stream, mp_read, NULL, mp_seek);
+                                 demuxer, mp_read, NULL, mp_seek);
+    priv->pb->read_seek = mp_read_seek;
     priv->pb->is_streamed = !demuxer->stream->end_pos || (demuxer->stream->flags & MP_STREAM_SEEK) != MP_STREAM_SEEK;
 
     if(av_open_input_stream(&avfc, priv->pb, mp_filename, priv->avif, &ap)<0){
