@@ -1172,7 +1172,6 @@ static subtitle* sub_fribidi (subtitle *sub, int sub_utf8, int from)
 {
   FriBidiChar logical[LINE_LEN+1], visual[LINE_LEN+1]; // Hopefully these two won't smash the stack
   char        *ip      = NULL, *op     = NULL;
-  FriBidiCharType base;
   size_t len,orig_len;
   int l=sub->lines;
   int char_set_num;
@@ -1196,7 +1195,11 @@ static subtitle* sub_fribidi (subtitle *sub, int sub_utf8, int from)
       break;
     }
     len = fribidi_charset_to_unicode (char_set_num, ip, len, logical);
-    base = fribidi_flip_commas?FRIBIDI_TYPE_ON:FRIBIDI_TYPE_L;
+#if FRIBIDI_INTERFACE_VERSION < 3
+    FriBidiCharType base = fribidi_flip_commas?FRIBIDI_TYPE_ON:FRIBIDI_TYPE_L;
+#else
+    FriBidiParType base = fribidi_flip_commas?FRIBIDI_TYPE_ON:FRIBIDI_TYPE_L;
+#endif
     log2vis = fribidi_log2vis (logical, len, &base,
 			       /* output */
 			       visual, NULL, NULL, NULL);
@@ -1927,7 +1930,6 @@ char** sub_filenames(const char* path, char *fname)
 		    if (!prio && tmp_sub_id)
 		    {
 			sprintf(tmpresult, "%s %s", f_fname_trim, tmp_sub_id);
-			mp_msg(MSGT_SUBREADER,MSGL_INFO,"dvdsublang...%s\n", tmpresult);
 			if (strcmp(tmp_fname_trim, tmpresult) == 0 && sub_match_fuzziness >= 1) {
 			    // matches the movie name + lang extension
 			    prio = 5;
@@ -1959,6 +1961,8 @@ char** sub_filenames(const char* path, char *fname)
 			}
 		    }
 
+                    mp_msg(MSGT_SUBREADER, MSGL_DBG2, "Potential sub file: "
+                           "\"%s\"  Priority: %d\n", de->d_name, prio);
 		    if (prio) {
 			prio += prio;
 #ifdef CONFIG_ICONV

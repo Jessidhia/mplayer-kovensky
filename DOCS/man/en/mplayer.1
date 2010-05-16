@@ -3514,7 +3514,7 @@ Use nochroma\-deint to solely use luma and speed up advanced deinterlacing.
 Useful with slow video memory.
 .IPs pullup
 Try to apply inverse telecine, needs motion adaptive temporal deinterlacing.
-.IPs colorspace
+.IPs colorspace=<0-3>
 Select the color space for YUV to RGB conversion.
 In general BT.601 should be used for standard definition (SD) content and
 BT.709 for high definition (HD) content.
@@ -3532,13 +3532,19 @@ Use ITU-R BT.709 color space.
 .IPs 3
 Use SMPTE-240M color space.
 .RE
-.IPs hqscaling
+.IPs hqscaling=<0-9>
 .RSss
 .IPs 0
 Use default VDPAU scaling (default).
 .IPs 1\-9
 Apply high quality VDPAU scaling (needs capable hardware).
 .RE
+.IPs studio
+Output video in studio level RGB (16-235).
+This is what TVs and video monitors generally expect.
+By default PC level RGB (0-255) suitable for PC monitors is used.
+Providing studio level output to a device expecting PC level input results in
+grey blacks and dim whites, the reverse in crushed blacks and whites.
 .IPs fps=<number>
 Override autodetected display refresh rate value (the value is needed for framedrop to allow video playback rates higher than display refresh rate, and for vsync-aware frame timing adjustments).
 Default 0 means use autodetected value.
@@ -3548,17 +3554,36 @@ A negative value disables all timing adjustment and framedrop logic.
 .IPs queuetime_fs=<number>
 Use VDPAU's presentation queue functionality to queue future video frame
 changes at most this many milliseconds in advance (default: 50).
-This makes MPlayer's flip timing less sensitive to system CPU load and allows
-it to start decoding the next frame slightly earlier which can reduce jitter
-caused by individual slow-to-decode frames.
+See below for additional information.
+.IPs output_surfaces=<2-15>
+Allocate this many output surfaces to display video frames (default: 3).
+See below for additional information.
+.RE
+.RS
+.sp 1
+Using the VDPAU frame queueing functionality controlled by the queuetime
+options makes MPlayer's frame flip timing less sensitive to system CPU load
+and allows MPlayer to start decoding the next frame(s) slightly earlier
+which can reduce jitter caused by individual slow-to-decode frames.
 However the NVIDIA graphics drivers can make other window behavior such as
 window moves choppy if VDPAU is using the blit queue (mainly happens
 if you have the composite extension enabled) and this feature is active.
-If this happens on your system and you care about it then you can set the
-time to 0 to disable this feature.
+If this happens on your system and it bothers you then you can set the
+queuetime value to 0 to disable this feature.
 The settings to use in windowed and fullscreen mode are separate because there
 should be less reason to disable this for fullscreen mode (as the driver issue
 shouldn't affect the video itself).
+.sp 1
+You can queue more frames ahead by increasing the queuetime values and the
+output_surfaces count (to ensure enough surfaces to buffer video for a
+certain time ahead you need at least as many surfaces as the video has
+frames during that time, plus two).
+This could help make video smoother in some cases.
+The main downsides are increased video RAM requirements for the surfaces
+and laggier display response to user commands (display changes only become
+visible some time after they're queued). The graphics driver implementation may
+also have limits on the length of maximum queuing time or number of queued
+surfaces that work well or at all.
 .RE
 .PD 1
 .

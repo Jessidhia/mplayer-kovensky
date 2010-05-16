@@ -68,7 +68,6 @@
 
 #include "cfg-mplayer-def.h"
 
-#include "ffmpeg_files/intreadwrite.h"
 #include "libavutil/avstring.h"
 
 #include "subreader.h"
@@ -2203,10 +2202,12 @@ static int sleep_until_update(struct MPContext *mpctx, float *time_frame,
 	}
 
 	*time_frame = delay - mpctx->delay / opts->playback_speed;
+        *time_frame -= mpctx->video_out->flip_queue_offset;
 
 	// delay = amount of audio buffered in soundcard/driver
 	if (delay > 0.25) delay=0.25; else
 	if (delay < 0.10) delay=0.10;
+
 	if (*time_frame > delay*0.6) {
 	    // sleep time too big - may cause audio drops (buffer underrun)
 	    frame_time_remaining = 1;
@@ -2219,6 +2220,7 @@ static int sleep_until_update(struct MPContext *mpctx, float *time_frame,
 	// without sleeping.
 	if (*time_frame < -0.2 || benchmark)
 	    *time_frame = 0;
+        *time_frame -= mpctx->video_out->flip_queue_offset;
     }
 
     *aq_sleep_time += *time_frame;
@@ -2226,7 +2228,6 @@ static int sleep_until_update(struct MPContext *mpctx, float *time_frame,
 
     //============================== SLEEP: ===================================
 
-    *time_frame -= mpctx->video_out->flip_queue_offset;
     // flag 256 means: libvo driver does its timing (dvb card)
     if (*time_frame > 0.001 && !(mpctx->sh_video->output_flags&256))
 	*time_frame = timing_sleep(mpctx, *time_frame);

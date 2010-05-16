@@ -336,11 +336,11 @@ static void init_atoms(struct vo_x11_state *x11)
 
 void update_xinerama_info(struct vo *vo) {
     struct MPOpts *opts = vo->opts;
-    int screen = xinerama_screen;
     xinerama_x = xinerama_y = 0;
 #ifdef CONFIG_XINERAMA
-    if (screen >= -1 && XineramaIsActive(vo->x11->display))
+    if (xinerama_screen >= -1 && XineramaIsActive(vo->x11->display))
     {
+        int screen = xinerama_screen;
         XineramaScreenInfo *screens;
         int num_screens;
 

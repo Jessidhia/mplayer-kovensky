@@ -166,12 +166,6 @@ static int control(sh_video_t *sh, int cmd, void *arg, ...){
         return CONTROL_TRUE;
     case VDCTRL_QUERY_UNSEEN_FRAMES:;
         int delay = avctx->has_b_frames;
-#if defined(FF_THREAD_FRAME) && LIBAVCODEC_VERSION_MAJOR <= 52 && LIBAVCODEC_VERSION_MINOR < 49
-        // FFmpeg-mt has extra delay when using frame threading
-        // In newer versions that is included in has_b_frames
-        if (avctx->thread_type & FF_THREAD_FRAME)
-            delay += avctx->thread_count - 1;
-#endif
         return delay + 10;
     }
     return CONTROL_UNKNOWN;
@@ -812,7 +806,12 @@ static struct mp_image *decode(struct sh_video *sh, void *data, int len,
         }
     }
 
-    avctx->hurry_up=(flags&3)?((flags&2)?2:1):0;
+    if (flags & 2)
+        avctx->skip_frame = AVDISCARD_ALL;
+    else if (flags & 1)
+        avctx->skip_frame = AVDISCARD_NONREF;
+    else
+        avctx->skip_frame = 0;
 
     mp_msg(MSGT_DECVIDEO, MSGL_DBG2, "vd_ffmpeg data: %04x, %04x, %04x, %04x\n",
            ((int *)data)[0], ((int *)data)[1], ((int *)data)[2], ((int *)data)[3]);
