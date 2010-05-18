@@ -434,13 +434,6 @@ static void preemption_callback(VdpDevice device, void *context)
     vc->preemption_acked = false;
 }
 
-static void preemption_callback(VdpDevice device, void *context)
-{
-    struct vdpctx *vc = context;
-    vc->is_preempted = true;
-    vc->preemption_acked = false;
-}
-
 /* Initialize vdp_get_proc_address, called from preinit() */
 static int win_x11_init_vdpau_procs(struct vo *vo)
 {
