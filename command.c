@@ -3118,9 +3118,6 @@ void run_command(MPContext *mpctx, mp_cmd_t *cmd)
                 tv_step_chanlist((tvi_handle_t *) (mpctx->demuxer->priv));
             break;
 #endif /* CONFIG_TV */
-<<<<<<< HEAD
-	case MP_CMD_VF_CHANGE_RECTANGLE:
-=======
         case MP_CMD_TV_TELETEXT_ADD_DEC:
         {
             if (mpctx->demuxer->teletext)
