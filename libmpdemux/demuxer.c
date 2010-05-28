@@ -243,7 +243,6 @@ demuxer_t *new_demuxer(struct MPOpts *opts, stream_t *stream, int type,
                    "big troubles ahead.");
     if (filename) // Filename hack for avs_check_file
         d->filename = strdup(filename);
-    stream->eof = 0;
     stream_seek(stream, stream->start_pos);
     return d;
 }
@@ -383,11 +382,6 @@ void free_demuxer(demuxer_t *demuxer)
     free_demuxer_stream(demuxer->video);
     free_demuxer_stream(demuxer->sub);
  skip_streamfree:
-    if (demuxer->info) {
-        for (i = 0; demuxer->info[i] != NULL; i++)
-            free(demuxer->info[i]);
-        free(demuxer->info);
-    }
     free(demuxer->filename);
     if (demuxer->teletext)
         teletext_control(demuxer->teletext, TV_VBI_CONTROL_STOP, NULL);
@@ -1271,27 +1265,33 @@ int demux_seek(demuxer_t *demuxer, float rel_seek_secs, float audio_delay,
 
 int demux_info_add(demuxer_t *demuxer, const char *opt, const char *param)
 {
+    return demux_info_add_bstr(demuxer, BSTR(opt), BSTR(param));
+}
+
+int demux_info_add_bstr(demuxer_t *demuxer, struct bstr opt, struct bstr param)
+{
     char **info = demuxer->info;
     int n = 0;
 
 
     for (n = 0; info && info[2 * n] != NULL; n++) {
-        if (!strcasecmp(opt, info[2 * n])) {
-            if (!strcmp(param, info[2 * n + 1])) {
-                mp_msg(MSGT_DEMUX, MSGL_V, "Demuxer info %s set to unchanged value %s\n", opt, param);
+        if (!bstrcasecmp(opt, BSTR(info[2*n]))) {
+            if (!bstrcmp(param, BSTR(info[2*n + 1]))) {
+                mp_msg(MSGT_DEMUX, MSGL_V, "Demuxer info %.*s set to unchanged value %.*s\n",
+                       BSTR_P(opt), BSTR_P(param));
                 return 0;
             }
-            mp_tmsg(MSGT_DEMUX, MSGL_INFO, "Demuxer info %s changed to %s\n", opt,
-                   param);
-            free(info[2 * n + 1]);
-            info[2 * n + 1] = strdup(param);
+            mp_tmsg(MSGT_DEMUX, MSGL_INFO, "Demuxer info %.*s changed to %.*s\n",
+                    BSTR_P(opt), BSTR_P(param));
+            talloc_free(info[2*n + 1]);
+            info[2*n + 1] = talloc_strndup(demuxer->info, param.start, param.len);
             return 0;
         }
     }
 
-    info = demuxer->info = realloc(info, (2 * (n + 2)) * sizeof(char *));
-    info[2 * n] = strdup(opt);
-    info[2 * n + 1] = strdup(param);
+    info = demuxer->info = talloc_realloc(demuxer, info, char *, 2 * (n + 2));
+    info[2*n]     = talloc_strndup(demuxer->info, opt.start,   opt.len);
+    info[2*n + 1] = talloc_strndup(demuxer->info, param.start, param.len);
     memset(&info[2 * (n + 1)], 0, 2 * sizeof(char *));
 
     return 1;
@@ -1407,10 +1407,15 @@ int demuxer_get_percent_pos(demuxer_t *demuxer)
 int demuxer_switch_audio(demuxer_t *demuxer, int index)
 {
     int res = demux_control(demuxer, DEMUXER_CTRL_SWITCH_AUDIO, &index);
-    if (res == DEMUXER_CTRL_NOTIMPL)
-        index = demuxer->audio->id;
-    if (demuxer->audio->id >= 0)
-        demuxer->audio->sh = demuxer->a_streams[demuxer->audio->id];
+    if (res == DEMUXER_CTRL_NOTIMPL) {
+        struct sh_audio *sh_audio = demuxer->audio->sh;
+        return sh_audio ? sh_audio->aid : -2;
+    }
+    if (demuxer->audio->id >= 0) {
+        struct sh_audio *sh_audio = demuxer->a_streams[demuxer->audio->id];
+        demuxer->audio->sh = sh_audio;
+        index = sh_audio->aid; // internal MPEG demuxers don't set it right
+    }
     else
         demuxer->audio->sh = NULL;
     return index;
@@ -1428,9 +1433,8 @@ int demuxer_switch_video(demuxer_t *demuxer, int index)
     return index;
 }
 
-int demuxer_add_attachment(demuxer_t *demuxer, const char *name,
-                           int name_maxlen, const char *type, int type_maxlen,
-                           const void *data, size_t size)
+int demuxer_add_attachment(demuxer_t *demuxer, struct bstr name,
+                           struct bstr type, struct bstr data)
 {
     if (!(demuxer->num_attachments % 32))
         demuxer->attachments = talloc_realloc(demuxer, demuxer->attachments,
@@ -1439,16 +1443,16 @@ int demuxer_add_attachment(demuxer_t *demuxer, const char *name,
 
     struct demux_attachment *att =
         demuxer->attachments + demuxer->num_attachments;
-    att->name = talloc_strndup(demuxer->attachments, name, name_maxlen);
-    att->type = talloc_strndup(demuxer->attachments, type, type_maxlen);
-    att->data = talloc_size(demuxer->attachments, size);
-    memcpy(att->data, data, size);
-    att->data_size = size;
+    att->name = talloc_strndup(demuxer->attachments, name.start, name.len);
+    att->type = talloc_strndup(demuxer->attachments, type.start, type.len);
+    att->data = talloc_size(demuxer->attachments, data.len);
+    memcpy(att->data, data.start, data.len);
+    att->data_size = data.len;
 
     return demuxer->num_attachments++;
 }
 
-int demuxer_add_chapter(demuxer_t *demuxer, const char *name, int name_maxlen,
+int demuxer_add_chapter(demuxer_t *demuxer, struct bstr name,
                         uint64_t start, uint64_t end)
 {
     if (!(demuxer->num_chapters % 32))
@@ -1458,16 +1462,16 @@ int demuxer_add_chapter(demuxer_t *demuxer, const char *name, int name_maxlen,
 
     demuxer->chapters[demuxer->num_chapters].start = start;
     demuxer->chapters[demuxer->num_chapters].end = end;
-    demuxer->chapters[demuxer->num_chapters].name = name ?
-        talloc_strndup(demuxer->chapters, name, name_maxlen) :
+    demuxer->chapters[demuxer->num_chapters].name = name.len ?
+        talloc_strndup(demuxer->chapters, name.start, name.len) :
         talloc_strdup(demuxer->chapters, mp_gtext("unknown"));
 
     mp_msg(MSGT_IDENTIFY, MSGL_INFO, "ID_CHAPTER_ID=%d\n", demuxer->num_chapters);
     mp_msg(MSGT_IDENTIFY, MSGL_INFO, "ID_CHAPTER_%d_START=%"PRIu64"\n", demuxer->num_chapters, start);
     if (end)
         mp_msg(MSGT_IDENTIFY, MSGL_INFO, "ID_CHAPTER_%d_END=%"PRIu64"\n", demuxer->num_chapters, end);
-    if (name)
-        mp_msg(MSGT_IDENTIFY, MSGL_INFO, "ID_CHAPTER_%d_NAME=%.*s\n", demuxer->num_chapters, name_maxlen, name);
+    if (name.start)
+        mp_msg(MSGT_IDENTIFY, MSGL_INFO, "ID_CHAPTER_%d_NAME=%.*s\n", demuxer->num_chapters, BSTR_P(name));
 
     return demuxer->num_chapters++;
 }

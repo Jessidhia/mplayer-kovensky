@@ -26,6 +26,7 @@
 #include <stdbool.h>
 
 #include "stream/stream.h"
+#include "bstr.h"
 
 struct MPOpts;
 
@@ -428,6 +429,7 @@ extern int pts_from_bps;
 extern int extension_parsing;
 
 int demux_info_add(demuxer_t *demuxer, const char *opt, const char *param);
+int demux_info_add_bstr(demuxer_t *demuxer, struct bstr opt, struct bstr param);
 char* demux_info_get(demuxer_t *demuxer, const char *opt);
 int demux_info_print(demuxer_t *demuxer);
 int demux_control(demuxer_t *demuxer, int cmd, void *arg);
@@ -443,10 +445,9 @@ int demuxer_type_by_filename(char* filename);
 void demuxer_help(void);
 int get_demuxer_type_from_name(char *demuxer_name, int *force);
 
-int demuxer_add_attachment(demuxer_t *demuxer, const char *name,
-                           int name_maxlen, const char *type, int type_maxlen,
-                           const void *data, size_t size);
-int demuxer_add_chapter(demuxer_t *demuxer, const char *name, int name_maxlen,
+int demuxer_add_attachment(demuxer_t *demuxer, struct bstr name,
+                           struct bstr type, struct bstr data);
+int demuxer_add_chapter(demuxer_t *demuxer, struct bstr name,
                         uint64_t start, uint64_t end);
 int demuxer_seek_chapter(demuxer_t *demuxer, int chapter, double *seek_pts,
                          char **chapter_name);
