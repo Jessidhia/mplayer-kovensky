@@ -31,6 +31,7 @@
 
 #include "talloc.h"
 #include "options.h"
+#include "bstr.h"
 #include "stream/stream.h"
 #include "demuxer.h"
 #include "stheader.h"
@@ -74,8 +75,8 @@ static const unsigned char sipr_swaps[38][2] = {
 #define ATRC_FLAVORS 8
 #define COOK_FLAVORS 34
 static const int sipr_fl2bps[SIPR_FLAVORS] = { 813, 1062, 625, 2000 };
-static const int atrc_fl2bps[ATRC_FLAVORS] =
-    { 8269, 11714, 13092, 16538, 18260, 22050, 33075, 44100 };
+static const int atrc_fl2bps[ATRC_FLAVORS] = {
+    8269, 11714, 13092, 16538, 18260, 22050, 33075, 44100 };
 static const int cook_fl2bps[COOK_FLAVORS] = {
     1000, 1378, 2024, 2584, 4005, 5513, 8010, 4005, 750, 2498,
     4048, 5513, 8010, 11973, 8010, 2584, 4005, 2067, 2584, 2584,
@@ -1160,6 +1161,7 @@ static const videocodec_info_t vinfo[] = {
     {MKV_V_MPEG4_AP,  mmioFOURCC('m', 'p', '4', 'v'), 1},
     {MKV_V_MPEG4_AVC, mmioFOURCC('a', 'v', 'c', '1'), 1},
     {MKV_V_THEORA,    mmioFOURCC('t', 'h', 'e', 'o'), 1},
+    {MKV_V_VP8,       mmioFOURCC('V', 'P', '8', '0'), 0},
     {NULL, 0, 0}
 };
 
@@ -1661,8 +1663,8 @@ static int demux_mkv_open(demuxer_t *demuxer)
     struct ebml_parse_ctx parse_ctx = { .no_error_messages = true };
     if (ebml_read_element(s, &parse_ctx, &ebml_master, &ebml_ebml_desc) < 0)
         return 0;
-    if (ebml_master.doc_type.len != 8 || strncmp(ebml_master.doc_type.start,
-                                                 "matroska", 8)) {
+    if (bstrcmp(ebml_master.doc_type, BSTR("matroska")) != 0
+        && bstrcmp(ebml_master.doc_type, BSTR("webm")) != 0) {
         mp_msg(MSGT_DEMUX, MSGL_DBG2, "[mkv] no head found\n");
         talloc_free(parse_ctx.talloc_ctx);
         return 0;
@@ -1787,7 +1789,7 @@ static int demux_mkv_open(demuxer_t *demuxer)
         demuxer->audio->id = -2;
     }
 
-    if (s->end_pos == 0 || (mkv_d->indexes == NULL && index_mode < 0))
+    if (s->end_pos == 0)
         demuxer->seekable = 0;
     else {
         demuxer->movi_start = s->start_pos;
@@ -2430,11 +2432,11 @@ static void demux_mkv_seek(demuxer_t *demuxer, float rel_seek_secs,
     uint64_t v_tnum = -1;
     if (demuxer->video->id >= 0)
         v_tnum = find_track_by_num(mkv_d, demuxer->video->id,
-                                        MATROSKA_TRACK_VIDEO)->tnum;
+                                   MATROSKA_TRACK_VIDEO)->tnum;
     uint64_t a_tnum = -1;
     if (demuxer->audio->id >= 0)
         a_tnum = find_track_by_num(mkv_d, demuxer->audio->id,
-                                        MATROSKA_TRACK_VIDEO)->tnum;
+                                   MATROSKA_TRACK_AUDIO)->tnum;
     if (!(flags & (SEEK_BACKWARD | SEEK_FORWARD))) {
         if (flags & SEEK_ABSOLUTE || rel_seek_secs < 0)
             flags |= SEEK_BACKWARD;

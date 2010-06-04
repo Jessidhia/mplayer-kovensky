@@ -108,16 +108,6 @@ SRCS_COMMON-$(HAVE_SYS_MMAN_H)       += libaf/af_export.c osdep/mmap_anon.c
 SRCS_COMMON-$(JPEG)                  += libmpcodecs/vd_ijpg.c
 SRCS_COMMON-$(LADSPA)                += libaf/af_ladspa.c
 SRCS_COMMON-$(LIBA52)                += libmpcodecs/ad_liba52.c
-SRCS_LIBA52_INTERNAL                 += liba52/crc.c \
-                                        liba52/resample.c \
-                                        liba52/bit_allocate.c \
-                                        liba52/bitstream.c \
-                                        liba52/downmix.c \
-                                        liba52/imdct.c \
-                                        liba52/parse.c \
-
-SRCS_COMMON-$(LIBA52_INTERNAL)       += $(SRCS_LIBA52_INTERNAL)
-
 SRCS_COMMON-$(LIBASS)                += ass_mp.c \
                                         libmpcodecs/vf_ass.c \
 
@@ -181,7 +171,7 @@ SRCS_COMMON-$(LIBPOSTPROC)           += libmpcodecs/vf_pp.c
 SRCS_COMMON-$(LIBSMBCLIENT)          += stream/stream_smb.c
 SRCS_COMMON-$(LIBSWSCALE_INTERNALS)  += libmpcodecs/vf_palette.c \
                                         libmpcodecs/vf_rgb2bgr.c \
-                                        libmpcodecs/vf_yuy2.c
+
 SRCS_COMMON-$(LIBTHEORA)             += libmpcodecs/vd_theora.c
 SRCS_COMMON-$(LIVE555)               += libmpdemux/demux_rtp.cpp \
                                         libmpdemux/demux_rtp_codec.cpp \
@@ -706,7 +696,6 @@ INSTALL_TARGETS-$(MPLAYER)  += install-mplayer \
 
 DIRS =  . \
         input \
-        liba52 \
         libaf \
         libao2 \
         libass \
@@ -814,7 +803,7 @@ codec-cfg.d codec-cfg.o: codecs.conf.h
 $(call ADDSUFFIXES,.d .o,mpcommon vobsub stream/stream_cddb stream/network libmpdemux/muxer_avi osdep/mplayer.rc): version.h
 
 # Files that depend on libswscale internals
-libvo/vo_mga.o libvo/vo_xmga.o libmpcodecs/vf_palette.o libmpcodecs/vf_rgb2bgr.o libmpcodecs/vf_yuy2.o: CFLAGS := -I$(FFMPEG_SOURCE_PATH) $(CFLAGS)
+libvo/vo_mga.o libvo/vo_xmga.o libmpcodecs/vf_palette.o libmpcodecs/vf_rgb2bgr.o: CFLAGS := -I$(FFMPEG_SOURCE_PATH) $(CFLAGS)
 
 # Files that depend on libavcodec internals
 libmpcodecs/vf_fspp.o libmpcodecs/vf_geq.o libmpcodecs/vf_mcdeint.o libmpcodecs/vf_qp.o libmpcodecs/vf_spp.o libvo/jpeg_enc.o: CFLAGS := -I$(FFMPEG_SOURCE_PATH) $(CFLAGS)
@@ -943,8 +932,6 @@ codec-cfg-test$(EXESUF): codec-cfg.c codecs.conf.h $(TEST_OBJS)
 codecs2html$(EXESUF): codec-cfg.c $(TEST_OBJS)
 	$(CC) -I. -DCODECS2HTML -o $@ $^
 
-liba52/test$(EXESUF): cpudetect.o $(SRCS_LIBA52_INTERNAL:.c=.o) -lm
-
 libvo/aspecttest$(EXESUF): libvo/aspect.o libvo/geometry.o $(TEST_OBJS)
 
 LOADER_TEST_OBJS = $(SRCS_WIN32_EMULATION:.c=.o) $(SRCS_QTX_EMULATION:.S=.o) libavutil/libavutil.a osdep/mmap_anon.o cpudetect.o $(TEST_OBJS)
@@ -954,8 +941,7 @@ loader/qtx/list$(EXESUF) loader/qtx/qtxload$(EXESUF): $(LOADER_TEST_OBJS)
 
 mp3lib/test$(EXESUF) mp3lib/test2$(EXESUF): $(SRCS_MP3LIB:.c=.o) libvo/aclib.o cpudetect.o $(TEST_OBJS)
 
-TESTS = codecs2html codec-cfg-test liba52/test libvo/aspecttest \
-        mp3lib/test mp3lib/test2
+TESTS = codecs2html codec-cfg-test libvo/aspecttest mp3lib/test mp3lib/test2
 
 ifdef ARCH_X86
 TESTS += loader/qtx/list loader/qtx/qtxload

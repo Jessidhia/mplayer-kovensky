@@ -42,7 +42,7 @@ struct vf_priv_s {
 	int qp_stride;
 };
 
-static int config(struct vf_instance* vf,
+static int config(struct vf_instance *vf,
         int width, int height, int d_width, int d_height,
 	unsigned int flags, unsigned int outfmt){
 	int h= (height+15)>>4;
@@ -66,17 +66,22 @@ static int config(struct vf_instance* vf,
                 "qp",
                 NULL
             };
+            double temp_val;
+	    int res;
 
-            const char *error = NULL;
-            vf->priv->lut[i+129]= lrintf(ff_parse_and_eval_expr(vf->priv->eq, const_values, const_names, NULL, NULL, NULL, NULL, NULL, &error));
-            if (error)
-                mp_msg(MSGT_VFILTER, MSGL_ERR, "qp: Error evaluating \"%s\": %s\n", vf->priv->eq, error);
+            res= ff_parse_and_eval_expr(&temp_val, vf->priv->eq, const_names, const_values, NULL, NULL, NULL, NULL, NULL, 0, NULL);
+
+            if (res < 0){
+                mp_msg(MSGT_VFILTER, MSGL_ERR, "qp: Error evaluating \"%s\" \n", vf->priv->eq);
+                return 0;
+            }
+            vf->priv->lut[i+129]= lrintf(temp_val);
         }
 
 	return vf_next_config(vf,width,height,d_width,d_height,flags,outfmt);
 }
 
-static void get_image(struct vf_instance* vf, mp_image_t *mpi){
+static void get_image(struct vf_instance *vf, mp_image_t *mpi){
     if(mpi->flags&MP_IMGFLAG_PRESERVE) return; // don't change
     // ok, we can do pp in-place (or pp disabled):
     vf->dmpi=vf_get_image(vf->next,mpi->imgfmt,
@@ -93,7 +98,7 @@ static void get_image(struct vf_instance* vf, mp_image_t *mpi){
     mpi->flags|=MP_IMGFLAG_DIRECT;
 }
 
-static int put_image(struct vf_instance* vf, mp_image_t *mpi, double pts){
+static int put_image(struct vf_instance *vf, mp_image_t *mpi, double pts){
 	mp_image_t *dmpi;
         int x,y;
 
@@ -136,7 +141,7 @@ static int put_image(struct vf_instance* vf, mp_image_t *mpi, double pts){
 	return vf_next_put_image(vf,dmpi, pts);
 }
 
-static void uninit(struct vf_instance* vf){
+static void uninit(struct vf_instance *vf){
 	if(!vf->priv) return;
 
 	if(vf->priv->qp) av_free(vf->priv->qp);

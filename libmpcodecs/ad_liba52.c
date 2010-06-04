@@ -24,7 +24,7 @@
 #include <assert.h>
 
 #include "config.h"
-
+#include "options.h"
 #include "mp_msg.h"
 #include "mpbswap.h"
 
@@ -34,14 +34,9 @@
 
 #include "libaf/af_format.h"
 
-#ifdef CONFIG_LIBA52_INTERNAL
-#include "liba52/a52.h"
-#include "liba52/mm_accel.h"
-#else
 #include <a52dec/a52.h>
 #include <a52dec/mm_accel.h>
 int (* a52_resample) (float * _f, int16_t * s16);
-#endif
 
 static a52_state_t *a52_state;
 static uint32_t a52_flags=0;
@@ -58,8 +53,6 @@ static uint32_t channel_map;
 
 /** The output is multiplied by this var.  Used for volume control */
 static sample_t a52_level = 1;
-/** The value of the -a52drc switch. */
-float a52_drc_level = 1.0;
 static int a52_drc_action = DRC_NO_ACTION;
 
 static const ad_info_t info =
@@ -73,7 +66,8 @@ static const ad_info_t info =
 
 LIBAD_EXTERN(liba52)
 
-static int a52_fillbuff(sh_audio_t *sh_audio){
+static int a52_fillbuff(sh_audio_t *sh_audio)
+{
 int length=0;
 int flags=0;
 int sample_rate=0;
@@ -137,9 +131,11 @@ int channels=0;
   return (flags&A52_LFE) ? (channels+1) : channels;
 }
 
-static sample_t dynrng_call (sample_t c, void *data) {
-//	fprintf(stderr, "(%lf, %lf): %lf\n", (double)c, (double)a52_drc_level, (double)pow((double)c, a52_drc_level));
-	return pow((double)c, a52_drc_level);
+static sample_t dynrng_call (sample_t c, void *data)
+{
+    struct MPOpts *opts = data;
+    //fprintf(stderr, "(%lf, %lf): %lf\n", (double)c, opts->drc_level, pow(c, opts->drc_level));
+    return pow(c, opts->drc_level);
 }
 
 
@@ -147,11 +143,7 @@ static int preinit(sh_audio_t *sh)
 {
   /* Dolby AC3 audio: */
   /* however many channels, 2 bytes in a word, 256 samples in a block, 6 blocks in a frame */
-#ifdef CONFIG_LIBA52_INTERNAL
-  if (sh->samplesize < 2) sh->samplesize = 2;
-#else
   if (sh->samplesize < 4) sh->samplesize = 4;
-#endif
   sh->audio_out_minsize=audio_output_channels*sh->samplesize*256*6;
   sh->audio_in_minsize=3840;
   a52_level = 1.0;
@@ -184,6 +176,7 @@ static int a52_resample_float(float *in, int16_t *out)
 
 static int init(sh_audio_t *sh_audio)
 {
+    struct MPOpts *opts = sh_audio->opts;
   uint32_t a52_accel=0;
   sample_t level=a52_level, bias=384;
   int flags=0;
@@ -205,20 +198,17 @@ static int init(sh_audio_t *sh_audio)
 	mp_msg(MSGT_DECAUDIO,MSGL_ERR,"A52 init failed\n");
 	return 0;
   }
-#ifndef CONFIG_LIBA52_INTERNAL
   sh_audio->sample_format = AF_FORMAT_FLOAT_NE;
-#endif
   if(a52_fillbuff(sh_audio)<0){
 	mp_msg(MSGT_DECAUDIO,MSGL_ERR,"A52 sync failed\n");
 	return 0;
   }
 
-
   /* Init a52 dynrng */
-  if (a52_drc_level < 0.001) {
+  if (opts->drc_level < 0.001) {
 	  /* level == 0 --> no compression, init library without callback */
 	  a52_drc_action = DRC_NO_COMPRESSION;
-  } else if (a52_drc_level > 0.999) {
+  } else if (opts->drc_level > 0.999 || opts->drc_level < 1.001) {
 	  /* level == 1 --> full compression, do nothing at all (library default = full compression) */
 	  a52_drc_action = DRC_NO_ACTION;
   } else {
@@ -280,12 +270,7 @@ while(sh_audio->channels>0){
 	  break;
       }
   } else
-#ifdef CONFIG_LIBA52_INTERNAL
-  if(a52_resample_init(a52_accel,flags,sh_audio->channels)) break;
-  --sh_audio->channels; /* try to decrease no. of channels*/
-#else
   break;
-#endif
 }
   if(sh_audio->channels<=0){
     mp_msg(MSGT_DECAUDIO,MSGL_ERR,"a52: no resampler. try different channel setup!\n");
@@ -342,7 +327,7 @@ static int decode_audio(sh_audio_t *sh_audio,unsigned char *buf,int minlen,int m
 	    if (a52_drc_action == DRC_NO_COMPRESSION)
 		a52_dynrng(a52_state, NULL, NULL);
 	    else
-		a52_dynrng(a52_state, dynrng_call, NULL);
+		a52_dynrng(a52_state, dynrng_call, sh_audio->opts);
 	}
 
 	len=0;

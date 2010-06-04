@@ -2469,7 +2469,7 @@ static double update_video(struct MPContext *mpctx)
         if (in_size < 0) {
             // try to extract last frames in case of decoder lag
             in_size = 0;
-            pts = 1e300;
+            pts = MP_NOPTS_VALUE;
             hit_eof = true;
         }
         if (in_size > max_framesize)
@@ -3771,9 +3771,7 @@ if (opts->ass_enabled && ass_library && use_embedded_fonts) {
         struct demuxer *d = mpctx->sources[j].demuxer;
         for (int i = 0; i < d->num_attachments; i++) {
             struct demux_attachment *att = d->attachments + i;
-            if (att->name && att->type && att->data && att->data_size
-                && (strcmp(att->type, "application/x-truetype-font") == 0
-                    || strcmp(att->type, "application/x-font") == 0))
+            if (use_embedded_fonts && attachment_is_font(att))
                 ass_add_font(ass_library, att->name, att->data, att->data_size);
         }
     }

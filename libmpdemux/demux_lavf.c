@@ -214,6 +214,7 @@ static const char * const preferred_list[] = {
     "mpc8",
     "mp3",
     "mxf",
+    "ogg",
     "swf",
     "vqf",
     "w64",

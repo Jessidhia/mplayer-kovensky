@@ -43,6 +43,7 @@ extern char *network_username;
 extern char *network_password;
 extern int   network_bandwidth;
 extern char *network_useragent;
+extern char *network_referrer;
 extern int   network_cookies_enabled;
 extern char *cookies_file;
 
@@ -51,8 +52,6 @@ extern int network_ipv4_only_proxy;
 extern int reuse_socket;
 
 extern int dvd_speed; /* stream/stream_dvd.c */
-
-extern float a52_drc_level;
 
 /* defined in libmpdemux: */
 extern int hr_mp3_seek;
