@@ -187,7 +187,7 @@ void set_path_env(void)
 	/*make our codec dirs available for LoadLibraryA()*/
 	char win32path[MAX_PATH];
 #ifdef __CYGWIN__
-	cygwin_conv_to_full_win32_path(BINARY_CODECS_PATH, win32path);
+	cygwin_conv_path(CCP_POSIX_TO_WIN_A, BINARY_CODECS_PATH, win32path, MAX_PATH);
 #else /*__CYGWIN__*/
 	/* Expand to absolute path unless it's already absolute */
 	if (!strstr(BINARY_CODECS_PATH,":") && BINARY_CODECS_PATH[0] != '\\') {
