@@ -35,7 +35,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
-#elif defined(_WIN32)
+#elif defined(_WIN32) || defined(__CYGWIN__)
 #define _WIN32_IE 0x0400
 #include <windows.h>
 #include <shlobj.h>
@@ -43,7 +43,9 @@
 #include <sys/stat.h>
 #endif
 #if defined(__CYGWIN__)
+#include <windef.h>
 #include <sys/cygwin.h>
+#define _stat stat
 #endif
 
 #include "osdep/osdep.h"
@@ -74,12 +76,14 @@ char *get_path(const char *filename){
 	{
 		int i,imax=0;
 		struct _stat statBuffer;
-		char exedir[4096], config_path[4096], appdata[4096];
-		if (SHGetSpecialFolderPathA(NULL, appdata, CSIDL_APPDATA, 1)) {
+		char exedir[4096], config_path[4096];
+#ifndef __CYGWIN__
+		char appdata[4096];
+		if (SHGetSpecialFolderPathA(NULL, appdata, CSIDL_APPDATA, 1))
 			strncpy(exedir, appdata, strlen(appdata));
-		} else {
+		else
+#endif
 			GetModuleFileNameA(NULL, exedir, 4096);
-		}
 		int len = strlen(exedir);
 		for (i=0; i< len; i++)
 			if (exedir[i] =='\\')

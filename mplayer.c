@@ -25,7 +25,7 @@
 #include "config.h"
 #include "talloc.h"
 
-#ifdef _WIN32
+#if defined(__MINGW32__) || defined(__CYGWIN__)
 #define _UWIN 1  /*disable Non-underscored versions of non-ANSI functions as otherwise int eof would conflict with eof()*/
 #define _WIN32_WINNT 0x0500 /* enable SetThreadExecutionState for disabling screensaver. Breaks binary compatibility with pre-win2000. */
 #include <windows.h>
