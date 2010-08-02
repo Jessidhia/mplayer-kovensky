@@ -36,7 +36,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #elif defined(_WIN32) || defined(__CYGWIN__)
-#define _WIN32_IE 0x0400
+#define _WIN32_IE 0x0500
 #include <windows.h>
 #include <shlobj.h>
 #include <sys/types.h>
