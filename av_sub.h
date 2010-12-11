@@ -16,11 +16,15 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-#ifndef MPLAYER_AE_PCM_H
-#define MPLAYER_AE_PCM_H
+#ifndef MPLAYER_AV_SUB_H
+#define MPLAYER_AV_SUB_H
 
-#include "ae.h"
+#include <stdint.h>
 
-int mpae_init_pcm(audio_encoder_t *encoder);
+struct sh_sub;
 
-#endif /* MPLAYER_AE_PCM_H */
+void reset_avsub(struct sh_sub *sh);
+int decode_avsub(struct sh_sub *sh, uint8_t **data, int *size,
+                 double *pts, double *endpts);
+
+#endif /* MPLAYER_AV_SUB_H */

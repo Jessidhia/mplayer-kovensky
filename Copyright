@@ -29,16 +29,8 @@ Copyright:  2003-2004 M. Bakker, Ahead Software AG, http://www.nero.com
 License:    GNU General Public License
 
 
-Name:       GSM 06.10 library
-Version:    patchlevel 10
-URL:        http://kbs.cs.tu-berlin.de/~jutta/toast.html
-Directory:  libmpcodecs/native/
-Copyright:  1992 by Jutta Degener and Carsten Bormann, TU Berlin
-License:    permissive, see libmpcodecs/native/xa_gsm.c
-
-
 Name:       libdvdcss
-Version:    Subversion r225 + r229 + r231
+Version:    Subversion r237 + local changes
 URL:        http://developers.videolan.org/libdvdcss/
 Directory:  libdvdcss
 Copyright:  1998-2008 VideoLAN

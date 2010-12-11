@@ -14,6 +14,11 @@
  * You should have received a copy of the GNU General Public License along
  * with MPlayer; if not, write to the Free Software Foundation, Inc.,
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ *
+ * You can alternatively redistribute this file and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  */
 
 #ifndef MPLAYER_GL_COMMON_H
@@ -337,11 +342,14 @@ int loadGPUProgram(GLenum target, char *prog);
 //! shift value for chrominance scaler type
 #define YUV_CHROM_SCALER_SHIFT 12
 //! extract conversion out of type
-#define YUV_CONVERSION(t) (t & YUV_CONVERSION_MASK)
+#define YUV_CONVERSION(t) ((t) & YUV_CONVERSION_MASK)
 //! extract luminance scaler out of type
-#define YUV_LUM_SCALER(t) ((t >> YUV_LUM_SCALER_SHIFT) & YUV_SCALER_MASK)
+#define YUV_LUM_SCALER(t) (((t) >> YUV_LUM_SCALER_SHIFT) & YUV_SCALER_MASK)
 //! extract chrominance scaler out of type
-#define YUV_CHROM_SCALER(t) ((t >> YUV_CHROM_SCALER_SHIFT) & YUV_SCALER_MASK)
+#define YUV_CHROM_SCALER(t) (((t) >> YUV_CHROM_SCALER_SHIFT) & YUV_SCALER_MASK)
+#define SET_YUV_CONVERSION(c)   ((c) & YUV_CONVERSION_MASK)
+#define SET_YUV_LUM_SCALER(s)   (((s) & YUV_SCALER_MASK) << YUV_LUM_SCALER_SHIFT)
+#define SET_YUV_CHROM_SCALER(s) (((s) & YUV_SCALER_MASK) << YUV_CHROM_SCALER_SHIFT)
 /** \} */
 
 typedef struct {
@@ -359,6 +367,14 @@ int glAutodetectYUVConversion(void);
 void glSetupYUVConversion(gl_conversion_params_t *params);
 void glEnableYUVConversion(GLenum target, int type);
 void glDisableYUVConversion(GLenum target, int type);
+
+#define GL_3D_RED_CYAN        1
+#define GL_3D_GREEN_MAGENTA   2
+#define GL_3D_QUADBUFFER      3
+
+void glEnable3DLeft(int type);
+void glEnable3DRight(int type);
+void glDisable3D(int type);
 
 /** \addtogroup glcontext
   * \{ */
@@ -457,6 +473,7 @@ extern void (GLAPIENTRY *mpglLightfv)(GLenum, GLenum, const GLfloat *);
 extern void (GLAPIENTRY *mpglColorMaterial)(GLenum, GLenum);
 extern void (GLAPIENTRY *mpglShadeModel)(GLenum);
 extern void (GLAPIENTRY *mpglGetIntegerv)(GLenum, GLint *);
+extern void (GLAPIENTRY *mpglColorMask)(GLboolean, GLboolean, GLboolean, GLboolean);
 
 extern void (GLAPIENTRY *mpglGenBuffers)(GLsizei, GLuint *);
 extern void (GLAPIENTRY *mpglDeleteBuffers)(GLsizei, const GLuint *);

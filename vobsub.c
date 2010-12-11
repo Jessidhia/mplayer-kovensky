@@ -32,8 +32,7 @@
 #include <sys/types.h>
 
 #include "config.h"
-#include "version.h"
-
+#include "mpcommon.h"
 #include "vobsub.h"
 #include "spudec.h"
 #include "mp_msg.h"
@@ -313,8 +312,7 @@ static mpeg_t *mpeg_open(const char *filename)
 
 static void mpeg_free(mpeg_t *mpeg)
 {
-    if (mpeg->packet)
-        free(mpeg->packet);
+    free(mpeg->packet);
     if (mpeg->stream)
         rar_close(mpeg->stream);
     free(mpeg);
@@ -435,8 +433,7 @@ static int mpeg_run(mpeg_t *mpeg)
             }
             mpeg->packet_size = len - ((unsigned int) mpeg_tell(mpeg) - idx);
             if (mpeg->packet_reserve < mpeg->packet_size) {
-                if (mpeg->packet)
-                    free(mpeg->packet);
+                free(mpeg->packet);
                 mpeg->packet = malloc(mpeg->packet_size);
                 if (mpeg->packet)
                     mpeg->packet_reserve = mpeg->packet_size;
@@ -509,8 +506,7 @@ static void packet_construct(packet_t *pkt)
 
 static void packet_destroy(packet_t *pkt)
 {
-    if (pkt->data)
-        free(pkt->data);
+    free(pkt->data);
 }
 
 static void packet_queue_construct(packet_queue_t *queue)
@@ -636,8 +632,7 @@ static int vobsub_add_id(vobsub_t *vob, const char *id, size_t idlen,
     if (vobsub_ensure_spu_stream(vob, index) < 0)
         return -1;
     if (id && idlen) {
-        if (vob->spu_streams[index].id)
-            free(vob->spu_streams[index].id);
+        free(vob->spu_streams[index].id);
         vob->spu_streams[index].id = malloc(idlen + 1);
         if (vob->spu_streams[index].id == NULL) {
             mp_msg(MSGT_VOBSUB, MSGL_FATAL, "vobsub_add_id: malloc failure");
@@ -868,8 +863,7 @@ static int vobsub_parse_one_line(vobsub_t *vob, rar_stream_t *fd,
             mp_msg(MSGT_VOBSUB, MSGL_ERR,  "ERROR in %s", line);
         break;
     } while (1);
-    if (line)
-      free(line);
+    free(line);
     return res;
 }
 
@@ -877,7 +871,7 @@ int vobsub_parse_ifo(void* this, const char *const name, unsigned int *palette,
                      unsigned int *width, unsigned int *height, int force,
                      int sid, char *langid)
 {
-    vobsub_t *vob = (vobsub_t*)this;
+    vobsub_t *vob = this;
     int res = -1;
     rar_stream_t *fd = rar_open(name, "rb");
     if (fd == NULL) {
@@ -985,8 +979,7 @@ void *vobsub_open(const char *const name, const char *const ifo,
             }
             if (spu)
                 *spu = spudec_new_scaled(vob->palette, vob->orig_frame_width, vob->orig_frame_height, extradata, extradata_len);
-            if (extradata)
-                free(extradata);
+            free(extradata);
 
             /* read the indexed mpeg_stream */
             strcpy(buf, name);
@@ -1034,11 +1027,11 @@ void *vobsub_open(const char *const name, const char *const ifo,
                                             last_pts_diff = pkt->pts100 - mpg->pts;
                                         else
                                             pkt->pts100 = mpg->pts;
-                                        if (mpg->merge) {
+                                        if (mpg->merge && queue->current_index > 0) {
                                             packet_t *last = &queue->packets[queue->current_index - 1];
                                             pkt->pts100 = last->pts100;
-                                            mpg->merge = 0;
                                         }
+                                        mpg->merge = 0;
                                         /* FIXME: should not use mpg_sub internal informations, make a copy */
                                         pkt->data = mpg->packet;
                                         pkt->size = mpg->packet_size;
@@ -1069,7 +1062,7 @@ void *vobsub_open(const char *const name, const char *const ifo,
 
 void vobsub_close(void *this)
 {
-    vobsub_t *vob = (vobsub_t *)this;
+    vobsub_t *vob = this;
     if (vob->spu_streams) {
         while (vob->spu_streams_size--)
             packet_queue_destroy(vob->spu_streams + vob->spu_streams_size);
@@ -1080,13 +1073,13 @@ void vobsub_close(void *this)
 
 unsigned int vobsub_get_indexes_count(void *vobhandle)
 {
-    vobsub_t *vob = (vobsub_t *) vobhandle;
+    vobsub_t *vob = vobhandle;
     return vob->spu_valid_streams_size;
 }
 
 char *vobsub_get_id(void *vobhandle, unsigned int index)
 {
-    vobsub_t *vob = (vobsub_t *) vobhandle;
+    vobsub_t *vob = vobhandle;
     return (index < vob->spu_streams_size) ? vob->spu_streams[index].id : NULL;
 }
 
@@ -1122,7 +1115,7 @@ int vobsub_get_index_by_id(void *vobhandle, int id)
 int vobsub_set_from_lang(void *vobhandle, unsigned char * lang)
 {
     int i;
-    vobsub_t *vob= (vobsub_t *) vobhandle;
+    vobsub_t *vob= vobhandle;
     while (lang && strlen(lang) >= 2) {
         for (i = 0; i < vob->spu_streams_size; i++)
             if (vob->spu_streams[i].id)
@@ -1171,7 +1164,7 @@ static void vobsub_queue_reseek(packet_queue_t *queue, unsigned int pts100)
 
 int vobsub_get_packet(void *vobhandle, float pts, void** data, int* timestamp)
 {
-    vobsub_t *vob = (vobsub_t *)vobhandle;
+    vobsub_t *vob = vobhandle;
     unsigned int pts100 = 90000 * pts;
     if (vob->spu_streams && 0 <= vobsub_id && (unsigned) vobsub_id < vob->spu_streams_size) {
         packet_queue_t *queue = vob->spu_streams + vobsub_id;
@@ -1197,7 +1190,7 @@ int vobsub_get_packet(void *vobhandle, float pts, void** data, int* timestamp)
 
 int vobsub_get_next_packet(void *vobhandle, void** data, int* timestamp)
 {
-    vobsub_t *vob = (vobsub_t *)vobhandle;
+    vobsub_t *vob = vobhandle;
     if (vob->spu_streams && 0 <= vobsub_id && (unsigned) vobsub_id < vob->spu_streams_size) {
         packet_queue_t *queue = vob->spu_streams + vobsub_id;
         if (queue->current_index < queue->packets_size) {
@@ -1213,7 +1206,7 @@ int vobsub_get_next_packet(void *vobhandle, void** data, int* timestamp)
 
 void vobsub_seek(void * vobhandle, float pts)
 {
-    vobsub_t * vob = (vobsub_t *)vobhandle;
+    vobsub_t * vob = vobhandle;
     packet_queue_t * queue;
     int seek_pts100 = pts * 90000;
 
@@ -1229,7 +1222,7 @@ void vobsub_seek(void * vobhandle, float pts)
 
 void vobsub_reset(void *vobhandle)
 {
-    vobsub_t *vob = (vobsub_t *)vobhandle;
+    vobsub_t *vob = vobhandle;
     if (vob->spu_streams) {
         unsigned int n = vob->spu_streams_size;
         while (n-- > 0)
@@ -1254,12 +1247,12 @@ static void create_idx(vobsub_out_t *me, const unsigned int *palette,
     fprintf(me->fidx,
             "# VobSub index file, v7 (do not modify this line!)\n"
             "#\n"
-            "# Generated by MPlayer " VERSION "\n"
+            "# Generated by %s\n"
             "# See <URL:http://www.mplayerhq.hu/> for more information about MPlayer\n"
             "# See <URL:http://wiki.multimedia.cx/index.php?title=VOBsub> for more information about Vobsub\n"
             "#\n"
             "size: %ux%u\n",
-            orig_width, orig_height);
+            mplayer_version, orig_width, orig_height);
     if (palette) {
         fputs("palette:", me->fidx);
         for (i = 0; i < 16; ++i) {
@@ -1318,7 +1311,7 @@ void *vobsub_out_open(const char *basename, const unsigned int *palette,
 
 void vobsub_out_close(void *me)
 {
-    vobsub_out_t *vob = (vobsub_out_t*)me;
+    vobsub_out_t *vob = me;
     if (vob->fidx)
         fclose(vob->fidx);
     if (vob->fsub)
@@ -1331,7 +1324,7 @@ void vobsub_out_output(void *me, const unsigned char *packet,
 {
     static double last_pts;
     static int last_pts_set = 0;
-    vobsub_out_t *vob = (vobsub_out_t*)me;
+    vobsub_out_t *vob = me;
     if (vob->fsub) {
         /*  Windows' Vobsub require that every packet is exactly 2kB long */
         unsigned char buffer[2048];

@@ -166,7 +166,7 @@ typedef struct {
     void** arStreamCaps;               ///< VIDEO_STREAM_CONFIG_CAPS or AUDIO_STREAM_CONFIG_CAPS
 } chain_t;
 
-typedef struct {
+typedef struct priv {
     int dev_index;              ///< capture device index in device list (defaul: 0, first available device)
     int adev_index;             ///< audio capture device index in device list (default: -1, not used)
     int immediate_mode;         ///< immediate mode (no sound capture)
@@ -747,15 +747,12 @@ static void destroy_ringbuffer(grabber_ringbuffer_t * rb)
 
     if (rb->ringbuffer) {
 	for (i = 0; i < rb->buffersize; i++)
-	    if (rb->ringbuffer[i])
-		free(rb->ringbuffer[i]);
+	    free(rb->ringbuffer[i]);
 	free(rb->ringbuffer);
 	rb->ringbuffer = NULL;
     }
-    if (rb->dpts) {
-	free(rb->dpts);
-	rb->dpts = NULL;
-    }
+    free(rb->dpts);
+    rb->dpts = NULL;
     if (rb->pMutex) {
 	DeleteCriticalSection(rb->pMutex);
 	free(rb->pMutex);
@@ -2090,15 +2087,13 @@ static HRESULT get_available_formats_stream(chain_t *chain)
     }
     if (!done) {
 	for (i = 0; i < count; i++) {
-	    if (pBuf && pBuf[i])
+	    if (pBuf)
 		free(pBuf[i]);
 	    if (arpmt && arpmt[i])
 		DeleteMediaType(arpmt[i]);
 	}
-	if (pBuf)
-	    free(pBuf);
-	if (arpmt)
-	    free(arpmt);
+	free(pBuf);
+	free(arpmt);
 	if (hr != S_OK) {
 	    mp_msg(MSGT_TV, MSGL_DBG4, "tvi_dshow: Call to GetStreamCaps failed (get_available_formats_stream)\n");
 	    return hr;
@@ -2220,8 +2215,7 @@ static HRESULT get_available_formats_pin(ICaptureGraphBuilder2 * pBuilder,
 	for (i = 0; i < count; i++) {
 	    if (arpmt[i])
 		DeleteMediaType(arpmt[i]);
-	    if (pBuf[i])
-		free(pBuf[i]);
+	    free(pBuf[i]);
 	}
 	free(arpmt);
 	free(pBuf);
@@ -3059,7 +3053,7 @@ static tvi_handle_t *tvi_init_dshow(tv_param_t* tv_param)
     priv_t *priv;
     int a;
 
-    h = new_handle();
+    h = tv_new_handle(sizeof(priv_t), &functions);
     if (!h)
 	return NULL;
 
@@ -3077,12 +3071,12 @@ static tvi_handle_t *tvi_init_dshow(tv_param_t* tv_param)
 	    priv->dev_index = a;
 	} else {
 	    mp_tmsg(MSGT_TV, MSGL_ERR, "tvi_dshow: Wrong device parameter: %s\n", tv_param->device);
-	    free_handle(h);
+	    tv_free_handle(h);
 	    return NULL;
 	}
 	if (priv->dev_index < 0) {
 	    mp_tmsg(MSGT_TV, MSGL_ERR, "tvi_dshow: Wrong device index: %d\n", a);
-	    free_handle(h);
+	    tv_free_handle(h);
 	    return NULL;
 	}
     }
@@ -3091,12 +3085,12 @@ static tvi_handle_t *tvi_init_dshow(tv_param_t* tv_param)
 	    priv->adev_index = a;
 	} else {
 	    mp_tmsg(MSGT_TV, MSGL_ERR, "tvi_dshow: Wrong adevice parameter: %s\n", tv_param->adevice);
-	    free_handle(h);
+	    tv_free_handle(h);
 	    return NULL;
 	}
 	if (priv->dev_index < 0) {
 	    mp_tmsg(MSGT_TV, MSGL_ERR, "tvi_dshow: Wrong adevice index: %d\n", a);
-	    free_handle(h);
+	    tv_free_handle(h);
 	    return NULL;
 	}
     }

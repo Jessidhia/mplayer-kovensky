@@ -42,7 +42,6 @@
 #include "network.h"
 
 
-extern const mime_struct_t mime_type_table[];
 extern int stream_cache_size;
 extern int network_bandwidth;
 
@@ -310,17 +309,16 @@ void
 http_free( HTTP_header_t *http_hdr ) {
 	HTTP_field_t *field, *field2free;
 	if( http_hdr==NULL ) return;
-	if( http_hdr->protocol!=NULL ) free( http_hdr->protocol );
-	if( http_hdr->uri!=NULL ) free( http_hdr->uri );
-	if( http_hdr->reason_phrase!=NULL ) free( http_hdr->reason_phrase );
-	if( http_hdr->field_search!=NULL ) free( http_hdr->field_search );
-	if( http_hdr->method!=NULL ) free( http_hdr->method );
-	if( http_hdr->buffer!=NULL ) free( http_hdr->buffer );
+	free(http_hdr->protocol);
+	free(http_hdr->uri);
+	free(http_hdr->reason_phrase);
+	free(http_hdr->field_search);
+	free(http_hdr->method);
+	free(http_hdr->buffer);
 	field = http_hdr->first_field;
 	while( field!=NULL ) {
 		field2free = field;
-		if (field->field_name)
-		  free(field->field_name);
+		free(field->field_name);
 		field = field->next;
 		free( field2free );
 	}
@@ -443,7 +441,7 @@ http_response_parse( HTTP_header_t *http_hdr ) {
 		hdr_ptr = ptr+((*ptr=='\r')?2:1);
 	} while( hdr_ptr<(http_hdr->buffer+pos_hdr_sep) );
 
-	if( field!=NULL ) free( field );
+	free(field);
 
 	if( pos_hdr_sep+hdr_sep_len<http_hdr->buffer_size ) {
 		// Response has data!
@@ -516,7 +514,7 @@ http_build_request( HTTP_header_t *http_hdr ) {
 		memcpy( ptr, http_hdr->body, http_hdr->body_size );
 	}
 
-	if( uri ) free( uri );
+	free(uri);
 	return http_hdr->buffer;
 }
 
@@ -672,7 +670,7 @@ http_debug_hdr( HTTP_header_t *http_hdr ) {
 	mp_msg(MSGT_NETWORK,MSGL_V,"method:             [%s]\n", http_hdr->method );
 	mp_msg(MSGT_NETWORK,MSGL_V,"status code:        [%d]\n", http_hdr->status_code );
 	mp_msg(MSGT_NETWORK,MSGL_V,"reason phrase:      [%s]\n", http_hdr->reason_phrase );
-	mp_msg(MSGT_NETWORK,MSGL_V,"body size:          [%d]\n", http_hdr->body_size );
+	mp_msg(MSGT_NETWORK,MSGL_V,"body size:          [%zd]\n", http_hdr->body_size );
 
 	mp_msg(MSGT_NETWORK,MSGL_V,"Fields:\n");
 	field = http_hdr->first_field;

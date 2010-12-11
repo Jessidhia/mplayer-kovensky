@@ -44,7 +44,6 @@
 
 #define WIDTH_ALIGN 32 /* should be 16 for rage:422 and 32 for rage:420 */
 #define NUM_FRAMES 10
-#define UNUSED(x) ((void)(x)) /**< Removes warning about unused arguments */
 
 static uint8_t *frames[NUM_FRAMES];
 
@@ -58,29 +57,6 @@ int vlvo_control(uint32_t request, void *data);
 #define PIXEL_SIZE() ((video_mode_info.BitsPerPixel+7)/8)
 #define SCREEN_LINE_SIZE(pixel_size) (video_mode_info.XResolution*(pixel_size) )
 #define IMAGE_LINE_SIZE(pixel_size) (image_width*(pixel_size))
-
-extern struct vo_old_functions video_out_vesa;
-
-int vlvo_preinit(const char *drvname)
-{
-  mp_tmsg(MSGT_VO,MSGL_WARN, "[VESA_LVO] This branch is no longer supported.\n[VESA_LVO] Please use -vo vesa:vidix instead.\n");
-  return -1;
-  if( mp_msg_test(MSGT_VO,MSGL_DBG2) ) {
-    mp_msg(MSGT_VO,MSGL_DBG2, "vesa_lvo: vlvo_preinit(%s) was called\n",drvname);}
-	lvo_handler = open(drvname,O_RDWR);
-	if(lvo_handler == -1)
-	{
- 		mp_tmsg(MSGT_VO,MSGL_WARN, "[VESA_LVO] Couldn't open: '%s'\n",drvname);
-		return -1;
-	}
-	/* we are able to tune up this stuff depend on fourcc format */
-	video_out_vesa.draw_slice=vlvo_draw_slice;
-	video_out_vesa.draw_frame=vlvo_draw_frame;
-	video_out_vesa.flip_page=vlvo_flip_page;
-	video_out_vesa.draw_osd=vlvo_draw_osd;
-  video_out_vesa.control=vlvo_control;
-	return 0;
-}
 
 int      vlvo_init(unsigned src_width,unsigned src_height,
 		   unsigned x_org,unsigned y_org,unsigned dst_width,
@@ -165,7 +141,8 @@ void vlvo_term( void )
 	if(lvo_handler != -1) close(lvo_handler);
 }
 
-int vlvo_draw_slice_420(uint8_t *image[], int stride[], int w,int h,int x,int y)
+static int vlvo_draw_slice_420(uint8_t *image[], int stride[],
+                                    int w, int h, int x, int y)
 {
     uint8_t *src;
     uint8_t *dest;
@@ -205,7 +182,8 @@ int vlvo_draw_slice_420(uint8_t *image[], int stride[], int w,int h,int x,int y)
     return 0;
 }
 
-int vlvo_draw_slice(uint8_t *image[], int stride[], int w,int h,int x,int y)
+static int vlvo_draw_slice(uint8_t *image[], int stride[],
+                           int w,int h,int x,int y)
 {
  if( mp_msg_test(MSGT_VO,MSGL_DBG2) ) {
    mp_msg(MSGT_VO,MSGL_DBG2, "vesa_lvo: vlvo_draw_slice() was called\n");}
@@ -223,7 +201,7 @@ int vlvo_draw_slice(uint8_t *image[], int stride[], int w,int h,int x,int y)
  return 0;
 }
 
-int vlvo_draw_frame(uint8_t *image[])
+static int vlvo_draw_frame(uint8_t *image[])
 {
 /* Note it's very strange but sometime for YUY2 draw_frame is called */
   fast_memcpy(lvo_mem,image[0],mga_vid_config.frame_size);
@@ -232,7 +210,7 @@ int vlvo_draw_frame(uint8_t *image[])
   return 0;
 }
 
-void     vlvo_flip_page(void)
+static void vlvo_flip_page(void)
 {
   if( mp_msg_test(MSGT_VO,MSGL_DBG2) ) {
     mp_msg(MSGT_VO,MSGL_DBG2, "vesa_lvo: vlvo_draw_osd() was called\n");}
@@ -247,13 +225,6 @@ void     vlvo_flip_page(void)
 #if 0
 static void draw_alpha_null(int x0,int y0, int w,int h, unsigned char* src, unsigned char *srca, int stride)
 {
-  UNUSED(x0);
-  UNUSED(y0);
-  UNUSED(w);
-  UNUSED(h);
-  UNUSED(src);
-  UNUSED(srca);
-  UNUSED(stride);
 }
 
 static void draw_alpha(int x0,int y0, int w,int h, unsigned char* src, unsigned char *srca, int stride)
@@ -293,7 +264,7 @@ static void draw_alpha(int x0,int y0, int w,int h, unsigned char* src, unsigned 
 }
 #endif
 
-void     vlvo_draw_osd(void)
+static void vlvo_draw_osd(void)
 {
   if( mp_msg_test(MSGT_VO,MSGL_DBG2) ) {
     mp_msg(MSGT_VO,MSGL_DBG2,"vesa_lvo: vlvo_draw_osd() was called\n"); }
@@ -306,7 +277,30 @@ void     vlvo_draw_osd(void)
 #endif
 }
 
-uint32_t vlvo_query_info(uint32_t format)
+extern struct vo_old_functions video_out_vesa;
+
+int vlvo_preinit(const char *drvname)
+{
+  mp_tmsg(MSGT_VO,MSGL_WARN, "[VESA_LVO] This branch is no longer supported.\n[VESA_LVO] Please use -vo vesa:vidix instead.\n");
+  return -1;
+  if( mp_msg_test(MSGT_VO,MSGL_DBG2) ) {
+    mp_msg(MSGT_VO,MSGL_DBG2, "vesa_lvo: vlvo_preinit(%s) was called\n",drvname);}
+	lvo_handler = open(drvname,O_RDWR);
+	if(lvo_handler == -1)
+	{
+ 		mp_tmsg(MSGT_VO,MSGL_WARN, "[VESA_LVO] Couldn't open: '%s'\n",drvname);
+		return -1;
+	}
+	/* we are able to tune up this stuff depend on fourcc format */
+	video_out_vesa.draw_slice=vlvo_draw_slice;
+	video_out_vesa.draw_frame=vlvo_draw_frame;
+	video_out_vesa.flip_page=vlvo_flip_page;
+	video_out_vesa.draw_osd=vlvo_draw_osd;
+  video_out_vesa.control=vlvo_control;
+	return 0;
+}
+
+static uint32_t vlvo_query_info(uint32_t format)
 {
   if( mp_msg_test(MSGT_VO,MSGL_DBG2) ) {
     mp_msg(MSGT_VO,MSGL_DBG2, "vesa_lvo: query_format was called: %x (%s)\n",format,vo_format_name(format)); }

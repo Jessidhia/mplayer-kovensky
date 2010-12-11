@@ -17,6 +17,7 @@
  */
 
 #include "config.h"
+#include "options.h"
 #include "mp_msg.h"
 
 #include <stdlib.h>
@@ -61,8 +62,6 @@ typedef struct mp3_hdr {
   int cons_hdrs; // if this reaches MIN_MP3_HDRS we accept as MP3 file
   struct mp3_hdr *next;
 } mp3_hdr_t;
-
-int hr_mp3_seek = 0;
 
 /**
  * \brief free a list of MP3 header descriptions
@@ -333,7 +332,7 @@ static int demux_audio_open(demuxer_t* demuxer) {
     sh_audio->audio.dwSampleSize= 0;
     sh_audio->audio.dwScale = mp3_found->mpa_spf;
     sh_audio->audio.dwRate = mp3_found->mp3_freq;
-    sh_audio->wf = malloc(sizeof(WAVEFORMATEX));
+    sh_audio->wf = malloc(sizeof(*sh_audio->wf));
     sh_audio->wf->wFormatTag = sh_audio->format;
     sh_audio->wf->nChannels = mp3_found->mp3_chans;
     sh_audio->wf->nSamplesPerSec = mp3_found->mp3_freq;
@@ -394,7 +393,7 @@ static int demux_audio_open(demuxer_t* demuxer) {
       mp_msg(MSGT_DEMUX,MSGL_ERR,"[demux_audio] Bad wav header length: too long (%d)!!!\n",l);
       l = 16;
     }
-    sh_audio->wf = w = malloc(l > sizeof(WAVEFORMATEX) ? l : sizeof(WAVEFORMATEX));
+    sh_audio->wf = w = malloc(l > sizeof(*w) ? l : sizeof(*w));
     w->wFormatTag = sh_audio->format = stream_read_word_le(s);
     w->nChannels = sh_audio->channels = stream_read_word_le(s);
     w->nSamplesPerSec = sh_audio->samplerate = stream_read_dword_le(s);
@@ -413,7 +412,7 @@ static int demux_audio_open(demuxer_t* demuxer) {
                l,w->cbSize);
         w->cbSize = l;
       }
-      stream_read(s,(char*)((char*)(w)+sizeof(WAVEFORMATEX)),w->cbSize);
+      stream_read(s,(char*)(w + 1),w->cbSize);
       l -= w->cbSize;
       if (w->wFormatTag & 0xfffe && w->cbSize >= 22)
           sh_audio->format = ((WAVEFORMATEXTENSIBLE *)w)->SubFormat;
@@ -481,18 +480,18 @@ static int demux_audio_open(demuxer_t* demuxer) {
 	    if (demuxer->movi_end > demuxer->movi_start) {
 	      // try to find out approx. bitrate
 	      int64_t size = demuxer->movi_end - demuxer->movi_start;
-	      int64_t num_samples = 0;
-	      int32_t srate = 0;
+	      int64_t num_samples;
+	      int32_t srate;
 	      stream_skip(s, 14);
-	      stream_read(s, (char *)&srate, 3);
-	      srate = be2me_32(srate) >> 12;
-	      stream_read(s, (char *)&num_samples, 5);
-	      num_samples = (be2me_64(num_samples) >> 24) & 0xfffffffffULL;
+	      srate = stream_read_int24(s) >> 4;
+	      num_samples  = stream_read_int24(s) << 16;
+	      num_samples |= stream_read_word(s);
 	      if (num_samples && srate)
 	        sh_audio->i_bps = size * srate / num_samples;
 	    }
 	    if (sh_audio->i_bps < 1) // guess value to prevent crash
 	      sh_audio->i_bps = 64 * 1024;
+            sh_audio->needs_parsing = 1;
 //	    get_flac_metadata (demuxer);
 	    break;
   }
@@ -619,6 +618,7 @@ static void high_res_mp3_seek(demuxer_t *demuxer,float time) {
 }
 
 static void demux_audio_seek(demuxer_t *demuxer,float rel_seek_secs,float audio_delay,int flags){
+  struct MPOpts *opts = demuxer->opts;
   sh_audio_t* sh_audio;
   stream_t* s;
   int64_t base,pos;
@@ -630,7 +630,7 @@ static void demux_audio_seek(demuxer_t *demuxer,float rel_seek_secs,float audio_
   s = demuxer->stream;
   priv = demuxer->priv;
 
-  if(priv->frmt == MP3 && hr_mp3_seek && !(flags & SEEK_FACTOR)) {
+  if(priv->frmt == MP3 && opts->hr_mp3_seek && !(flags & SEEK_FACTOR)) {
     len = (flags & SEEK_ABSOLUTE) ? rel_seek_secs - priv->next_pts : rel_seek_secs;
     if(len < 0) {
       stream_seek(s,demuxer->movi_start);
@@ -669,8 +669,6 @@ static void demux_audio_seek(demuxer_t *demuxer,float rel_seek_secs,float audio_
 static void demux_close_audio(demuxer_t* demuxer) {
   da_priv_t* priv = demuxer->priv;
 
-  if(!priv)
-    return;
   free(priv);
 }
 

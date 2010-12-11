@@ -381,6 +381,10 @@ HMODULE WINAPI LoadLibraryExA(LPCSTR libname, HANDLE hfile, DWORD flags)
 //	if(fs_installed==0)
 //	    install_fs();
 
+	// Do not load libraries from a path relative to the current directory
+	if (*libname != '/')
+	    i++;
+
 	while (wm == 0 && listpath[++i])
 	{
 	    if (i < 2)
@@ -701,7 +705,7 @@ static int dump_component(char* name, int type, void* orig, ComponentParameters 
 	return dump_component(name,type,real_ ## sname, params, glob); \
     }
 
-#include "qt_comp.h"
+#include "qt_comp_template.c"
 
 #undef DECL_COMPONENT
 
@@ -1042,7 +1046,7 @@ FARPROC MODULE_GetProcAddress(
 	fprintf(stderr,name "dispatcher catched -> %p\n",retproc); \
 	real_ ## sname = retproc; retproc = fake_ ## sname; \
     }
-#include "qt_comp.h"
+#include "qt_comp_template.c"
 #undef DECL_COMPONENT
 #endif
 

@@ -132,7 +132,7 @@ static int demux_y4m_fill_buffer(demuxer_t *demux, demux_stream_t *dsds) {
   else
   {
     if ((err=y4m_read_frame(demux->stream, priv->si, &fi, buf)) != Y4M_OK) {
-      mp_msg(MSGT_DEMUX, MSGL_V, "error reading frame %s\n", y4m_strerr(err));
+      mp_msg(MSGT_DEMUX, MSGL_ERR, "error reading frame %s\n", y4m_strerr(err));
       return 0;
     }
   }
@@ -257,7 +257,7 @@ static demuxer_t* demux_open_y4m(demuxer_t* demuxer){
     priv->framenum = 0;
     priv->si = malloc(sizeof(y4m_stream_info_t));
 
-    sh->bih=calloc(1, sizeof(BITMAPINFOHEADER));
+    sh->bih=calloc(1, sizeof(*sh->bih));
 
     demuxer->video->sh=sh;
     sh->ds=demuxer->video;

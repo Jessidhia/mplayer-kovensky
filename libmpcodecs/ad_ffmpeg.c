@@ -25,6 +25,7 @@
 #include "options.h"
 
 #include "ad_internal.h"
+#include "vd_ffmpeg.h"
 #include "libaf/reorder_ch.h"
 
 #include "mpbswap.h"
@@ -44,12 +45,54 @@ LIBAD_EXTERN(ffmpeg)
 
 #include "libavcodec/avcodec.h"
 
-extern int avcodec_initialized;
 
 static int preinit(sh_audio_t *sh)
 {
   sh->audio_out_minsize=AVCODEC_MAX_AUDIO_FRAME_SIZE;
   return 1;
+}
+
+/* Prefer playing audio with the samplerate given in container data
+ * if available, but take number the number of channels and sample format
+ * from the codec, since if the codec isn't using the correct values for
+ * those everything breaks anyway.
+ */
+static int setup_format(sh_audio_t *sh_audio, const AVCodecContext *lavc_context)
+{
+    int sample_format = sh_audio->sample_format;
+    switch (lavc_context->sample_fmt) {
+        case SAMPLE_FMT_U8:  sample_format = AF_FORMAT_U8;       break;
+        case SAMPLE_FMT_S16: sample_format = AF_FORMAT_S16_NE;   break;
+        case SAMPLE_FMT_S32: sample_format = AF_FORMAT_S32_NE;   break;
+        case SAMPLE_FMT_FLT: sample_format = AF_FORMAT_FLOAT_NE; break;
+        default:
+            mp_msg(MSGT_DECAUDIO, MSGL_FATAL, "Unsupported sample format\n");
+    }
+
+    bool broken_srate        = false;
+    int samplerate           = lavc_context->sample_rate;
+    int container_samplerate = sh_audio->container_out_samplerate;
+    if (!container_samplerate && sh_audio->wf)
+        container_samplerate = sh_audio->wf->nSamplesPerSec;
+    if (lavc_context->codec_id == CODEC_ID_AAC
+        && samplerate == 2 * container_samplerate)
+        broken_srate = true;
+    else if (container_samplerate)
+        samplerate = container_samplerate;
+
+    if (lavc_context->channels != sh_audio->channels ||
+        samplerate != sh_audio->samplerate ||
+        sample_format != sh_audio->sample_format) {
+        sh_audio->channels=lavc_context->channels;
+        sh_audio->samplerate=samplerate;
+        sh_audio->sample_format = sample_format;
+        sh_audio->samplesize=af_fmt2bits(sh_audio->sample_format)/ 8;
+        if (broken_srate)
+            mp_msg(MSGT_DECAUDIO, MSGL_WARN,
+                   "Ignoring broken container sample rate for AAC with SBR\n");
+        return 1;
+    }
+    return 0;
 }
 
 static int init(sh_audio_t *sh_audio)
@@ -61,13 +104,9 @@ static int init(sh_audio_t *sh_audio)
     AVCodec *lavc_codec;
 
     mp_msg(MSGT_DECAUDIO,MSGL_V,"FFmpeg's libavcodec audio codec\n");
-    if(!avcodec_initialized){
-      avcodec_init();
-      avcodec_register_all();
-      avcodec_initialized=1;
-    }
+    init_avcodec();
 
-    lavc_codec = (AVCodec *)avcodec_find_decoder_by_name(sh_audio->codec->dll);
+    lavc_codec = avcodec_find_decoder_by_name(sh_audio->codec->dll);
     if(!lavc_codec){
 	mp_tmsg(MSGT_DECAUDIO,MSGL_ERR,"Cannot find codec '%s' in libavcodec...\n",sh_audio->codec->dll);
 	return 0;
@@ -86,7 +125,7 @@ static int init(sh_audio_t *sh_audio)
 	lavc_context->block_align = sh_audio->wf->nBlockAlign;
 	lavc_context->bits_per_coded_sample = sh_audio->wf->wBitsPerSample;
     }
-    lavc_context->request_channels = audio_output_channels;
+    lavc_context->request_channels = opts->audio_output_channels;
     lavc_context->codec_tag = sh_audio->format; //FOURCC
     lavc_context->codec_type = CODEC_TYPE_AUDIO;
     lavc_context->codec_id = lavc_codec->id; // not sure if required, imho not --A'rpi
@@ -95,7 +134,7 @@ static int init(sh_audio_t *sh_audio)
     if (sh_audio->wf && sh_audio->wf->cbSize > 0) {
         lavc_context->extradata = av_mallocz(sh_audio->wf->cbSize + FF_INPUT_BUFFER_PADDING_SIZE);
         lavc_context->extradata_size = sh_audio->wf->cbSize;
-        memcpy(lavc_context->extradata, (char *)sh_audio->wf + sizeof(WAVEFORMATEX),
+        memcpy(lavc_context->extradata, sh_audio->wf + 1,
                lavc_context->extradata_size);
     }
 
@@ -133,32 +172,19 @@ static int init(sh_audio_t *sh_audio)
    } while (x <= 0 && tries++ < 5);
    if(x>0) sh_audio->a_buffer_len=x;
 
-  sh_audio->channels=lavc_context->channels;
-  sh_audio->samplerate=lavc_context->sample_rate;
   sh_audio->i_bps=lavc_context->bit_rate/8;
+  if (sh_audio->wf && sh_audio->wf->nAvgBytesPerSec)
+      sh_audio->i_bps=sh_audio->wf->nAvgBytesPerSec;
+
   switch (lavc_context->sample_fmt) {
-      case SAMPLE_FMT_U8:  sh_audio->sample_format = AF_FORMAT_U8;       break;
-      case SAMPLE_FMT_S16: sh_audio->sample_format = AF_FORMAT_S16_NE;   break;
-      case SAMPLE_FMT_S32: sh_audio->sample_format = AF_FORMAT_S32_NE;   break;
-      case SAMPLE_FMT_FLT: sh_audio->sample_format = AF_FORMAT_FLOAT_NE; break;
+      case SAMPLE_FMT_U8:
+      case SAMPLE_FMT_S16:
+      case SAMPLE_FMT_S32:
+      case SAMPLE_FMT_FLT:
+          break;
       default:
-          mp_msg(MSGT_DECAUDIO, MSGL_FATAL, "Unsupported sample format\n");
           return 0;
   }
-  /* If the audio is AAC the container level data may be unreliable
-   * because of SBR handling problems (possibly half real sample rate at
-   * container level). Default AAC decoding with ad_faad has used codec-level
-   * values for a long time without generating complaints so it should be OK.
-   */
-  if (sh_audio->wf && lavc_context->codec_id != CODEC_ID_AAC) {
-      // If the decoder uses the wrong number of channels all is lost anyway.
-      // sh_audio->channels=sh_audio->wf->nChannels;
-      if (sh_audio->wf->nSamplesPerSec)
-      sh_audio->samplerate=sh_audio->wf->nSamplesPerSec;
-      if (sh_audio->wf->nAvgBytesPerSec)
-      sh_audio->i_bps=sh_audio->wf->nAvgBytesPerSec;
-  }
-  sh_audio->samplesize=af_fmt2bits(sh_audio->sample_format)/ 8;
   return 1;
 }
 
@@ -213,6 +239,9 @@ static int decode_audio(sh_audio_t *sh_audio,unsigned char *buf,int minlen,int m
 	}
 	y=avcodec_decode_audio3(sh_audio->context,(int16_t*)buf,&len2,&pkt);
 //printf("return:%d samples_out:%d bitstream_in:%d sample_sum:%d\n", y, len2, x, len); fflush(stdout);
+	// LATM may need many packets to find mux info
+	if (y == AVERROR(EAGAIN))
+	    continue;
 	if(y<0){ mp_msg(MSGT_DECAUDIO,MSGL_V,"lavc_audio: error\n");break; }
 	if(!sh_audio->parser && y<x)
 	    sh_audio->ds->buffer_pos+=y-x;  // put back data (HACK!)
@@ -232,6 +261,9 @@ static int decode_audio(sh_audio_t *sh_audio,unsigned char *buf,int minlen,int m
 	  sh_audio->pts_bytes += len2;
 	}
         mp_dbg(MSGT_DECAUDIO,MSGL_DBG2,"Decoded %d -> %d  \n",y,len2);
+
+        if (setup_format(sh_audio, sh_audio->context))
+            break;
     }
   return len;
 }

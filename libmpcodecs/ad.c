@@ -31,7 +31,7 @@
 
 /* Missed vorbis, mad, dshow */
 
-//extern ad_functions_t mpcodecs_ad_null;
+extern const ad_functions_t mpcodecs_ad_mpg123;
 extern const ad_functions_t mpcodecs_ad_mp3lib;
 extern const ad_functions_t mpcodecs_ad_ffmpeg;
 extern const ad_functions_t mpcodecs_ad_liba52;
@@ -47,7 +47,6 @@ extern const ad_functions_t mpcodecs_ad_dk4adpcm;
 extern const ad_functions_t mpcodecs_ad_dshow;
 extern const ad_functions_t mpcodecs_ad_dmo;
 extern const ad_functions_t mpcodecs_ad_acm;
-extern const ad_functions_t mpcodecs_ad_msgsm;
 extern const ad_functions_t mpcodecs_ad_faad;
 extern const ad_functions_t mpcodecs_ad_libvorbis;
 extern const ad_functions_t mpcodecs_ad_speex;
@@ -61,7 +60,9 @@ extern const ad_functions_t mpcodecs_ad_libdca;
 
 const ad_functions_t * const mpcodecs_ad_drivers[] =
 {
-//  &mpcodecs_ad_null,
+#ifdef CONFIG_MPG123
+  &mpcodecs_ad_mpg123,
+#endif
 #ifdef CONFIG_MP3LIB
   &mpcodecs_ad_mp3lib,
 #endif
@@ -70,7 +71,7 @@ const ad_functions_t * const mpcodecs_ad_drivers[] =
 #endif
   &mpcodecs_ad_hwac3,
   &mpcodecs_ad_hwmpa,
-#ifdef CONFIG_LIBAVCODEC
+#ifdef CONFIG_FFMPEG
   &mpcodecs_ad_ffmpeg,
 #endif
   &mpcodecs_ad_pcm,
@@ -79,7 +80,6 @@ const ad_functions_t * const mpcodecs_ad_drivers[] =
   &mpcodecs_ad_imaadpcm,
   &mpcodecs_ad_msadpcm,
   &mpcodecs_ad_dk3adpcm,
-  &mpcodecs_ad_msgsm,
 #ifdef CONFIG_WIN32DLL
   &mpcodecs_ad_dshow,
   &mpcodecs_ad_dmo,

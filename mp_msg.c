@@ -249,6 +249,8 @@ void mp_msg_va(int mod, int lev, const char *format, va_list va)
     char tmp[MSGSIZE_MAX];
     FILE *stream = lev <= MSGL_WARN ? stderr : stdout;
     static int header = 1;
+    // indicates if last line printed was a status line
+    static int statusline;
 
     if (!mp_msg_test(mod, lev)) return; // do not display
     vsnprintf(tmp, MSGSIZE_MAX, format, va);
@@ -286,10 +288,19 @@ void mp_msg_va(int mod, int lev, const char *format, va_list va)
     }
 #endif
 
+    /* A status line is normally intended to be overwritten by the next
+     * status line, and does not end with a '\n'. If we're printing a normal
+     * line instead after the status one print '\n' to change line. */
+    if (statusline && lev != MSGL_STATUS)
+        fprintf(stream, "\n");
+    statusline = lev == MSGL_STATUS;
+
     if (header)
         print_msg_module(stream, mod);
     set_msg_color(stream, lev);
-    header = tmp[strlen(tmp)-1] == '\n' || tmp[strlen(tmp)-1] == '\r';
+
+    size_t len = strlen(tmp);
+    header = len && (tmp[len-1] == '\n' || tmp[len-1] == '\r');
 
     fprintf(stream, "%s", tmp);
     if (mp_msg_color)

@@ -23,6 +23,7 @@
 
 #include "config.h"
 
+#include "options.h"
 #include "af_format.h"
 #include "control.h"
 #include "cpudetect.h"
@@ -116,6 +117,7 @@ typedef struct af_stream
   af_data_t output;
   // Configuration for this stream
   af_cfg_t cfg;
+  struct MPOpts *opts;
 }af_stream_t;
 
 /*********************************************
@@ -161,6 +163,13 @@ int af_init(af_stream_t* s);
  * \brief Uninit and remove all filters from audio filter chain
  */
 void af_uninit(af_stream_t* s);
+
+/**
+ * \brief  Reinit the filter list from the given filter on downwards
+ * \param  Filter instance to begin the reinit from
+ * \return AF_OK on success or AF_ERROR on failure
+ */
+int af_reinit(af_stream_t* s, af_instance_t* af);
 
 /**
  * \brief This function adds the filter "name" to the stream s.

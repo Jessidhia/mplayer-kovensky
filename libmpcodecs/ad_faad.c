@@ -25,6 +25,7 @@
 #include <unistd.h>
 
 #include "config.h"
+#include "options.h"
 #include "ad_internal.h"
 #include "libaf/reorder_ch.h"
 
@@ -83,6 +84,7 @@ static int aac_probe(unsigned char *buffer, int len)
 
 static int init(sh_audio_t *sh)
 {
+  struct MPOpts *opts = sh->opts;
   unsigned long faac_samplerate;
   unsigned char faac_channels;
   int faac_init, pos = 0;
@@ -95,7 +97,7 @@ static int init(sh_audio_t *sh)
     memcpy(sh->codecdata, sh->wf+1, sh->codecdata_len);
     mp_msg(MSGT_DECAUDIO,MSGL_DBG2,"FAAD: codecdata extracted from WAVEFORMATEX\n");
   }
-  if(!sh->codecdata_len) {
+  if(!sh->codecdata_len || sh->format == mmioFOURCC('M', 'P', '4', 'L')) {
     faacDecConfigurationPtr faac_conf;
     /* Set the default object type and samplerate */
     /* This is useful for RAW AAC files */
@@ -105,7 +107,8 @@ static int init(sh_audio_t *sh)
     /* XXX: FAAD support FLOAT output, how do we handle
       * that (FAAD_FMT_FLOAT)? ::atmos
       */
-    if (audio_output_channels <= 2) faac_conf->downMatrix = 1;
+    if (opts->audio_output_channels <= 2)
+        faac_conf->downMatrix = 1;
       switch(sh->samplesize){
 	case 1: // 8Bit
 	  mp_msg(MSGT_DECAUDIO,MSGL_WARN,"FAAD: 8Bit samplesize not supported by FAAD, assuming 16Bit!\n");
@@ -126,6 +129,32 @@ static int init(sh_audio_t *sh)
     faacDecSetConfiguration(faac_hdec, faac_conf);
 
     sh->a_in_buffer_len = demux_read_data(sh->ds, sh->a_in_buffer, sh->a_in_buffer_size);
+#if CONFIG_FAAD_INTERNAL
+    /* init the codec, look for LATM */
+    faac_init = faacDecInit(faac_hdec, sh->a_in_buffer,
+                            sh->a_in_buffer_len, &faac_samplerate, &faac_channels,1);
+    if (faac_init < 0 && sh->a_in_buffer_len >= 3 && sh->format == mmioFOURCC('M', 'P', '4', 'L')) {
+        // working LATM not found at first try, look further on in stream
+        int i;
+
+        for (i = 0; i < 5; i++) {
+            pos = sh->a_in_buffer_len-3;
+            memmove(sh->a_in_buffer, &(sh->a_in_buffer[pos]), 3);
+            sh->a_in_buffer_len  = 3;
+            sh->a_in_buffer_len += demux_read_data(sh->ds,&sh->a_in_buffer[sh->a_in_buffer_len],
+                                                   sh->a_in_buffer_size - sh->a_in_buffer_len);
+            faac_init = faacDecInit(faac_hdec, sh->a_in_buffer,
+                                    sh->a_in_buffer_len, &faac_samplerate, &faac_channels,1);
+            if (faac_init >= 0) break;
+        }
+    }
+#else
+    /* external faad does not have latm lookup support */
+    faac_init = faacDecInit(faac_hdec, sh->a_in_buffer,
+                            sh->a_in_buffer_len, &faac_samplerate, &faac_channels);
+#endif
+
+    if (faac_init < 0) {
     pos = aac_probe(sh->a_in_buffer, sh->a_in_buffer_len);
     if(pos) {
       sh->a_in_buffer_len -= pos;
@@ -137,15 +166,21 @@ static int init(sh_audio_t *sh)
     }
 
     /* init the codec */
+#if CONFIG_FAAD_INTERNAL
     faac_init = faacDecInit(faac_hdec, sh->a_in_buffer,
-       sh->a_in_buffer_len, &faac_samplerate, &faac_channels);
+          sh->a_in_buffer_len, &faac_samplerate, &faac_channels,0);
+#else
+    faac_init = faacDecInit(faac_hdec, sh->a_in_buffer,
+          sh->a_in_buffer_len, &faac_samplerate, &faac_channels);
+#endif
+    }
 
     sh->a_in_buffer_len -= (faac_init > 0)?faac_init:0; // how many bytes init consumed
     // XXX FIXME: shouldn't we memcpy() here in a_in_buffer ?? --A'rpi
 
   } else { // We have ES DS in codecdata
     faacDecConfigurationPtr faac_conf = faacDecGetCurrentConfiguration(faac_hdec);
-    if (audio_output_channels <= 2) {
+    if (opts->audio_output_channels <= 2) {
         faac_conf->downMatrix = 1;
         faacDecSetConfiguration(faac_hdec, faac_conf);
     }
@@ -167,7 +202,8 @@ static int init(sh_audio_t *sh)
     mp_msg(MSGT_DECAUDIO,MSGL_V,"FAAD: Negotiated samplerate: %ldHz  channels: %d\n", faac_samplerate, faac_channels);
     // 8 channels is aac channel order #7.
     sh->channels = faac_channels == 7 ? 8 : faac_channels;
-    if (audio_output_channels <= 2) sh->channels = faac_channels > 1 ? 2 : 1;
+    if (opts->audio_output_channels <= 2)
+        sh->channels = faac_channels > 1 ? 2 : 1;
     sh->samplerate = faac_samplerate;
     sh->samplesize=2;
     //sh->o_bps = sh->samplesize*faac_channels*faac_samplerate;
@@ -186,7 +222,8 @@ static void uninit(sh_audio_t *sh)
 static int aac_sync(sh_audio_t *sh)
 {
   int pos = 0;
-  if(!sh->codecdata_len) {
+  // do not probe LATM, faad does that
+  if(!sh->codecdata_len && sh->format != mmioFOURCC('M', 'P', '4', 'L')) {
     if(sh->a_in_buffer_len < sh->a_in_buffer_size){
       sh->a_in_buffer_len +=
 	demux_read_data(sh->ds,&sh->a_in_buffer[sh->a_in_buffer_len],

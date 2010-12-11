@@ -19,7 +19,7 @@
 #include "fastmemcpy.h"
 #include "cpudetect.h"
 #include "libswscale/swscale.h"
-#include "libswscale/rgb2rgb.h"
+#include "libavcore/imgutils.h"
 #include "libmpcodecs/vf_scale.h"
 #include "mp_msg.h"
 #include "old_vo_wrapper.h"
@@ -37,13 +37,12 @@ static uint8_t *vid_data, *frames[4];
 static int f = -1;
 
 static uint32_t               drwX,drwY,drwWidth,drwHeight;
-#ifdef VO_XMGA
-static uint32_t               drwBorderWidth,drwDepth;
-#endif
-static uint32_t               drwcX,drwcY,dwidth,dheight;
+static uint32_t               drwcX,drwcY;
+
+static struct SwsContext *sws_ctx;
 
 static void draw_alpha(int x0,int y0, int w,int h, unsigned char* src, unsigned char *srca, int stride){
-    uint32_t bespitch = (mga_vid_config.src_width + 31) & ~31;
+    uint32_t bespitch = FFALIGN(mga_vid_config.src_width, 32);
     x0+=mga_vid_config.src_width*(vo_panscan_x>>1)/(vo_dwidth+vo_panscan_x);
     switch(mga_vid_config.format){
     case MGA_VID_FORMAT_YV12:
@@ -67,25 +66,17 @@ static void draw_osd(void)
 }
 
 
-//static void
-//write_slice_g200(uint8_t *y,uint8_t *cr, uint8_t *cb,uint32_t slice_num)
-
 static void
 draw_slice_g200(uint8_t *image[], int stride[], int width,int height,int x,int y)
 {
-	uint8_t *dest;
-	uint32_t bespitch = (mga_vid_config.src_width + 31) & ~31;
+	uint32_t bespitch = FFALIGN(mga_vid_config.src_width, 32);
+	int dst_stride[4] = { bespitch, bespitch };
+	uint8_t *dst[4];
 
-	dest = vid_data + bespitch*y + x;
-	mem2agpcpy_pic(dest, image[0], width, height, bespitch, stride[0]);
+	av_image_fill_pointers(dst, PIX_FMT_NV12, mga_vid_config.src_height,
+	                       vid_data, dst_stride);
 
-        width/=2;height/=2;x/=2;y/=2;
-
-	dest = vid_data + bespitch*mga_vid_config.src_height + bespitch*y + 2*x;
-
-	interleaveBytes(image[1],image[2],dest,
-		width, height,
-		stride[1], stride[2], bespitch);
+	sws_scale(sws_ctx, image, stride, y, height, dst, dst_stride);
 }
 
 static void
@@ -95,7 +86,7 @@ draw_slice_g400(uint8_t *image[], int stride[], int w,int h,int x,int y)
     uint8_t *dest2;
     uint32_t bespitch,bespitch2;
 
-    bespitch = (mga_vid_config.src_width + 31) & ~31;
+    bespitch = FFALIGN(mga_vid_config.src_width, 32);
     bespitch2 = bespitch/2;
 
     dest = vid_data + bespitch * y + x;
@@ -107,7 +98,7 @@ draw_slice_g400(uint8_t *image[], int stride[], int w,int h,int x,int y)
     dest2= dest + bespitch2*mga_vid_config.src_height / 2;
 
   if(mga_vid_config.format==MGA_VID_FORMAT_YV12){
-    // mga_vid's YV12 assumes Y,U,V order (insteda of Y,V,U) :(
+    // mga_vid's YV12 assumes Y,U,V order (instead of Y,V,U) :(
     mem2agpcpy_pic(dest, image[1], w, h, bespitch2, stride[1]);
     mem2agpcpy_pic(dest2,image[2], w, h, bespitch2, stride[2]);
   } else {
@@ -156,7 +147,7 @@ draw_frame(uint8_t *src[])
 }
 
 static uint32_t get_image(mp_image_t *mpi){
-    uint32_t bespitch = (mga_vid_config.src_width + 31) & ~31;
+    uint32_t bespitch = FFALIGN(mga_vid_config.src_width, 32);
     uint32_t bespitch2 = bespitch/2;
 //    printf("mga: get_image() called\n");
     if(mpi->type==MP_IMGTYPE_STATIC && mga_vid_config.num_frames>1) return VO_FALSE; // it is not static
@@ -191,7 +182,7 @@ static uint32_t get_image(mp_image_t *mpi){
 
 static uint32_t
 draw_image(mp_image_t *mpi){
-    uint32_t bespitch = (mga_vid_config.src_width + 31) & ~31;
+    uint32_t bespitch = FFALIGN(mga_vid_config.src_width, 32);
 
     // if -dr or -slices then do nothing:
     if(mpi->flags&(MP_IMGFLAG_DIRECT|MP_IMGFLAG_DRAW_CALLBACK)) return VO_TRUE;
@@ -337,7 +328,7 @@ static int control(uint32_t request, void *data)
   case VOCTRL_FULLSCREEN:
       vo_x11_fullscreen();
       vo_panscan_amount=0;
-    /* indended, fallthrough to update panscan on fullscreen/windowed switch */
+    /* intended, fallthrough to update panscan on fullscreen/windowed switch */
 #endif
   case VOCTRL_SET_PANSCAN:
       if ( vo_fs && ( vo_panscan != vo_panscan_amount ) ) // || ( !vo_fs && vo_panscan_amount ) )
@@ -348,6 +339,13 @@ static int control(uint32_t request, void *data)
 	set_window();
        }
       return VO_TRUE;
+  case VOCTRL_UPDATE_SCREENINFO:
+#ifdef VO_XMGA
+      update_xinerama_info();
+#else
+      aspect_save_screenres(vo_screenwidth, vo_screenheight);
+#endif
+      return VO_TRUE;
   }
   return VO_NOTIMPL;
 }
@@ -355,21 +353,24 @@ static int control(uint32_t request, void *data)
 
 static int mga_init(int width,int height,unsigned int format){
 
+        uint32_t bespitch = FFALIGN(width, 32);
         switch(format){
         case IMGFMT_YV12:
-	    width+=width&1;height+=height&1;
-	    mga_vid_config.frame_size = ((width + 31) & ~31) * height + (((width + 31) & ~31) * height) / 2;
+            width  = FFALIGN(width,  2);
+            height = FFALIGN(height, 2);
+            mga_vid_config.frame_size = bespitch * height + (bespitch * height) / 2;
             mga_vid_config.format=MGA_VID_FORMAT_I420; break;
         case IMGFMT_I420:
         case IMGFMT_IYUV:
-	    width+=width&1;height+=height&1;
-	    mga_vid_config.frame_size = ((width + 31) & ~31) * height + (((width + 31) & ~31) * height) / 2;
+            width  = FFALIGN(width,  2);
+            height = FFALIGN(height, 2);
+            mga_vid_config.frame_size = bespitch * height + (bespitch * height) / 2;
             mga_vid_config.format=MGA_VID_FORMAT_YV12; break;
         case IMGFMT_YUY2:
-	    mga_vid_config.frame_size = ((width + 31) & ~31) * height * 2;
+            mga_vid_config.frame_size = bespitch * height * 2;
             mga_vid_config.format=MGA_VID_FORMAT_YUY2; break;
         case IMGFMT_UYVY:
-	    mga_vid_config.frame_size = ((width + 31) & ~31) * height * 2;
+            mga_vid_config.frame_size = bespitch * height * 2;
             mga_vid_config.format=MGA_VID_FORMAT_UYVY; break;
         default:
             mp_tmsg(MSGT_VO,MSGL_WARN, "[MGA] invalid output format %0X\n",format);
@@ -422,6 +423,18 @@ static int mga_init(int width,int height,unsigned int format){
 			return -1;
 		}
 	}
+	if (mga_vid_config.card_type == MGA_G200) {
+		sws_ctx = sws_getContext(width, height, PIX_FMT_YUV420P,
+		                         width, height, PIX_FMT_NV12,
+		                         SWS_BILINEAR, NULL, NULL, NULL);
+		if (!sws_ctx) {
+			mp_msg(MSGT_VO, MSGL_FATAL,
+			       "Could not get swscale context to scale for G200.\n");
+			return -1;
+		}
+		mp_msg(MSGT_VO, MSGL_WARN, "G200 cards support is untested. "
+		                           "Please report whether it works.\n");
+	}
 
 	mp_msg(MSGT_VO,MSGL_V,"[MGA] Using %d buffers.\n",mga_vid_config.num_frames);
 
@@ -449,6 +462,9 @@ static int mga_uninit(void){
 	close(f);
 	f = -1;
   }
+  if (sws_ctx) {
+	sws_freeContext(sws_ctx);
+  }
   return 0;
 }
 
@@ -456,7 +472,6 @@ static int preinit(const char *vo_subdevice)
 {
 	uint32_t ver;
   const char *devname=vo_subdevice?vo_subdevice:"/dev/mga_vid";
-	sws_rgb2rgb_init(get_sws_cpuflags());
 
 	f = open(devname,O_RDWR);
 	if(f == -1)
@@ -488,33 +503,21 @@ static int preinit(const char *vo_subdevice)
 
 static void set_window( void ){
 
-#ifdef VO_XMGA
-	 if ( WinID )
-	  {
-           XGetGeometry( mDisplay,vo_window,&mRoot,&drwX,&drwY,&drwWidth,&drwHeight,&drwBorderWidth,&drwDepth );
-           mp_msg(MSGT_VO,MSGL_V,"[xmga] x: %d y: %d w: %d h: %d\n",drwX,drwY,drwWidth,drwHeight );
-           drwX=0; drwY=0;
-           XTranslateCoordinates( mDisplay,vo_window,mRoot,0,0,&drwcX,&drwcY,&mRoot );
-           mp_msg(MSGT_VO,MSGL_V,"[xmga] dcx: %d dcy: %d dx: %d dy: %d dw: %d dh: %d\n",drwcX,drwcY,drwX,drwY,drwWidth,drwHeight );
+         drwcX = vo_dx;
+         drwcY = vo_dy;
+         drwWidth  = vo_dwidth;
+         drwHeight = vo_dheight;
 
-	  }
-	  else
-#endif
-	  { drwX=drwcX=vo_dx; drwY=drwcY=vo_dy; drwWidth=vo_dwidth; drwHeight=vo_dheight; }
-
-         aspect(&dwidth,&dheight,A_NOZOOM);
-         if ( vo_fs )
-          {
-           aspect(&dwidth,&dheight,A_ZOOM);
-           drwX=( vo_screenwidth - (dwidth > vo_screenwidth?vo_screenwidth:dwidth) ) / 2;
-           drwcX+=drwX;
-           drwY=( vo_screenheight - (dheight > vo_screenheight?vo_screenheight:dheight) ) / 2;
-           drwcY+=drwY;
-           drwWidth=(dwidth > vo_screenwidth?vo_screenwidth:dwidth);
-           drwHeight=(dheight > vo_screenheight?vo_screenheight:dheight);
-           mp_msg(MSGT_VO,MSGL_V,"[xmga-fs] dcx: %d dcy: %d dx: %d dy: %d dw: %d dh: %d\n",drwcX,drwcY,drwX,drwY,drwWidth,drwHeight );
-          }
-	 vo_dwidth=drwWidth; vo_dheight=drwHeight;
+         aspect(&drwWidth, &drwHeight, A_WINZOOM);
+         panscan_calc_windowed();
+         drwWidth  += vo_panscan_x;
+         drwHeight += vo_panscan_y;
+         drwWidth  = FFMIN(drwWidth, vo_screenwidth);
+         drwHeight = FFMIN(drwHeight, vo_screenheight);
+         drwX = (vo_dwidth  - drwWidth ) / 2;
+         drwY = (vo_dheight - drwHeight) / 2;
+         drwcX += drwX;
+         drwcY += drwY;
 
 #ifdef VO_XMGA
 #ifdef CONFIG_XINERAMA
@@ -574,20 +577,5 @@ static void set_window( void ){
          mga_vid_config.y_org=drwcY;
          mga_vid_config.dest_width=drwWidth;
          mga_vid_config.dest_height=drwHeight;
-	 if ( vo_panscan > 0.0f && vo_fs )
-	  {
-	   drwX-=vo_panscan_x>>1;
-	   drwY-=vo_panscan_y>>1;
-	   drwWidth+=vo_panscan_x;
-	   drwHeight+=vo_panscan_y;
-
-	   mga_vid_config.x_org-=vo_panscan_x>>1;
-	   mga_vid_config.y_org-=vo_panscan_y>>1;
-           mga_vid_config.dest_width=drwWidth;
-           mga_vid_config.dest_height=drwHeight;
-#ifdef VO_XMGA
-	   mDrawColorKey();
-#endif
-	  }
 	 if ( ioctl( f,MGA_VID_CONFIG,&mga_vid_config ) ) mp_msg(MSGT_VO,MSGL_WARN,"Error in mga_vid_config ioctl (wrong mga_vid.o version?)" );
 }

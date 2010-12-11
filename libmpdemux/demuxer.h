@@ -99,6 +99,11 @@ struct MPOpts;
 
 #define MP_NOPTS_VALUE (-1LL<<63) //both int64_t and double should be able to represent this exactly
 
+enum timestamp_type {
+    TIMESTAMP_TYPE_PTS,
+    TIMESTAMP_TYPE_SORT,
+};
+
 
 // DEMUXER control commands/answers
 #define DEMUXER_CTRL_NOTIMPL -1
@@ -234,6 +239,7 @@ typedef struct demux_attachment
 
 typedef struct demuxer {
   const demuxer_desc_t *desc;  ///< Demuxer description structure
+  char *filetype; // format name when not identified by demuxer (libavformat)
   off_t filepos; // input stream current pos.
   off_t movi_start;
   off_t movi_end;
@@ -248,6 +254,7 @@ typedef struct demuxer {
     /* Set if using absolute seeks for small movements is OK (no pts resets
      * that would make pts ambigious, preferably supports back/forward flags */
     bool accurate_seek;
+    enum timestamp_type timestamp_type;
   //
   demux_stream_t *audio; // audio buffer/demuxer
   demux_stream_t *video; // video buffer/demuxer
@@ -306,7 +313,7 @@ static inline void resize_demux_packet(demux_packet_t* dp, int len)
   }
   else
   {
-     if(dp->buffer) free(dp->buffer);
+     free(dp->buffer);
      dp->buffer=NULL;
   }
   dp->len=len;
@@ -331,7 +338,7 @@ static inline void free_demux_packet(demux_packet_t* dp){
   if (dp->master==NULL){  //dp is a master packet
     dp->refcount--;
     if (dp->refcount==0){
-      if (dp->buffer) free(dp->buffer);
+      free(dp->buffer);
       free(dp);
     }
     return;
@@ -434,9 +441,6 @@ char* demux_info_get(demuxer_t *demuxer, const char *opt);
 int demux_info_print(demuxer_t *demuxer);
 int demux_control(demuxer_t *demuxer, int cmd, void *arg);
 
-int demuxer_get_current_time(demuxer_t *demuxer);
-double demuxer_get_time_length(demuxer_t *demuxer);
-int demuxer_get_percent_pos(demuxer_t *demuxer);
 int demuxer_switch_audio(demuxer_t *demuxer, int index);
 int demuxer_switch_video(demuxer_t *demuxer, int index);
 
@@ -453,7 +457,7 @@ int demuxer_seek_chapter(demuxer_t *demuxer, int chapter, double *seek_pts,
                          char **chapter_name);
 
 /// Get current chapter index if available.
-int demuxer_get_current_chapter(demuxer_t *demuxer);
+int demuxer_get_current_chapter(demuxer_t *demuxer, double time_now);
 /// Get chapter name by index if available.
 char *demuxer_chapter_name(demuxer_t *demuxer, int chapter);
 /// Get chapter display name by index.
@@ -469,15 +473,18 @@ int demuxer_set_angle(demuxer_t *demuxer, int angle);
 /// Get number of angles.
 int demuxer_angles_count(demuxer_t *demuxer);
 
-// get the index of a track
-// lang is a comma-separated list
-int demuxer_audio_track_by_lang(demuxer_t* demuxer, char* lang);
-int demuxer_sub_track_by_lang(demuxer_t* demuxer, char* lang);
-
-// find the default track
-// for subtitles, it is the first track with default attribute
-// for audio, additionally, the first track is selected if no track has default attribute set
-int demuxer_default_audio_track(demuxer_t* d);
-int demuxer_default_sub_track(demuxer_t* d);
+/* Get the index of a track.
+ * lang is a comma-separated list, NULL is same as empty list
+ * Sort tracks based on the following criteria:
+ * 1) earlier match in lang list, or last no match
+ * 2) track is marked default (default wins)
+ * 3) track number (lower wins)
+ * For audio, select best track according to these criteria; only return -1
+ * if there are no tracks at all.
+ * For subs, select best track according to the same criteria, but return -1
+ * if all tracks are no-lang-match, not-default.
+ */
+int demuxer_audio_track_by_lang_and_default(struct demuxer *d, char *lang);
+int demuxer_sub_track_by_lang_and_default(struct demuxer *d, char *lang);
 
 #endif /* MPLAYER_DEMUXER_H */

@@ -42,14 +42,12 @@
 #include "stream.h"
 #include "libmpdemux/demuxer.h"
 #include "m_config.h"
-
+#include "mpcommon.h"
 #include "network.h"
 #include "tcp.h"
 #include "http.h"
 #include "cookies.h"
 #include "url.h"
-
-#include "version.h"
 
 extern int stream_cache_size;
 
@@ -68,7 +66,7 @@ int   network_ipv4_only_proxy = 0;
 
 
 const mime_struct_t mime_type_table[] = {
-#ifdef CONFIG_LIBAVFORMAT
+#ifdef CONFIG_FFMPEG
 	// Flash Video
 	{ "video/x-flv", DEMUXER_TYPE_LAVF_PREFERRED},
 	// do not force any demuxer in this case!
@@ -130,9 +128,9 @@ void
 streaming_ctrl_free( streaming_ctrl_t *streaming_ctrl ) {
 	if( streaming_ctrl==NULL ) return;
 	if( streaming_ctrl->url ) url_free( streaming_ctrl->url );
-	if( streaming_ctrl->buffer ) free( streaming_ctrl->buffer );
-	if( streaming_ctrl->data ) free( streaming_ctrl->data );
-	free( streaming_ctrl );
+	free(streaming_ctrl->buffer);
+	free(streaming_ctrl->data);
+	free(streaming_ctrl);
 }
 
 URL_t*
@@ -208,23 +206,25 @@ http_send_request( URL_t *url, off_t pos ) {
 	if( !strcasecmp(url->protocol, "http_proxy") ) {
 		proxy = 1;
 		server_url = url_new( (url->file)+1 );
+		if (!server_url) {
+			mp_msg(MSGT_NETWORK, MSGL_ERR, "Invalid URL '%s' to proxify\n", url->file+1);
+			goto err_out;
+		}
 		http_set_uri( http_hdr, server_url->url );
 	} else {
 		server_url = url;
 		http_set_uri( http_hdr, server_url->file );
 	}
 	if (server_url->port && server_url->port != 80)
-	    snprintf(str, 256, "Host: %s:%d", server_url->hostname, server_url->port );
+	    snprintf(str, sizeof(str), "Host: %s:%d", server_url->hostname, server_url->port );
 	else
-	    snprintf(str, 256, "Host: %s", server_url->hostname );
+	    snprintf(str, sizeof(str), "Host: %s", server_url->hostname );
 	http_set_field( http_hdr, str);
 	if (network_useragent)
-	{
-	    snprintf(str, 256, "User-Agent: %s", network_useragent);
-	    http_set_field(http_hdr, str);
-	}
+	    snprintf(str, sizeof(str), "User-Agent: %s", network_useragent);
 	else
-	    http_set_field( http_hdr, "User-Agent: MPlayer/"VERSION);
+	    snprintf(str, sizeof(str), "User-Agent: %s", mplayer_version);
+        http_set_field(http_hdr, str);
 
 	if (network_referrer) {
 	    char *referrer = NULL;
@@ -248,7 +248,7 @@ http_send_request( URL_t *url, off_t pos ) {
 
 	if(pos>0) {
 	// Extend http_send_request with possibility to do partial content retrieval
-	    snprintf(str, 256, "Range: bytes=%"PRId64"-", (int64_t)pos);
+	    snprintf(str, sizeof(str), "Range: bytes=%"PRId64"-", (int64_t)pos);
 	    http_set_field(http_hdr, str);
 	}
 
@@ -274,7 +274,7 @@ http_send_request( URL_t *url, off_t pos ) {
 	}
 	mp_msg(MSGT_NETWORK,MSGL_DBG2,"Request: [%s]\n", http_hdr->buffer );
 
-	ret = send( fd, http_hdr->buffer, http_hdr->buffer_size, 0 );
+	ret = send( fd, http_hdr->buffer, http_hdr->buffer_size, DEFAULT_SEND_FLAGS );
 	if( ret!=(int)http_hdr->buffer_size ) {
 		mp_tmsg(MSGT_NETWORK,MSGL_ERR,"Error while sending HTTP request: Didn't send all the request.\n");
 		goto err_out;
@@ -338,14 +338,10 @@ http_authenticate(HTTP_header_t *http_hdr, URL_t *url, int *auth_retry) {
 		return -1;
 	}
 	if( *auth_retry>0 ) {
-		if( url->username ) {
-			free( url->username );
-			url->username = NULL;
-		}
-		if( url->password ) {
-			free( url->password );
-			url->password = NULL;
-		}
+		free(url->username);
+		url->username = NULL;
+		free(url->password);
+		url->password = NULL;
 	}
 
 	aut = http_get_field(http_hdr, "WWW-Authenticate");

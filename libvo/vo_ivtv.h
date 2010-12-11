@@ -1,4 +1,12 @@
 /*
+ * video output for WinTV PVR-150/250/350 (a.k.a IVTV) cards
+ * TV-Out through hardware MPEG decoder
+ * Based on some old code from ivtv driver authors.
+ * See http://ivtvdriver.org/index.php/Main_Page for more details on the
+ * cards supported by the ivtv driver.
+ *
+ * Copyright (C) 2006 Benjamin Zores
+ *
  * This file is part of MPlayer.
  *
  * MPlayer is free software; you can redistribute it and/or modify
@@ -16,11 +24,11 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-#ifndef MPLAYER_AE_LAME_H
-#define MPLAYER_AE_LAME_H
+#ifndef MPLAYER_VO_IVTV_H
+#define MPLAYER_VO_IVTV_H
 
-#include "ae.h"
+extern int ivtv_fd;
 
-int mpae_init_lame(audio_encoder_t *encoder);
+int ivtv_write(const unsigned char *data, int len);
 
-#endif /* MPLAYER_AE_LAME_H */
+#endif /* MPLAYER_VO_IVTV_H */

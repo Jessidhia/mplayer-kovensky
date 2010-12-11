@@ -194,7 +194,198 @@ static demuxer_t * demux_open_pva (demuxer_t * demuxer)
 	return demuxer;
 }
 
-int pva_get_payload(demuxer_t * d,pva_payload_t * payload);
+static int pva_get_payload(demuxer_t *d, pva_payload_t *payload)
+{
+	uint8_t flags,pes_head_len;
+	uint16_t pack_size;
+	off_t next_offset,pva_payload_start;
+	unsigned char buffer[256];
+#ifndef PVA_NEW_PREBYTES_CODE
+	demux_packet_t * dp; 	//hack to deliver the preBytes (see PVA doc)
+#endif
+	pva_priv_t * priv;
+
+
+	if(d==NULL)
+	{
+		mp_msg(MSGT_DEMUX,MSGL_ERR,"demux_pva: pva_get_payload got passed a NULL pointer!\n");
+		return 0;
+	}
+
+	priv = (pva_priv_t *)d->priv;
+	d->filepos=stream_tell(d->stream);
+
+
+
+
+	if(d->stream->eof)
+	{
+		mp_msg(MSGT_DEMUX,MSGL_V,"demux_pva: pva_get_payload() detected stream->eof!!!\n");
+		return 0;
+	}
+
+	//printf("priv->just_synced %s\n",priv->just_synced?"SET":"UNSET");
+
+#ifdef PVA_NEW_PREBYTES_CODE
+	if(priv->prebytes_delivered)
+		/* The previous call to this fn has delivered the preBytes. Then we are already inside
+		 * the payload. Let's just deliver the video along with its right PTS, the one we stored
+		 * in the priv structure and was in the PVA header before the PreBytes.
+		 */
+	{
+		//printf("prebytes_delivered=1. Resetting.\n");
+		payload->size = priv->video_size_after_prebytes;
+		payload->pts = priv->video_pts_after_prebytes;
+		payload->is_packet_start = 1;
+		payload->offset = stream_tell(d->stream);
+		payload->type = VIDEOSTREAM;
+		priv->prebytes_delivered = 0;
+		return 1;
+	}
+#endif
+	if(!priv->just_synced)
+	{
+		if(stream_read_word(d->stream) != (('A'<<8)|'V'))
+		{
+			mp_msg(MSGT_DEMUX,MSGL_V,"demux_pva: pva_get_payload() missed a SyncWord at %"PRId64"!! Trying to sync...\n",(int64_t)stream_tell(d->stream));
+			if(!pva_sync(d))
+			{
+				if (!d->stream->eof)
+				{
+					mp_msg(MSGT_DEMUX,MSGL_ERR,"demux_pva: couldn't sync! (broken file?)");
+				}
+				return 0;
+			}
+		}
+	}
+	if(priv->just_synced)
+	{
+		payload->type=priv->synced_stream_id;
+		priv->just_synced=0;
+	}
+	else
+	{
+		payload->type=stream_read_char(d->stream);
+		stream_skip(d->stream,2); //counter and reserved
+	}
+	flags=stream_read_char(d->stream);
+	payload->is_packet_start=flags & 0x10;
+	pack_size=stream_read_word(d->stream);
+	mp_msg(MSGT_DEMUX,MSGL_DBG2,"demux_pva::pva_get_payload(): pack_size=%u field read at offset %"PRIu64"\n",pack_size,(int64_t)stream_tell(d->stream)-2);
+	pva_payload_start=stream_tell(d->stream);
+	next_offset=pva_payload_start+pack_size;
+
+
+	/*
+	 * The code in the #ifdef directive below is a hack needed to get badly formatted PVA files
+	 * such as the ones written by MultiDec played back correctly.
+	 * Basically, it works like this: if the PVA packet does not signal a PES header, but the
+	 * payload looks like one, let's assume it IS one. It has worked for me up to now.
+	 * It can be disabled since it's quite an ugly hack and could potentially break things up
+	 * if the PVA audio payload happens to start with 0x000001 even without being a non signalled
+	 * PES header start.
+	 * Though it's quite unlikely, it potentially could (AFAIK).
+	 */
+#ifdef DEMUX_PVA_MULTIDEC_HACK
+	if(payload->type==MAINAUDIOSTREAM)
+	{
+		stream_read(d->stream,buffer,3);
+		if(buffer[0]==0x00 && buffer[1]==0x00 && buffer[2]==0x01 && !payload->is_packet_start)
+		{
+			mp_msg(MSGT_DEMUX,MSGL_V,"demux_pva: suspecting non signaled audio PES packet start. Maybe file by MultiDec?\n");
+			payload->is_packet_start=1;
+		}
+		stream_seek(d->stream,stream_tell(d->stream)-3);
+	}
+#endif
+
+
+	if(!payload->is_packet_start)
+	{
+		payload->offset=stream_tell(d->stream);
+		payload->size=pack_size;
+	}
+	else
+	{	//here comes the good part...
+		switch(payload->type)
+		{
+			case VIDEOSTREAM:
+				payload->pts=(float)(stream_read_dword(d->stream))/90000;
+				//printf("Video PTS: %f\n",payload->pts);
+				if((flags&0x03)
+#ifdef PVA_NEW_PREBYTES_CODE
+						&& !priv->prebytes_delivered
+#endif
+						)
+				{
+#ifndef PVA_NEW_PREBYTES_CODE
+					dp=new_demux_packet(flags&0x03);
+					stream_read(d->stream,dp->buffer,flags & 0x03); //read PreBytes
+					ds_add_packet(d->video,dp);
+#else
+					//printf("Delivering prebytes. Setting prebytes_delivered.");
+					payload->offset=stream_tell(d->stream);
+					payload->size = flags & 0x03;
+					priv->video_pts_after_prebytes = payload->pts;
+					priv->video_size_after_prebytes = pack_size - 4 - (flags & 0x03);
+					payload->pts=priv->last_video_pts;
+					payload->is_packet_start=0;
+					priv->prebytes_delivered=1;
+					return 1;
+#endif
+				}
+
+
+				//now we are at real beginning of payload.
+				payload->offset=stream_tell(d->stream);
+				//size is pack_size minus PTS size minus PreBytes size.
+				payload->size=pack_size - 4 - (flags & 0x03);
+				break;
+			case MAINAUDIOSTREAM:
+				stream_skip(d->stream,3); //FIXME properly parse PES header.
+				//printf("StreamID in audio PES header: 0x%2X\n",stream_read_char(d->stream));
+				stream_skip(d->stream,4);
+
+				buffer[255]=stream_read_char(d->stream);
+				pes_head_len=stream_read_char(d->stream);
+				stream_read(d->stream,buffer,pes_head_len);
+				if(!(buffer[255]&0x80)) //PES header does not contain PTS.
+				{
+					mp_msg(MSGT_DEMUX,MSGL_V,"Audio PES packet does not contain PTS. (pes_head_len=%d)\n",pes_head_len);
+					payload->pts=priv->last_audio_pts;
+					break;
+				}
+				else		//PES header DOES contain PTS
+				{
+					if((buffer[0] & 0xf0)!=0x20) // PTS badly formatted
+					{
+						mp_msg(MSGT_DEMUX,MSGL_V,"demux_pva: expected audio PTS but badly formatted... (read 0x%02X). Falling back to previous PTS (hack).\n",buffer[0]);
+						payload->pts=priv->last_audio_pts;
+					//	return 0;
+					}
+					else
+					{
+						uint64_t temp_pts;
+
+						temp_pts=0LL;
+						temp_pts|=((uint64_t)(buffer[0] & 0x0e) << 29);
+						temp_pts|=buffer[1]<<22;
+						temp_pts|=(buffer[2] & 0xfe) << 14;
+						temp_pts|=buffer[3]<<7;
+						temp_pts|=(buffer[4] & 0xfe) >> 1;
+						/*
+					 	* PTS parsing is hopefully finished.
+					 	*/
+						payload->pts=(float)temp_pts/90000;
+					}
+				}
+				payload->offset=stream_tell(d->stream);
+				payload->size=pack_size-stream_tell(d->stream)+pva_payload_start;
+				break;
+		}
+	}
+	return 1;
+}
 
 // 0 = EOF or no stream found
 // 1 = successfully read a packet
@@ -283,199 +474,6 @@ static int demux_pva_fill_buffer (demuxer_t * demux, demux_stream_t *ds)
 	return 1;
 }
 
-int pva_get_payload(demuxer_t * d,pva_payload_t * payload)
-{
-	uint8_t flags,pes_head_len;
-	uint16_t pack_size;
-	off_t next_offset,pva_payload_start;
-	unsigned char buffer[256];
-#ifndef PVA_NEW_PREBYTES_CODE
-	demux_packet_t * dp; 	//hack to deliver the preBytes (see PVA doc)
-#endif
-	pva_priv_t * priv;
-
-
-	if(d==NULL)
-	{
-		mp_msg(MSGT_DEMUX,MSGL_ERR,"demux_pva: pva_get_payload got passed a NULL pointer!\n");
-		return 0;
-	}
-
-	priv = (pva_priv_t *)d->priv;
-	d->filepos=stream_tell(d->stream);
-
-
-
-
-	if(d->stream->eof)
-	{
-		mp_msg(MSGT_DEMUX,MSGL_V,"demux_pva: pva_get_payload() detected stream->eof!!!\n");
-		return 0;
-	}
-
-	//printf("priv->just_synced %s\n",priv->just_synced?"SET":"UNSET");
-
-#ifdef PVA_NEW_PREBYTES_CODE
-	if(priv->prebytes_delivered)
-		/* The previous call to this fn has delivered the preBytes. Then we are already inside
-		 * the payload. Let's just deliver the video along with its right PTS, the one we stored
-		 * in the priv structure and was in the PVA header before the PreBytes.
-		 */
-	{
-		//printf("prebytes_delivered=1. Resetting.\n");
-		payload->size = priv->video_size_after_prebytes;
-		payload->pts = priv->video_pts_after_prebytes;
-		payload->is_packet_start = 1;
-		payload->offset = stream_tell(d->stream);
-		payload->type = VIDEOSTREAM;
-		priv->prebytes_delivered = 0;
-		return 1;
-	}
-#endif
-	if(!priv->just_synced)
-	{
-		if(stream_read_word(d->stream) != (('A'<<8)|'V'))
-		{
-			mp_msg(MSGT_DEMUX,MSGL_V,"demux_pva: pva_get_payload() missed a SyncWord at %"PRId64"!! Trying to sync...\n",(int64_t)stream_tell(d->stream));
-			if(!pva_sync(d))
-			{
-				if (!d->stream->eof)
-				{
-					mp_msg(MSGT_DEMUX,MSGL_ERR,"demux_pva: couldn't sync! (broken file?)");
-				}
-				return 0;
-			}
-		}
-	}
-	if(priv->just_synced)
-	{
-		payload->type=priv->synced_stream_id;
-		priv->just_synced=0;
-	}
-	else
-	{
-		payload->type=stream_read_char(d->stream);
-		stream_skip(d->stream,2); //counter and reserved
-	}
-	flags=stream_read_char(d->stream);
-	payload->is_packet_start=flags & 0x10;
-	pack_size=le2me_16(stream_read_word(d->stream));
-	mp_msg(MSGT_DEMUX,MSGL_DBG2,"demux_pva::pva_get_payload(): pack_size=%u field read at offset %"PRIu64"\n",pack_size,(int64_t)stream_tell(d->stream)-2);
-	pva_payload_start=stream_tell(d->stream);
-	next_offset=pva_payload_start+pack_size;
-
-
-	/*
-	 * The code in the #ifdef directive below is a hack needed to get badly formatted PVA files
-	 * such as the ones written by MultiDec played back correctly.
-	 * Basically, it works like this: if the PVA packet does not signal a PES header, but the
-	 * payload looks like one, let's assume it IS one. It has worked for me up to now.
-	 * It can be disabled since it's quite an ugly hack and could potentially break things up
-	 * if the PVA audio payload happens to start with 0x000001 even without being a non signalled
-	 * PES header start.
-	 * Though it's quite unlikely, it potentially could (AFAIK).
-	 */
-#ifdef DEMUX_PVA_MULTIDEC_HACK
-	if(payload->type==MAINAUDIOSTREAM)
-	{
-		stream_read(d->stream,buffer,3);
-		if(buffer[0]==0x00 && buffer[1]==0x00 && buffer[2]==0x01 && !payload->is_packet_start)
-		{
-			mp_msg(MSGT_DEMUX,MSGL_V,"demux_pva: suspecting non signaled audio PES packet start. Maybe file by MultiDec?\n");
-			payload->is_packet_start=1;
-		}
-		stream_seek(d->stream,stream_tell(d->stream)-3);
-	}
-#endif
-
-
-	if(!payload->is_packet_start)
-	{
-		payload->offset=stream_tell(d->stream);
-		payload->size=pack_size;
-	}
-	else
-	{	//here comes the good part...
-		switch(payload->type)
-		{
-			case VIDEOSTREAM:
-				payload->pts=(float)(le2me_32(stream_read_dword(d->stream)))/90000;
-				//printf("Video PTS: %f\n",payload->pts);
-				if((flags&0x03)
-#ifdef PVA_NEW_PREBYTES_CODE
-						&& !priv->prebytes_delivered
-#endif
-						)
-				{
-#ifndef PVA_NEW_PREBYTES_CODE
-					dp=new_demux_packet(flags&0x03);
-					stream_read(d->stream,dp->buffer,flags & 0x03); //read PreBytes
-					ds_add_packet(d->video,dp);
-#else
-					//printf("Delivering prebytes. Setting prebytes_delivered.");
-					payload->offset=stream_tell(d->stream);
-					payload->size = flags & 0x03;
-					priv->video_pts_after_prebytes = payload->pts;
-					priv->video_size_after_prebytes = pack_size - 4 - (flags & 0x03);
-					payload->pts=priv->last_video_pts;
-					payload->is_packet_start=0;
-					priv->prebytes_delivered=1;
-					return 1;
-#endif
-				}
-
-
-				//now we are at real beginning of payload.
-				payload->offset=stream_tell(d->stream);
-				//size is pack_size minus PTS size minus PreBytes size.
-				payload->size=pack_size - 4 - (flags & 0x03);
-				break;
-			case MAINAUDIOSTREAM:
-				stream_skip(d->stream,3); //FIXME properly parse PES header.
-				//printf("StreamID in audio PES header: 0x%2X\n",stream_read_char(d->stream));
-				stream_skip(d->stream,4);
-
-				buffer[255]=stream_read_char(d->stream);
-				pes_head_len=stream_read_char(d->stream);
-				stream_read(d->stream,buffer,pes_head_len);
-				if(!(buffer[255]&0x80)) //PES header does not contain PTS.
-				{
-					mp_msg(MSGT_DEMUX,MSGL_V,"Audio PES packet does not contain PTS. (pes_head_len=%d)\n",pes_head_len);
-					payload->pts=priv->last_audio_pts;
-					break;
-				}
-				else		//PES header DOES contain PTS
-				{
-					if((buffer[0] & 0xf0)!=0x20) // PTS badly formatted
-					{
-						mp_msg(MSGT_DEMUX,MSGL_V,"demux_pva: expected audio PTS but badly formatted... (read 0x%02X). Falling back to previous PTS (hack).\n",buffer[0]);
-						payload->pts=priv->last_audio_pts;
-					//	return 0;
-					}
-					else
-					{
-						uint64_t temp_pts;
-
-						temp_pts=0LL;
-						temp_pts|=((uint64_t)(buffer[0] & 0x0e) << 29);
-						temp_pts|=buffer[1]<<22;
-						temp_pts|=(buffer[2] & 0xfe) << 14;
-						temp_pts|=buffer[3]<<7;
-						temp_pts|=(buffer[4] & 0xfe) >> 1;
-						/*
-					 	* PTS parsing is hopefully finished.
-					 	*/
-						payload->pts=(float)le2me_64(temp_pts)/90000;
-					}
-				}
-				payload->offset=stream_tell(d->stream);
-				payload->size=pack_size-stream_tell(d->stream)+pva_payload_start;
-				break;
-		}
-	}
-	return 1;
-}
-
 static void demux_seek_pva(demuxer_t * demuxer,float rel_seek_secs,float audio_delay,int flags)
 {
 	int total_bitrate=0;
@@ -517,11 +515,8 @@ static void demux_seek_pva(demuxer_t * demuxer,float rel_seek_secs,float audio_d
 
 static void demux_close_pva(demuxer_t * demuxer)
 {
-	if(demuxer->priv)
-	{
-		free(demuxer->priv);
-		demuxer->priv=NULL;
-	}
+	free(demuxer->priv);
+	demuxer->priv = NULL;
 }
 
 

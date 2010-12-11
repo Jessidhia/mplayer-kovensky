@@ -26,7 +26,7 @@
 #endif
 
 #include "mp_msg.h"
-#include "mpbswap.h"
+#include "ffmpeg_files/intreadwrite.h"
 #include "path.h"
 
 #include "vd_internal.h"
@@ -282,16 +282,16 @@ static int init(sh_video_t *sh){
 	int result;
 	// we export codec id and sub-id from demuxer in bitmapinfohdr:
 	unsigned char* extrahdr=(unsigned char*)(sh->bih+1);
-	unsigned int extrahdr_size = sh->bih->biSize - sizeof(BITMAPINFOHEADER);
+	unsigned int extrahdr_size = sh->bih->biSize - sizeof(*sh->bih);
 	struct rv_init_t init_data;
 
 	if(extrahdr_size < 8) {
-	    mp_msg(MSGT_DECVIDEO,MSGL_ERR,"realvideo: extradata too small (%u)\n", sh->bih->biSize - sizeof(BITMAPINFOHEADER));
+	    mp_msg(MSGT_DECVIDEO,MSGL_ERR,"realvideo: extradata too small (%u)\n", extrahdr_size);
 	    return 0;
 	}
-	init_data = (struct rv_init_t){11, sh->disp_w, sh->disp_h, 0, 0, be2me_32(((unsigned int*)extrahdr)[0]), 1, be2me_32(((unsigned int*)extrahdr)[1])}; // rv30
+	init_data = (struct rv_init_t){11, sh->disp_w, sh->disp_h, 0, 0, AV_RB32(extrahdr), 1, AV_RB32(extrahdr + 4)}; // rv30
 
-	mp_msg(MSGT_DECVIDEO,MSGL_V,"realvideo codec id: 0x%08X  sub-id: 0x%08X\n",be2me_32(((unsigned int*)extrahdr)[1]),be2me_32(((unsigned int*)extrahdr)[0]));
+	mp_msg(MSGT_DECVIDEO,MSGL_V,"realvideo codec id: 0x%08X  sub-id: 0x%08X\n",init_data.format,init_data.subformat);
 
 	path = malloc(strlen(codec_path) + strlen(sh->codec->dll) + 2);
 	if (!path) return 0;
@@ -327,7 +327,7 @@ static int init(sh_video_t *sh){
 	    return 0;
 	}
 	// setup rv30 codec (codec sub-type and image dimensions):
-	if((sh->format<=0x30335652) && (be2me_32(((unsigned int*)extrahdr)[1])>=0x20200002)){
+	if((sh->format<=0x30335652) && AV_RB32(extrahdr + 4)>=0x20200002){
 	    int i, cmsg_cnt;
 	    uint32_t cmsg24[16]={sh->disp_w,sh->disp_h};
 	    cmsg_data_t cmsg_data={0x24,1+(extrahdr[1]&7), &cmsg24[0]};
@@ -375,8 +375,7 @@ static void uninit(sh_video_t *sh){
 #endif
 	rv_handle=NULL;
 	initialized = 0;
-	if (buffer)
-	    free(buffer);
+	free(buffer);
 	buffer = NULL;
 	bufsz = 0;
 }
@@ -406,7 +405,7 @@ static mp_image_t* decode(sh_video_t *sh,void* data,int len,int flags){
 	if(len<=0 || flags&2) return NULL; // skipped frame || hardframedrop
 
 	if (bufsz < sh->disp_w*sh->disp_h*3/2) {
-	    if (buffer) free(buffer);
+	    free(buffer);
 	    bufsz = sh->disp_w*sh->disp_h*3/2;
 	    buffer=malloc(bufsz);
 	    if (!buffer) return 0;

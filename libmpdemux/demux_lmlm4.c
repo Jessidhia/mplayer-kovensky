@@ -71,7 +71,9 @@ static int imeHeaderValid(FrameInfo *frame)
     if ( frame->channelNo > 7 ||
          frame->frameSize > MAX_PACKET_SIZE || frame->frameSize <= 0)
     {
-        mp_msg(MSGT_DEMUX, MSGL_V, "Invalid packet in LMLM4 stream: ch=%d size=%d\n", frame->channelNo, frame->frameSize);
+        mp_msg(MSGT_DEMUX, MSGL_V,
+               "Invalid packet in LMLM4 stream: ch=%d size=%zd\n",
+               frame->channelNo, frame->frameSize);
         return 0;
     }
     switch (frame->frameType) {
@@ -155,7 +157,7 @@ static int getFrame(demuxer_t *demuxer, FrameInfo *frameInfo)
     frameInfo->frameSize = packetSize - 8; //sizeof(IME6400Header);
     frameInfo->paddingSize = (packetSize & PACKET_BLOCK_LAST) ? PACKET_BLOCK_SIZE - (packetSize & PACKET_BLOCK_LAST) : 0;
 
-    mp_msg(MSGT_DEMUX, MSGL_DBG2, "typ: %d chan: %d size: %d pad: %d\n",
+    mp_msg(MSGT_DEMUX, MSGL_DBG2, "typ: %d chan: %d size: %zd pad: %zd\n",
             frameInfo->frameType,
             frameInfo->channelNo,
             frameInfo->frameSize,
@@ -307,8 +309,7 @@ static demuxer_t* demux_open_lmlm4(demuxer_t* demuxer){
     sh_video->disp_h = 480;
     sh_video->format = mmioFOURCC('D','I','V','X');
 
-    sh_video->bih = malloc(sizeof(BITMAPINFOHEADER));
-    memset(sh_video->bih, 0, sizeof(BITMAPINFOHEADER));
+    sh_video->bih = calloc(1, sizeof(*sh_video->bih));
 
     /* these are false values */
     sh_video->bih->biSize = 40;
@@ -323,8 +324,7 @@ static demuxer_t* demux_open_lmlm4(demuxer_t* demuxer){
     demuxer->audio->sh = sh_audio;
     sh_audio->ds = demuxer->audio;
 
-    sh_audio->wf = malloc(sizeof(WAVEFORMATEX));
-    memset(sh_audio->wf, 0, sizeof(WAVEFORMATEX));
+    sh_audio->wf = calloc(1, sizeof(*sh_audio->wf));
 
     sh_audio->samplerate = 48000;
     sh_audio->wf->wBitsPerSample = 16;

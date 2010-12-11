@@ -109,6 +109,15 @@ static char *stristr(const char *haystack, const char *needle) {
     return NULL;
 }
 
+static void sami_add_line(subtitle *current, char *buffer, char **pos) {
+    char *p = *pos;
+    *p = 0;
+    trail_space(buffer);
+    if (*buffer && current->lines < SUB_MAX_TEXT)
+        current->text[current->lines++] = strdup(buffer);
+    *pos = buffer;
+}
+
 static subtitle *sub_read_line_sami(stream_t* st, subtitle *current, int utf16) {
     static char line[LINE_LEN+1];
     static char *s = NULL, *slacktime_s;
@@ -141,7 +150,7 @@ static subtitle *sub_read_line_sami(stream_t* st, subtitle *current, int utf16) 
 	    }
 	    break;
 
-	case 1: /* find (optionnal) "<P", skip other TAGs */
+	case 1: /* find (optional) "<P", skip other TAGs */
 	    for  (; *s == ' ' || *s == '\t'; s++); /* strip blanks, if any */
 	    if (*s == '\0') break;
 	    if (*s != '<') { state = 3; p = text; continue; } /* not a TAG */
@@ -160,9 +169,7 @@ static subtitle *sub_read_line_sami(stream_t* st, subtitle *current, int utf16) 
 	case 3: /* get all text until '<' appears */
 	    if (*s == '\0') break;
 	    else if (!strncasecmp (s, "<br>", 4)) {
-		*p = '\0'; p = text; trail_space (text);
-		if (text[0] != '\0')
-		    current->text[current->lines++] = strdup (text);
+                sami_add_line(current, text, &p);
 		s += 4;
 	    }
 	    else if ((*s == '{') && !sub_no_text_pp) { state = 5; ++s; continue; }
@@ -241,9 +248,7 @@ static subtitle *sub_read_line_sami(stream_t* st, subtitle *current, int utf16) 
     // For the last subtitle
     if (current->end <= 0) {
         current->end = current->start + sub_slacktime;
-	*p = '\0'; trail_space (text);
-	if (text[0] != '\0')
-	    current->text[current->lines++] = strdup (text);
+        sami_add_line(current, text, &p);
     }
 
     return current;
@@ -562,19 +567,20 @@ static subtitle *sub_read_line_ssa(stream_t *st,subtitle *current, int utf16) {
 
 	do {
 		if (!stream_read_line (st, line, LINE_LEN, utf16)) return NULL;
-	} while (sscanf (line, "Dialogue: Marked=%d,%d:%d:%d.%d,%d:%d:%d.%d,"
+	} while (sscanf (line, "Dialogue: Marked=%d,%d:%d:%d.%d,%d:%d:%d.%d"
 			"%[^\n\r]", &nothing,
 			&hour1, &min1, &sec1, &hunsec1,
 			&hour2, &min2, &sec2, &hunsec2,
 			line3) < 9
 		 &&
-		 sscanf (line, "Dialogue: %d,%d:%d:%d.%d,%d:%d:%d.%d,"
+		 sscanf (line, "Dialogue: %d,%d:%d:%d.%d,%d:%d:%d.%d"
 			 "%[^\n\r]", &nothing,
 			 &hour1, &min1, &sec1, &hunsec1,
 			 &hour2, &min2, &sec2, &hunsec2,
 			 line3) < 9	    );
 
         line2=strchr(line3, ',');
+        if (!line2) return NULL;
 
         for (comma = 4; comma < max_comma; comma ++)
           {
@@ -1023,7 +1029,6 @@ static subtitle *sub_read_line_jacosub(stream_t* st, subtitle * current, int utf
 static int sub_autodetect (stream_t* st, int *uses_time, int utf16) {
     char line[LINE_LEN+1];
     int i,j=0;
-    char p;
 
     while (j < 100) {
 	j++;
@@ -1052,13 +1057,8 @@ static int sub_autodetect (stream_t* st, int *uses_time, int utf16) {
 		{*uses_time=1;return SUB_VPLAYER;}
 	if (sscanf (line, "%d:%d:%d ",     &i, &i, &i )==3)
 		{*uses_time=1;return SUB_VPLAYER;}
-	//TODO: just checking if first line of sub starts with "<" is WAY
-	// too weak test for RT
-	// Please someone who knows the format of RT... FIX IT!!!
-	// It may conflict with other sub formats in the future (actually it doesn't)
-	if ( *line == '<' )
+	if (!strncasecmp(line, "<window", 7))
 		{*uses_time=1;return SUB_RT;}
-
 	if (!memcmp(line, "Dialogue: Marked", 16))
 		{*uses_time=1; return SUB_SSA;}
 	if (!memcmp(line, "Dialogue: ", 10))
@@ -1067,7 +1067,7 @@ static int sub_autodetect (stream_t* st, int *uses_time, int utf16) {
 		{*uses_time=1;return SUB_PJS;}
 	if (sscanf (line, "FORMAT=%d", &i) == 1)
 		{*uses_time=0; return SUB_MPSUB;}
-	if (sscanf (line, "FORMAT=TIM%c", &p)==1 && p=='E')
+	if (!memcmp(line, "FORMAT=TIME", 11))
 		{*uses_time=1; return SUB_MPSUB;}
 	if (strstr (line, "-->>"))
 		{*uses_time=0; return SUB_AQTITLE;}
@@ -1377,8 +1377,7 @@ sub_data* sub_read_file (char *filename, float fps) {
     const struct subreader *srp;
 
     if(filename==NULL) return NULL; //qnx segfault
-    i = 0;
-    fd=open_stream (filename, NULL, &i); if (!fd) return NULL;
+    fd=open_stream (filename, NULL, NULL); if (!fd) return NULL;
 
     sub_format = SUB_INVALID;
     for (utf16 = 0; sub_format == SUB_INVALID && utf16 < 3; utf16++) {
@@ -1449,7 +1448,7 @@ sub_data* sub_read_file (char *filename, float fps) {
 #ifdef CONFIG_ICONV
           subcp_close();
 #endif
-    	  if ( first ) free(first);
+	  free(first);
 	  free(alloced_sub);
 	  return NULL;
 	 }
@@ -1861,8 +1860,7 @@ char** sub_filenames(const char* path, char *fname)
 
     tmpresult = malloc(len);
 
-    result = malloc(sizeof(subfn)*MAX_SUBTITLE_FILES);
-    memset(result, 0, sizeof(subfn)*MAX_SUBTITLE_FILES);
+    result = calloc(MAX_SUBTITLE_FILES, sizeof(*result));
 
     subcnt = 0;
 
@@ -1992,7 +1990,7 @@ char** sub_filenames(const char* path, char *fname)
 
     }
 
-    if (tmp_sub_id) free(tmp_sub_id);
+    free(tmp_sub_id);
 
     free(f_dir);
     free(f_fname);
@@ -2007,8 +2005,7 @@ char** sub_filenames(const char* path, char *fname)
 
     qsort(result, subcnt, sizeof(subfn), compare_sub_priority);
 
-    result2 = malloc(sizeof(char*)*(subcnt+1));
-    memset(result2, 0, sizeof(char*)*(subcnt+1));
+    result2 = calloc(subcnt + 1, sizeof(*result2));
 
     for (i = 0; i < subcnt; i++) {
 	result2[i] = result[i].fname;
@@ -2310,7 +2307,9 @@ void sub_add_text(subtitle *sub, const char *txt, int len, double endpts) {
   int double_newline = 1; // ignore newlines at the beginning
   int i, pos;
   char *buf;
+#ifdef CONFIG_FRIBIDI
   int orig_lines = sub->lines;
+#endif
   if (sub->lines >= SUB_MAX_TEXT) return;
   pos = 0;
   buf = malloc(MAX_SUBLINE + 1);

@@ -73,10 +73,6 @@ int vo_directrendering=0;
 int vo_colorkey = 0x0000ff00; // default colorkey is green
                               // (0xff000000 means that colorkey has been disabled)
 
-// name to be used instead of the vo's default
-char *vo_winname;
-// title to be applied to movie window
-char *vo_wintitle;
 
 //
 // Externally visible list of all vo drivers
@@ -239,7 +235,7 @@ const struct vo_driver *video_out_drivers[] =
 #ifdef CONFIG_VESA
         &video_out_vesa,
 #endif
-#ifdef CONFIG_DFBMGA
+#ifdef CONFIG_DIRECTFB
         &video_out_dfbmga,
 #endif
 #ifdef CONFIG_VIDIX
@@ -264,7 +260,7 @@ const struct vo_driver *video_out_drivers[] =
 #ifdef CONFIG_YUV4MPEG
         &video_out_yuv4mpeg,
 #endif
-#ifdef CONFIG_LIBAVCODEC
+#ifdef CONFIG_FFMPEG
         &video_out_png,
 #endif
 #ifdef CONFIG_JPEG
@@ -670,8 +666,7 @@ range_t *str2range(char *s)
 	r[i].min = r[i].max = -1;
 	return r;
 out_err:
-	if (r)
-		free(r);
+	free(r);
 	return NULL;
 }
 

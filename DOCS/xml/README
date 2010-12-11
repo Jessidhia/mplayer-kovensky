@@ -13,53 +13,11 @@ ones successfully, so they are required:
 * xsltproc (part of libxslt1) is used for transforming XML files into HTML
   files. Version 1.0.18 or later is recommended.
 
-It's also possible to use the Saxon XSLT Processor. The Russian translator
-used it (version 6.4.4) for a while. If you have a suitable JavaVM and a
-saxon.jar installed somewhere, configure will try to detect them. If
-autodetection fails, try to tweak DOCS/xml/configure to get it working and
-send us a patch :)
-
 On Red Hat systems you need the following packages:
 libxml2, libxslt, docbook-dtds, docbook-style-xsl
 
-On Debian Sarge you will need these packages:
+On Debian you will need these packages:
 docbook-xml, docbook-xsl, xsltproc, libxml2-utils
-
-
-Installing the required tools from source
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-1) Download libxslt AND libxml2 packages from
-   http://xmlsoft.org/XSLT/downloads.html
-
-   Installing them should be straightforward, execute the usual "./configure"
-   and "make" then "make install" commands.
-
-
-2) Download the docbook-xml package from http://www.oasis-open.org/docbook/xml/
-   Use the newest version. The URL will be something like this:
-
-    http://www.oasis-open.org/docbook/xml/4.2/docbook-xml-4.2.zip
-
-   Extract this package into a directory, enter it, and execute the following
-   commands:
-
-    mkdir -p /usr/share/sgml/docbook/dtd/xml/4.2/
-    cp -r * /usr/share/sgml/docbook/dtd/xml/4.2/
-
-
-3) Download the docbook-xsl package from
-   http://prdownloads.sourceforge.net/docbook/
-
-   Use the newest version. The URL will be something like this:
-
-    http://prdownloads.sourceforge.net/docbook/docbook-xsl-1.62.0.tar.gz
-
-   Extract this package into a directory, enter it, and execute the following
-   commands:
-
-    mkdir -p /usr/share/sgml/docbook/stylesheet/xsl/nwalsh
-    cp -r VERSION common html lib /usr/share/sgml/docbook/stylesheet/xsl/nwalsh
 
 
 Building the documentation

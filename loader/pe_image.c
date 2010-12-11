@@ -292,7 +292,7 @@ static DWORD fixup_imports( WINE_MODREF *wm )
 	if (characteristics_detection && !pe_imp->u.Characteristics)
 		break;
 
-//#warning FIXME: here we should fill imports
+        /* FIXME: here we should fill imports */
         TRACE("Loading imports for %s.dll\n", name);
 
 	if (pe_imp->u.OriginalFirstThunk != 0) {
@@ -452,7 +452,7 @@ HMODULE PE_LoadImage( int handle, LPCSTR filename, WORD *version )
     file_size=lseek(handle, 0, SEEK_END);
     lseek(handle, 0, SEEK_SET);
 
-//#warning fix CreateFileMappingA
+    // fix CreateFileMappingA
     mapping = CreateFileMappingA( handle, NULL, PAGE_READONLY | SEC_COMMIT,
                                     0, 0, NULL );
     if (!mapping)
@@ -868,10 +868,8 @@ void PE_UnloadLibrary(WINE_MODREF *wm)
 {
     TRACE(" unloading %s\n", wm->filename);
 
-    if (wm->filename)
-	free(wm->filename);
-    if (wm->short_filename)
-	free(wm->short_filename);
+    free(wm->filename);
+    free(wm->short_filename);
     HeapFree( GetProcessHeap(), 0, wm->deps );
     VirtualFree( (LPVOID)wm->module, 0, MEM_RELEASE );
     HeapFree( GetProcessHeap(), 0, wm );

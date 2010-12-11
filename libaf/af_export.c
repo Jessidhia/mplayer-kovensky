@@ -55,7 +55,7 @@ typedef struct af_export_s
   int 	wi;  		// Write index
   int	fd;           	// File descriptor to shared memory area
   char* filename;      	// File to export data
-  void* mmap_area;     	// MMap shared area
+  uint8_t *mmap_area;  	// MMap shared area
 } af_export_t;
 
 
@@ -73,7 +73,7 @@ static int control(struct af_instance_s* af, int cmd, void* arg)
     int mapsize;
 
     // Free previous buffers
-    if (s->buf && s->buf[0])
+    if (s->buf)
       free(s->buf[0]);
 
     // unmap previous area
@@ -98,7 +98,7 @@ static int control(struct af_instance_s* af, int cmd, void* arg)
     if(NULL == s->buf[0])
       mp_msg(MSGT_AFILTER, MSGL_FATAL, "[export] Out of memory\n");
     for(i = 1; i < af->data->nch; i++)
-      s->buf[i] = s->buf[0] + i*s->sz*af->data->bps;
+      s->buf[i] = (uint8_t *)s->buf[0] + i*s->sz*af->data->bps;
 
     // Init memory mapping
     s->fd = open(s->filename, O_RDWR | O_CREAT | O_TRUNC, 0640);
@@ -136,8 +136,7 @@ static int control(struct af_instance_s* af, int cmd, void* arg)
     char *str = arg;
 
     if (!str){
-      if(s->filename)
-	free(s->filename);
+      free(s->filename);
 
       s->filename = get_path(SHARED_FILE);
       return AF_OK;
@@ -146,8 +145,7 @@ static int control(struct af_instance_s* af, int cmd, void* arg)
     while((str[i]) && (str[i] != ':'))
       i++;
 
-    if(s->filename)
-      free(s->filename);
+    free(s->filename);
 
     s->filename = calloc(i + 1, 1);
     memcpy(s->filename, str, i);
@@ -177,14 +175,12 @@ static int control(struct af_instance_s* af, int cmd, void* arg)
 */
 static void uninit( struct af_instance_s* af )
 {
-  if (af->data){
-    free(af->data);
-    af->data = NULL;
-  }
+  free(af->data);
+  af->data = NULL;
 
   if(af->setup){
     af_export_t* s = af->setup;
-    if (s->buf && s->buf[0])
+    if (s->buf)
       free(s->buf[0]);
 
     // Free mmaped area
@@ -194,8 +190,7 @@ static void uninit( struct af_instance_s* af )
     if(s->fd > -1)
       close(s->fd);
 
-    if(s->filename)
-	free(s->filename);
+    free(s->filename);
 
     free(af->setup);
     af->setup = NULL;

@@ -93,7 +93,7 @@ LPVOID WINAPI HeapAlloc(HANDLE heap, DWORD flags, DWORD size)
 
 WIN_BOOL WINAPI HeapFree(HANDLE heap, DWORD flags, LPVOID mem)
 {
-    if (mem) free(mem);
+    free(mem);
     //printf("HeapFree  %p\n", mem);
     //if (!mem)
     //    abort();
@@ -409,8 +409,7 @@ WIN_BOOL WINAPI UnmapViewOfFile(LPVOID handle)
 	    result=munmap((void*)handle, p->mapping_size);
 	    if(p->next)p->next->prev=p->prev;
 	    if(p->prev)p->prev->next=p->next;
-	    if(p->name)
-		free(p->name);
+	    free(p->name);
 	    if(p==fm)
 		fm=p->prev;
 	    free(p);
@@ -473,7 +472,7 @@ LPVOID WINAPI VirtualAlloc(LPVOID address, DWORD size, DWORD type,  DWORD protec
 	    }
 	    if(str->state==0)
 	    {
-#warning FIXME
+		// FIXME
 		if(   ((unsigned)address >= (unsigned)str->address)
 		   && ((unsigned)address+size<=(unsigned)str->address+str->mapping_size)
 		   && (type & MEM_COMMIT))

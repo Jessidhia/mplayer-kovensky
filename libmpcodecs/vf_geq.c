@@ -66,15 +66,15 @@ static inline double getpix(struct vf_instance *vf, double x, double y, int plan
 
 //FIXME cubic interpolate
 //FIXME keep the last few frames
-static double lum(struct vf_instance *vf, double x, double y){
+static double lum(void *vf, double x, double y){
     return getpix(vf, x, y, 0);
 }
 
-static double cb(struct vf_instance *vf, double x, double y){
+static double cb(void *vf, double x, double y){
     return getpix(vf, x, y, 1);
 }
 
-static double cr(struct vf_instance *vf, double x, double y){
+static double cr(void *vf, double x, double y){
     return getpix(vf, x, y, 2);
 }
 
@@ -128,8 +128,6 @@ static int put_image(struct vf_instance *vf, mp_image_t *mpi, double pts){
 }
 
 static void uninit(struct vf_instance *vf){
-    if(!vf->priv) return;
-
     av_free(vf->priv);
     vf->priv=NULL;
 }

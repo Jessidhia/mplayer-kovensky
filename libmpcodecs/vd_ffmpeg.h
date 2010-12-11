@@ -16,11 +16,9 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-#ifndef MPLAYER_AE_LAVC_H
-#define MPLAYER_AE_LAVC_H
+#ifndef MPLAYER_VD_FFMPEG_H
+#define MPLAYER_VD_FFMPEG_H
 
-#include "ae.h"
+void init_avcodec(void);
 
-int mpae_init_lavc(audio_encoder_t *encoder);
-
-#endif /* MPLAYER_AE_LAVC_H */
+#endif /* MPLAYER_VD_FFMPEG_H */

@@ -61,6 +61,11 @@ mencoder \- movie encoder
 .
 .br
 .B mplayer
+[br]://[title][/device]
+[options]
+.
+.br
+.B mplayer
 [dvd|dvdnav]://[title|[start_title]\-end_title][/device]
 [options]
 .
@@ -146,7 +151,7 @@ architectures, see the documentation).
 It plays most MPEG/\:VOB, AVI, ASF/\:WMA/\:WMV, RM, QT/\:MOV/\:MP4, Ogg/\:OGM,
 MKV, VIVO, FLI, NuppelVideo, yuv4mpeg, FILM and RoQ files, supported by many
 native and binary codecs.
-You can watch VCD, SVCD, DVD, 3ivx, DivX 3/4/5, WMV and even H.264 movies,
+You can watch VCD, SVCD, DVD, Blu\-ray, 3ivx, DivX 3/4/5, WMV and even H.264 movies,
 too.
 .PP
 MPlayer supports a wide range of video and audio output drivers.
@@ -241,7 +246,7 @@ Adjust audio balance in favor of left/\:right channel.
 Mute sound.
 .IPs "_ (MPEG-TS, AVI and libavformat only)"
 Cycle through the available video tracks.
-.IPs "# (DVD, MPEG, Matroska, AVI and libavformat only)"
+.IPs "# (DVD, Blu-ray, MPEG, Matroska, AVI and libavformat only)"
 Cycle through the available audio tracks.
 .IPs "TAB (MPEG-TS and libavformat only)"
 Cycle through the available programs.
@@ -268,6 +273,8 @@ Toggle displaying "forced subtitles".
 Toggle subtitle alignment: top / middle / bottom.
 .IPs "x and z"
 Adjust subtitle delay by +/\- 0.1 seconds.
+.IPs "C (\-capture only)"
+Start/stop capturing the primary stream.
 .IPs "r and t"
 Move subtitles up/down.
 .IPs "i (\-edlout mode only)"
@@ -402,9 +409,8 @@ Confirm choice.
 .PP
 .RS
 .
-(The following keys are only valid if teletext support is enabled during
-compilation: They are used for controlling TV teletext, whose data may come
-from either an analog TV source or an MPEG Transport Stream.)
+(The following keys are used for controlling TV teletext. The data may
+come from either an analog TV source or an MPEG transport stream.)
 .RE
 .PP
 .PD 0
@@ -792,6 +798,17 @@ With this option MPlayer will also ignore frame duration when playing
 only video (you can think of that as infinite fps).
 .
 .TP
+.B \-chapter\-merge\-threshold <number>
+Threshold for merging almost consecutive ordered chapter parts
+in milliseconds (default: 100).
+Some Matroska files with ordered chapters have inaccurate chapter
+end timestamps, causing a small gap between the end of one chapter and
+the start of the next one when they should match.
+If the end of one playback part is less than the given threshold away
+from the start of the next one then keep playing video normally over the
+chapter change instead of doing a seek.
+.
+.TP
 .B \-colorkey <number>
 Changes the colorkey to an RGB value of your choice.
 0x000000 is black and 0xffffff is white.
@@ -898,9 +915,9 @@ Show file parameters in an easily parseable format.
 Also prints more detailed information about subtitle and audio
 track languages and IDs.
 In some cases you can get more information by using \-msglevel identify=6.
-For example, for a DVD it will list the chapters and time length of each title,
-as well as a disk ID.
-Combine this with \-frames 0 to suppress all output.
+For example, for a DVD or Blu\-ray it will list the chapters and time length
+of each title, as well as a disk ID.
+Combine this with \-frames 0 to suppress all video output.
 The wrapper script TOOLS/\:midentify.sh suppresses the other MPlayer output and
 (hopefully) shellescapes the filenames.
 .
@@ -1030,6 +1047,17 @@ in a playlist or intend to read from stdin later on via the loadfile or
 loadlist slave commands.
 .
 .TP
+.B \-noinitial-audio-sync
+When starting a video file or after events such as seeking MPlayer will by
+default modify the audio stream to make it start from the same timestamp as
+video, by either inserting silence at the start or cutting away the first
+samples.
+This option disables that functionality and makes the player behave like
+older MPlayer versions did: video and audio are both started immediately
+even if their start timestamps differ, and then video timing is gradually
+adjusted if necessary to reach correct synchronization later.
+.
+.TP
 .B \-nojoystick
 Turns off joystick support.
 .
@@ -1112,7 +1140,7 @@ by a newline (\\n) from stdin.
 See \-input cmdlist for a list of slave commands and DOCS/tech/slave.txt
 for their description.
 Also, this is not intended to disable other inputs, e.g.\& via the video window,
-use some other method like \-input nodefault\-binds:conf=/dev/null for that.
+use some other method like \-input nodefault\-bindings:conf=/dev/null for that.
 .
 .TP
 .B \-softsleep
@@ -1210,6 +1238,19 @@ With Real RTSP streaming, it is also used to set the maximum delivery
 bandwidth allowing faster cache filling and stream dumping.
 .
 .TP
+.B \-bluray\-angle <angle ID> (Blu\-ray only)
+Some Blu\-ray discs contain scenes that can be viewed from multiple angles.
+Here you can tell MPlayer which angles to use (default: 1).
+.
+.TP
+.B \-bluray\-chapter <chapter ID> (Blu\-ray only)
+Tells MPlayer which Blu\-ray chapter to start the current title from (default: 1).
+.
+.TP
+.B \-bluray\-device <path to disc> (Blu\-ray only)
+Specify the Blu\-ray disc location. Must be a directory with Blu\-ray structure.
+.
+.TP
 .B \-cache <kBytes>
 This option specifies how much memory (in kBytes) to use when precaching a
 file or URL.
@@ -1229,6 +1270,18 @@ of the total.
 If a seek is to be made to a position within <percentage> of the cache size
 from the current position, MPlayer will wait for the cache to be filled to
 this position rather than performing a stream seek (default: 50).
+.
+.TP
+.B \-capture (MPlayer only)
+Allows capturing the primary stream (not additional audio tracks or other
+kind of streams) into the file specified by \-dumpfile or \"stream.dump\"
+by default.
+If this option is given, capturing can be started and stopped by pressing
+the key bound to this function (see section INTERACTIVE CONTROL).
+Same as for \-dumpstream, this will likely not produce usable results for
+anything else than MPEG streams.
+Note that, due to cache latencies, captured data may begin and end
+somewhat delayed compared to what you see displayed.
 .
 .TP
 .B \-cdda <option1:option2> (CDDA only)
@@ -1362,7 +1415,8 @@ on the command line only the last one will work.
 .TP
 .B \-dumpfile <filename> (MPlayer only)
 Specify which file MPlayer should dump to.
-Should be used together with \-dumpaudio / \-dumpvideo / \-dumpstream.
+Should be used together with \-dumpaudio / \-dumpvideo / \-dumpstream /
+\-capture.
 .
 .TP
 .B \-dumpstream (MPlayer only)
@@ -1786,6 +1840,11 @@ This option may be useful if you have a broken internet connection that does
 not pass incoming UDP packets (see http://www.live555.com/\:mplayer/).
 .
 .TP
+.B \-rtsp\-stream\-over\-http (LIVE555 only)
+Used with 'http://' URLs to specify that the resulting incoming RTP and RTCP
+packets be streamed over HTTP.
+.
+.TP
 .B \-saveidx <filename>
 Force index rebuilding and dump the index to <filename>.
 Currently this only works with AVI files.
@@ -1900,7 +1959,9 @@ See the console output for a list of available TV norms.
 .IPs channel=<value>
 Set tuner to <value> channel.
 .IPs chanlist=<value>
-available: europe-east, europe-west, us-bcast, us-cable, etc
+available: argentina, australia, china-bcast, europe-east, europe-west, france,
+ireland, italy, japan-bcast, japan-cable, newzealand, russia, southafrica,
+us-bcast, us-cable, us-cable-hrc
 .IPs channels=<chan>\-<name>[=<norm>],<chan>\-<name>[=<norm>],...
 Set names for channels.
 .I NOTE:
@@ -2325,8 +2386,9 @@ If you cannot select one of the subtitles on a DVD, also try \-vobsubid.
 .
 .TP
 .B \-nosub
-Disables any otherwise auto-selected subtitles (as e.g.\& the Matroska/mkv
+Disables any otherwise auto-selected internal subtitles (as e.g.\& the Matroska/mkv
 demuxer supports).
+Use \-noautosub to disable the loading of external subtitle files.
 .
 .TP
 .B \-slang <language code[,language code,...]> (also see \-sid)
@@ -2451,8 +2513,8 @@ Align subtitle bottom edge (default).
 .PD 1
 .
 .TP
-.B "\-subcc \ "
-Display DVD Closed Caption (CC) subtitles.
+.B "\-subcc <1\-4>\ "
+Display DVD Closed Caption (CC) subtitles from the specified channel.
 These are
 .B not
 the VOB subtitles, these are special ASCII subtitles for the
@@ -2623,6 +2685,17 @@ The values that <format> can adopt are listed below in the
 description of the format audio filter.
 .
 .TP
+.B \-gapless\-audio
+Try to play consecutive audio files with no silence or disruption
+at the point of file change.
+This feature is implemented in a simple manner and relies on audio output
+device buffering to continue playback while moving from one file to another.
+If playback of the new file starts slowly, for example because it's played from
+a remote network location or because you have specified cache settings that
+require time for the initial cache fill, then the buffered audio may run out
+before playback of the new file can start.
+.
+.TP
 .B \-mixer <device>
 Use a mixer device different from the default /dev/\:mixer.
 For ALSA this is the mixer name.
@@ -2781,6 +2854,14 @@ audio output through NAS
 .TP
 .B coreaudio (Mac OS X only)
 native Mac OS X audio output driver
+.PD 0
+.RSs
+.IPs device_id=<id>
+ID of output device to use (0 = default device)
+.IPs help
+List all available output devices with their IDs.
+.RE
+.PD 1
 .
 .TP
 .B "openal\ "
@@ -3834,9 +3915,9 @@ the maximum texture size of your OpenGL implementation.
 Intended to work even with the most basic OpenGL implementations,
 but also makes use of newer extensions, which allow support for more
 colorspaces and direct rendering.
-For optimal speed try something similar to
+For optimal speed try adding the options
 .br
-\-vo gl:yuv=2:rectangle=2:force\-pbo:ati\-hack \-dr \-noslices
+\-dr \-noslices
 .br
 The code performs very few checks, so if a feature does not work, this
 might be because it is not supported by your card/OpenGL implementation
@@ -3977,6 +4058,27 @@ Select the scaling function to use for chrominance scaling.
 For details see lscale.
 .IPs filter-strength=<value>
 Set the effect strength for the lscale/cscale filters that support it.
+.IPs stereo=<value>
+Select a method for stereo display.
+You may have to use -aspect to fix the aspect value.
+Experimental, do not expect too much from it.
+.RSss
+0: Normal 2D display
+.br
+1: left-right split input to full-color red-cyan stereo.
+.br
+2: left-right split input to full-color red-cyan stereo.
+.br
+3: left-right split input to quadbuffered stereo.
+Only supported by very few OpenGL cards.
+.RE
+.RE
+.sp 1
+.RS
+The following options are only useful if writing your own fragment programs.
+.RE
+.sp 1
+.RSs
 .IPs customprog=<filename>
 Load a custom fragment program from <filename>.
 See TOOLS/edgedect.fp for an example.
@@ -4847,7 +4949,7 @@ Useful for benchmarking.
 .TP
 .B \-novideo
 Do not play/\:encode video.
-In many cases this will not work, use \-vc null \-vo null instead.
+With some demuxers this may not work. In those cases you can try \-vc null \-vo null instead; but "\-vc null" is always unreliable.
 .
 .TP
 .B \-pp <quality> (also see \-vf pp)
@@ -5382,6 +5484,8 @@ This filter has a second feature: It measures the overall maximum
 sound level and prints out that level when MPlayer exits.
 This volume estimate can be used for setting the sound level in
 MEncoder such that the maximum dynamic range is utilized.
+This feature currently only works with floating-point data,
+use e.g. \-af\-adv force=5, or use \-af stats.
 .br
 .I NOTE:
 This filter is not reentrant and can therefore only be enabled
@@ -6097,16 +6201,6 @@ Deprecated in favor of the software scaler.
 .TP
 .B "yuvcsp\ "
 Clamps YUV color values to the CCIR 601 range without doing real conversion.
-.
-.TP
-.B rgb2bgr[=swap]
-RGB 24/32 <\-> BGR 24/32 colorspace conversion.
-.PD 0
-.RSs
-.IPs "swap\ "
-Also perform  R <\-> B swapping.
-.RE
-.PD 1
 .
 .TP
 .B palette
@@ -7514,6 +7608,102 @@ Percentage of the pixels that have to be below the threshold (default: 98).
 .IPs <threshold>
 Threshold below which a pixel value is considered black (default: 32).
 .RE
+.PD 1
+.
+.TP
+.B stereo3d[=in:out]
+Stereo3d converts between different stereoscopic image formats.
+.RSs
+.IPs <in>
+Stereoscopic image format of input. Possible values:
+.RS
+.B sbsl or side_by_side_left_first
+.RS
+side by side parallel (left eye left, right eye right)
+.RE
+.B sbsr or side_by_side_right_first
+.RS
+side by side crosseye (right eye left, left eye right)
+.RE
+.B abl or above_below_left_first
+.RS
+above-below (left eye above, right eye below)
+.RE
+.B abl or above_below_right_first
+.RS
+above-below (right eye above, left eye below)
+.RE
+.B ab2l or above_below_half_height_left_first
+.RS
+above-below with half height resolution (left eye above, right eye below)
+.RE
+.B ab2r or above_below_half_height_right_first
+.RS
+above-below with half height resolution (right eye above, left eye below)
+.RE
+.RE
+.IPs <out>
+Stereoscopic image format of output. Possible values are all the input formats
+as well as:
+.RS
+.B arcg or anaglyph_red_cyan_gray
+.RS
+anaglyph red/cyan gray (red filter on left eye, cyan filter on right eye)
+.RE
+.B arch or anaglyph_red_cyan_half_color
+.RS
+anaglyph red/cyan half colored (red filter on left eye, cyan filter on right
+eye)
+.RE
+.B arcc or anaglyph_red_cyan_color
+.RS
+anaglyph red/cyan color (red filter on left eye, cyan filter on right eye)
+.RE
+.B arcd or anaglyph_red_cyan_dubois
+.RS
+anaglyph red/cyan color optimized with the least squares projection of dubois
+(red filter on left eye, cyan filter on right eye)
+.RE
+.B agmg or anaglyph_green_magenta_gray
+.RS
+anaglyph green/magenta gray (green filter on left eye, magenta filter on right
+eye)
+.RE
+.B agmh or anaglyph_green_magenta_half_color
+.RS
+anaglyph green/magenta half colored (green filter on left eye, magenta filter on
+right eye)
+.RE
+.B agmc or anaglyph_green_magenta_color
+.RS
+anaglyph green/magenta colored (green filter on left eye, magenta filter on
+right eye)
+.RE
+.B aybg or anaglyph_yellow_blue_gray
+.RS
+anaglyph yellow/blue gray (yellow filter on left eye, blue filter on right eye)
+.RE
+.B aybh or anaglyph_yellow_blue_half_color
+.RS
+anaglyph yellow/blue half colored (yellow filter on left eye, blue filter on
+right eye)
+.RE
+.B aybc or anaglyph_yellow_blue_color
+.RS
+anaglyph yellow/blue colored (yellow filter on left eye, blue filter on right
+eye)
+.RE
+.B ml or mono_left
+.RS
+mono output (left eye only)
+.RE
+.B mr or mono_right
+.RS
+mono output (right eye only)
+.RE
+.RE
+.RE
+.PD 1
 .
 .TP
 .B gradfun[=strength[:radius]]
@@ -11453,6 +11643,13 @@ in this order:
 .SH EXAMPLES OF MPLAYER USAGE
 .
 .PP
+.B Quickstart Blu\-ray playing:
+.nf
+mplayer br:////path/to/disc
+mplayer br:// \-bluray\-device /path/to/disc
+.fi
+.
+.PP
 .B Quickstart DVD playing:
 .nf
 mplayer dvd://1
@@ -11571,7 +11768,7 @@ increase volume or avoid clipping.
 .PP
 .B checkerboard invert with geq filter:
 .nf
-mplayer \-vf geq='128+(p(X\,Y)\-128)*(0.5\-gt(mod(X/SW\,128)\,64))*(0.5\-gt(mod(Y/SH\,128)\,64))*4'
+mplayer \-vf geq='128+(p(X\\,Y)\-128)*(0.5\-gt(mod(X/SW\\,128)\\,64))*(0.5\-gt(mod(Y/SH\\,128)\\,64))*4'
 .fi
 .
 .

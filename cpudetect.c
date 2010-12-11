@@ -54,207 +54,6 @@ CpuCaps gCpuCaps;
 
 /* I believe this code works.  However, it has only been used on a PII and PIII */
 
-static void check_os_katmai_support( void );
-
-// return TRUE if cpuid supported
-static int has_cpuid(void)
-{
-// code from libavcodec:
-#if ARCH_X86_64
-   return 1;
-#else
-   long a, c;
-   __asm__ volatile (
-       /* See if CPUID instruction is supported ... */
-       /* ... Get copies of EFLAGS into eax and ecx */
-       "pushfl\n\t"
-       "pop %0\n\t"
-       "mov %0, %1\n\t"
-
-       /* ... Toggle the ID bit in one copy and store */
-       /*     to the EFLAGS reg */
-       "xor $0x200000, %0\n\t"
-       "push %0\n\t"
-       "popfl\n\t"
-
-       /* ... Get the (hopefully modified) EFLAGS */
-       "pushfl\n\t"
-       "pop %0\n\t"
-       : "=a" (a), "=c" (c)
-       :
-       : "cc"
-       );
-
-   return a != c;
-#endif
-}
-
-static void
-do_cpuid(unsigned int ax, unsigned int *p)
-{
-#if 0
-    __asm__ volatile(
-        "cpuid;"
-        : "=a" (p[0]), "=b" (p[1]), "=c" (p[2]), "=d" (p[3])
-        :  "0" (ax)
-        );
-#else
-// code from libavcodec:
-    __asm__ volatile
-        ("mov %%"REG_b", %%"REG_S"\n\t"
-         "cpuid\n\t"
-         "xchg %%"REG_b", %%"REG_S
-         : "=a" (p[0]), "=S" (p[1]),
-           "=c" (p[2]), "=d" (p[3])
-         : "0" (ax));
-#endif
-}
-
-void GetCpuCaps( CpuCaps *caps)
-{
-    unsigned int regs[4];
-    unsigned int regs2[4];
-
-    memset(caps, 0, sizeof(*caps));
-    caps->isX86=1;
-    caps->cl_size=32; /* default */
-    if (!has_cpuid()) {
-        mp_msg(MSGT_CPUDETECT,MSGL_WARN,"CPUID not supported!??? (maybe an old 486?)\n");
-        return;
-    }
-    do_cpuid(0x00000000, regs); // get _max_ cpuid level and vendor name
-    mp_msg(MSGT_CPUDETECT,MSGL_V,"CPU vendor name: %.4s%.4s%.4s  max cpuid level: %d\n",
-            (char*) (regs+1),(char*) (regs+3),(char*) (regs+2), regs[0]);
-    if (regs[0]>=0x00000001)
-    {
-        char *tmpstr, *ptmpstr;
-        unsigned cl_size;
-
-        do_cpuid(0x00000001, regs2);
-
-        caps->cpuType=(regs2[0] >> 8)&0xf;
-        caps->cpuModel=(regs2[0] >> 4)&0xf;
-
-// see AMD64 Architecture Programmer's Manual, Volume 3: General-purpose and
-// System Instructions, Table 3-2: Effective family computation, page 120.
-        if(caps->cpuType==0xf){
-            // use extended family (P4, IA64, K8)
-            caps->cpuType=0xf+((regs2[0]>>20)&255);
-        }
-        if(caps->cpuType==0xf || caps->cpuType==6)
-            caps->cpuModel |= ((regs2[0]>>16)&0xf) << 4;
-
-        caps->cpuStepping=regs2[0] & 0xf;
-
-        // general feature flags:
-        caps->hasTSC  = (regs2[3] & (1 << 8  )) >>  8; // 0x0000010
-        caps->hasMMX  = (regs2[3] & (1 << 23 )) >> 23; // 0x0800000
-        caps->hasSSE  = (regs2[3] & (1 << 25 )) >> 25; // 0x2000000
-        caps->hasSSE2 = (regs2[3] & (1 << 26 )) >> 26; // 0x4000000
-        caps->hasSSE3 = (regs2[2] & 1);        // 0x0000001
-        caps->hasSSSE3 = (regs2[2] & (1 << 9 )) >>  9; // 0x0000200
-        caps->hasMMX2 = caps->hasSSE; // SSE cpus supports mmxext too
-        cl_size = ((regs2[1] >> 8) & 0xFF)*8;
-        if(cl_size) caps->cl_size = cl_size;
-
-        ptmpstr=tmpstr=GetCpuFriendlyName(regs, regs2);
-        while(*ptmpstr == ' ')    // strip leading spaces
-            ptmpstr++;
-        mp_msg(MSGT_CPUDETECT,MSGL_INFO,"CPU: %s ", ptmpstr);
-        free(tmpstr);
-        mp_msg(MSGT_CPUDETECT,MSGL_INFO,"(Family: %d, Model: %d, Stepping: %d)\n",
-               caps->cpuType, caps->cpuModel, caps->cpuStepping);
-
-    }
-    do_cpuid(0x80000000, regs);
-    if (regs[0]>=0x80000001) {
-        mp_msg(MSGT_CPUDETECT,MSGL_V,"extended cpuid-level: %d\n",regs[0]&0x7FFFFFFF);
-        do_cpuid(0x80000001, regs2);
-        caps->hasMMX  |= (regs2[3] & (1 << 23 )) >> 23; // 0x0800000
-        caps->hasMMX2 |= (regs2[3] & (1 << 22 )) >> 22; // 0x400000
-        caps->has3DNow    = (regs2[3] & (1 << 31 )) >> 31; //0x80000000
-        caps->has3DNowExt = (regs2[3] & (1 << 30 )) >> 30;
-        caps->hasSSE4a = (regs2[2] & (1 << 6 )) >>  6; // 0x0000040
-    }
-    if(regs[0]>=0x80000006)
-    {
-        do_cpuid(0x80000006, regs2);
-        mp_msg(MSGT_CPUDETECT,MSGL_V,"extended cache-info: %d\n",regs2[2]&0x7FFFFFFF);
-        caps->cl_size  = regs2[2] & 0xFF;
-    }
-    mp_msg(MSGT_CPUDETECT,MSGL_V,"Detected cache-line size is %u bytes\n",caps->cl_size);
-
-    mp_msg(MSGT_CPUDETECT,MSGL_INFO,"cpudetect: MMX=%d MMX2=%d SSE=%d SSE2=%d 3DNow=%d 3DNowExt=%d\n",
-           gCpuCaps.hasMMX,
-           gCpuCaps.hasMMX2,
-           gCpuCaps.hasSSE,
-           gCpuCaps.hasSSE2,
-           gCpuCaps.has3DNow,
-           gCpuCaps.has3DNowExt);
-
-        /* FIXME: Does SSE2 need more OS support, too? */
-        if (caps->hasSSE)
-            check_os_katmai_support();
-        if (!caps->hasSSE)
-            caps->hasSSE2 = 0;
-//          caps->has3DNow=1;
-//          caps->hasMMX2 = 0;
-//          caps->hasMMX = 0;
-
-#if !CONFIG_RUNTIME_CPUDETECT
-#if !HAVE_MMX
-        if(caps->hasMMX) mp_msg(MSGT_CPUDETECT,MSGL_WARN,"MMX supported but disabled\n");
-        caps->hasMMX=0;
-#endif
-#if !HAVE_MMX2
-        if(caps->hasMMX2) mp_msg(MSGT_CPUDETECT,MSGL_WARN,"MMX2 supported but disabled\n");
-        caps->hasMMX2=0;
-#endif
-#if !HAVE_SSE
-        if(caps->hasSSE) mp_msg(MSGT_CPUDETECT,MSGL_WARN,"SSE supported but disabled\n");
-        caps->hasSSE=0;
-#endif
-#if !HAVE_SSE2
-        if(caps->hasSSE2) mp_msg(MSGT_CPUDETECT,MSGL_WARN,"SSE2 supported but disabled\n");
-        caps->hasSSE2=0;
-#endif
-#if !HAVE_AMD3DNOW
-        if(caps->has3DNow) mp_msg(MSGT_CPUDETECT,MSGL_WARN,"3DNow supported but disabled\n");
-        caps->has3DNow=0;
-#endif
-#if !HAVE_AMD3DNOWEXT
-        if(caps->has3DNowExt) mp_msg(MSGT_CPUDETECT,MSGL_WARN,"3DNowExt supported but disabled\n");
-        caps->has3DNowExt=0;
-#endif
-#endif  // CONFIG_RUNTIME_CPUDETECT
-}
-
-char *GetCpuFriendlyName(unsigned int regs[], unsigned int regs2[]){
-    char vendor[13];
-    char *retname;
-    int i;
-
-    if (NULL==(retname=malloc(256))) {
-        mp_msg(MSGT_CPUDETECT,MSGL_FATAL,"Error: GetCpuFriendlyName() not enough memory\n");
-        exit(1);
-    }
-    retname[0] = '\0';
-
-    sprintf(vendor,"%.4s%.4s%.4s",(char*)(regs+1),(char*)(regs+3),(char*)(regs+2));
-
-    do_cpuid(0x80000000,regs);
-    if (regs[0] >= 0x80000004)
-    {
-        // CPU has built-in namestring
-        for (i = 0x80000002; i <= 0x80000004; i++)
-        {
-            do_cpuid(i, regs);
-            strncat(retname, (char*)regs, 16);
-        }
-    }
-    return retname;
-}
-
 #if defined(__linux__) && defined(_POSIX_SOURCE) && !ARCH_X86_64
 static void sigill_handler_sse( int signal, struct sigcontext sc )
 {
@@ -422,6 +221,199 @@ static void check_os_katmai_support( void )
     gCpuCaps.hasSSE=0;
 #endif /* __linux__ */
 }
+
+
+// return TRUE if cpuid supported
+static int has_cpuid(void)
+{
+// code from libavcodec:
+#if ARCH_X86_64
+   return 1;
+#else
+   long a, c;
+   __asm__ volatile (
+       /* See if CPUID instruction is supported ... */
+       /* ... Get copies of EFLAGS into eax and ecx */
+       "pushfl\n\t"
+       "pop %0\n\t"
+       "mov %0, %1\n\t"
+
+       /* ... Toggle the ID bit in one copy and store */
+       /*     to the EFLAGS reg */
+       "xor $0x200000, %0\n\t"
+       "push %0\n\t"
+       "popfl\n\t"
+
+       /* ... Get the (hopefully modified) EFLAGS */
+       "pushfl\n\t"
+       "pop %0\n\t"
+       : "=a" (a), "=c" (c)
+       :
+       : "cc"
+       );
+
+   return a != c;
+#endif
+}
+
+void
+do_cpuid(unsigned int ax, unsigned int *p)
+{
+// code from libavcodec:
+    __asm__ volatile
+        ("mov %%"REG_b", %%"REG_S"\n\t"
+         "cpuid\n\t"
+         "xchg %%"REG_b", %%"REG_S
+         : "=a" (p[0]), "=S" (p[1]),
+           "=c" (p[2]), "=d" (p[3])
+         : "0" (ax));
+}
+
+void GetCpuCaps( CpuCaps *caps)
+{
+    unsigned int regs[4];
+    unsigned int regs2[4];
+
+    memset(caps, 0, sizeof(*caps));
+    caps->isX86=1;
+    caps->cl_size=32; /* default */
+    if (!has_cpuid()) {
+        mp_msg(MSGT_CPUDETECT,MSGL_WARN,"CPUID not supported!??? (maybe an old 486?)\n");
+        return;
+    }
+    do_cpuid(0x00000000, regs); // get _max_ cpuid level and vendor name
+    mp_msg(MSGT_CPUDETECT,MSGL_V,"CPU vendor name: %.4s%.4s%.4s  max cpuid level: %d\n",
+            (char*) (regs+1),(char*) (regs+3),(char*) (regs+2), regs[0]);
+    if (regs[0]>=0x00000001)
+    {
+        char *tmpstr, *ptmpstr;
+        unsigned cl_size;
+
+        do_cpuid(0x00000001, regs2);
+
+        caps->cpuType=(regs2[0] >> 8)&0xf;
+        caps->cpuModel=(regs2[0] >> 4)&0xf;
+
+// see AMD64 Architecture Programmer's Manual, Volume 3: General-purpose and
+// System Instructions, Table 3-2: Effective family computation, page 120.
+        if(caps->cpuType==0xf){
+            // use extended family (P4, IA64, K8)
+            caps->cpuType=0xf+((regs2[0]>>20)&255);
+        }
+        if(caps->cpuType==0xf || caps->cpuType==6)
+            caps->cpuModel |= ((regs2[0]>>16)&0xf) << 4;
+
+        caps->cpuStepping=regs2[0] & 0xf;
+
+        // general feature flags:
+        caps->hasTSC  = (regs2[3] & (1 << 8  )) >>  8; // 0x0000010
+        caps->hasMMX  = (regs2[3] & (1 << 23 )) >> 23; // 0x0800000
+        caps->hasSSE  = (regs2[3] & (1 << 25 )) >> 25; // 0x2000000
+        caps->hasSSE2 = (regs2[3] & (1 << 26 )) >> 26; // 0x4000000
+        caps->hasSSE3 = (regs2[2] & 1);        // 0x0000001
+        caps->hasSSSE3 = (regs2[2] & (1 << 9 )) >>  9; // 0x0000200
+        caps->hasMMX2 = caps->hasSSE; // SSE cpus supports mmxext too
+        cl_size = ((regs2[1] >> 8) & 0xFF)*8;
+        if(cl_size) caps->cl_size = cl_size;
+
+        ptmpstr=tmpstr=GetCpuFriendlyName(regs, regs2);
+        while(*ptmpstr == ' ')    // strip leading spaces
+            ptmpstr++;
+        mp_msg(MSGT_CPUDETECT,MSGL_INFO,"CPU: %s ", ptmpstr);
+        free(tmpstr);
+        mp_msg(MSGT_CPUDETECT,MSGL_INFO,"(Family: %d, Model: %d, Stepping: %d)\n",
+               caps->cpuType, caps->cpuModel, caps->cpuStepping);
+
+    }
+    do_cpuid(0x80000000, regs);
+    if (regs[0]>=0x80000001) {
+        mp_msg(MSGT_CPUDETECT,MSGL_V,"extended cpuid-level: %d\n",regs[0]&0x7FFFFFFF);
+        do_cpuid(0x80000001, regs2);
+        caps->hasMMX  |= (regs2[3] & (1 << 23 )) >> 23; // 0x0800000
+        caps->hasMMX2 |= (regs2[3] & (1 << 22 )) >> 22; // 0x400000
+        caps->has3DNow    = (regs2[3] & (1 << 31 )) >> 31; //0x80000000
+        caps->has3DNowExt = (regs2[3] & (1 << 30 )) >> 30;
+        caps->hasSSE4a = (regs2[2] & (1 << 6 )) >>  6; // 0x0000040
+    }
+    if(regs[0]>=0x80000006)
+    {
+        do_cpuid(0x80000006, regs2);
+        mp_msg(MSGT_CPUDETECT,MSGL_V,"extended cache-info: %d\n",regs2[2]&0x7FFFFFFF);
+        caps->cl_size  = regs2[2] & 0xFF;
+    }
+    mp_msg(MSGT_CPUDETECT,MSGL_V,"Detected cache-line size is %u bytes\n",caps->cl_size);
+
+    mp_msg(MSGT_CPUDETECT,MSGL_INFO,"cpudetect: MMX=%d MMX2=%d SSE=%d SSE2=%d 3DNow=%d 3DNowExt=%d\n",
+           gCpuCaps.hasMMX,
+           gCpuCaps.hasMMX2,
+           gCpuCaps.hasSSE,
+           gCpuCaps.hasSSE2,
+           gCpuCaps.has3DNow,
+           gCpuCaps.has3DNowExt);
+
+        /* FIXME: Does SSE2 need more OS support, too? */
+        if (caps->hasSSE)
+            check_os_katmai_support();
+        if (!caps->hasSSE)
+            caps->hasSSE2 = 0;
+//          caps->has3DNow=1;
+//          caps->hasMMX2 = 0;
+//          caps->hasMMX = 0;
+
+#if !CONFIG_RUNTIME_CPUDETECT
+#if !HAVE_MMX
+        if(caps->hasMMX) mp_msg(MSGT_CPUDETECT,MSGL_WARN,"MMX supported but disabled\n");
+        caps->hasMMX=0;
+#endif
+#if !HAVE_MMX2
+        if(caps->hasMMX2) mp_msg(MSGT_CPUDETECT,MSGL_WARN,"MMX2 supported but disabled\n");
+        caps->hasMMX2=0;
+#endif
+#if !HAVE_SSE
+        if(caps->hasSSE) mp_msg(MSGT_CPUDETECT,MSGL_WARN,"SSE supported but disabled\n");
+        caps->hasSSE=0;
+#endif
+#if !HAVE_SSE2
+        if(caps->hasSSE2) mp_msg(MSGT_CPUDETECT,MSGL_WARN,"SSE2 supported but disabled\n");
+        caps->hasSSE2=0;
+#endif
+#if !HAVE_AMD3DNOW
+        if(caps->has3DNow) mp_msg(MSGT_CPUDETECT,MSGL_WARN,"3DNow supported but disabled\n");
+        caps->has3DNow=0;
+#endif
+#if !HAVE_AMD3DNOWEXT
+        if(caps->has3DNowExt) mp_msg(MSGT_CPUDETECT,MSGL_WARN,"3DNowExt supported but disabled\n");
+        caps->has3DNowExt=0;
+#endif
+#endif  // CONFIG_RUNTIME_CPUDETECT
+}
+
+char *GetCpuFriendlyName(unsigned int regs[], unsigned int regs2[]){
+    char vendor[13];
+    char *retname;
+    int i;
+
+    if (NULL==(retname=malloc(256))) {
+        mp_msg(MSGT_CPUDETECT,MSGL_FATAL,"Error: GetCpuFriendlyName() not enough memory\n");
+        exit(1);
+    }
+    retname[0] = '\0';
+
+    sprintf(vendor,"%.4s%.4s%.4s",(char*)(regs+1),(char*)(regs+3),(char*)(regs+2));
+
+    do_cpuid(0x80000000,regs);
+    if (regs[0] >= 0x80000004)
+    {
+        // CPU has built-in namestring
+        for (i = 0x80000002; i <= 0x80000004; i++)
+        {
+            do_cpuid(i, regs);
+            strncat(retname, (char*)regs, 16);
+        }
+    }
+    return retname;
+}
+
 #else /* ARCH_X86 */
 
 #ifdef __APPLE__

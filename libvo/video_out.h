@@ -36,6 +36,7 @@
 #define VO_EVENT_RESIZE 2
 #define VO_EVENT_KEYPRESS 4
 #define VO_EVENT_REINIT 8
+#define VO_EVENT_MOVE 16
 
 /* Obsolete: VOCTRL_QUERY_VAA 1 */
 /* does the device support the required format */
@@ -120,6 +121,7 @@ typedef struct {
 #define VOFLAG_SWSCALE		0x04
 #define VOFLAG_FLIPPING		0x08
 #define VOFLAG_HIDDEN		0x10  //< Use to create a hidden window
+#define VOFLAG_STEREO		0x20  //< Use to create a stereo-capable window
 #define VOFLAG_XOVERLAY_SUB_VO  0x10000
 
 typedef struct vo_info_s
@@ -320,9 +322,6 @@ extern float vo_fps;
 extern char *vo_subdevice;
 
 extern int vo_colorkey;
-
-extern char *vo_winname;
-extern char *vo_wintitle;
 
 extern int64_t WinID;
 

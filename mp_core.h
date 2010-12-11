@@ -122,9 +122,13 @@ typedef struct MPContext {
     mixer_t mixer;
     struct vo *video_out;
 
-    // Show a video frame as quickly as possible without trying to adjust
-    // for AV sync. Used when starting a file or after seeking.
-    bool update_video_immediately;
+    /* We're starting playback from scratch or after a seek. Show first
+     * video frame immediately and reinitialize sync. */
+    bool restart_playback;
+    /* After playback restart (above) or audio stream change, adjust audio
+     * stream by cutting samples or adding silence at the beginning to make
+     * audio playback position match video position. */
+    bool syncing_audio;
     // AV sync: the next frame should be shown when the audio out has this
     // much (in seconds) buffered data left. Increased when more data is
     // written to the ao, decreased when moving to the next frame.
@@ -169,7 +173,7 @@ typedef struct MPContext {
     int global_sub_pos; // this encompasses all subtitle sources
     int set_of_sub_pos;
     int set_of_sub_size;
-    int global_sub_indices[SUB_SOURCES];
+    int sub_counts[SUB_SOURCES];
     // set_of_ass_tracks[i] contains subtitles from set_of_subtitles[i]
     // parsed by libass or NULL if format unsupported
     struct ass_track *set_of_ass_tracks[MAX_SUBTITLE_FILES];
@@ -217,6 +221,9 @@ void unpause_player(struct MPContext *mpctx);
 void add_step_frame(struct MPContext *mpctx);
 int seek_chapter(struct MPContext *mpctx, int chapter, double *seek_pts,
                  char **chapter_name);
+double get_time_length(struct MPContext *mpctx);
+double get_current_time(struct MPContext *mpctx);
+int get_percent_pos(struct MPContext *mpctx);
 int get_current_chapter(struct MPContext *mpctx);
 char *chapter_display_name(struct MPContext *mpctx, int chapter);
 

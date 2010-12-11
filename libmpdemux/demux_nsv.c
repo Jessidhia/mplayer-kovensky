@@ -95,7 +95,7 @@ static int demux_nsv_fill_buffer ( demuxer_t *demuxer, demux_stream_t *ds )
     }
 
     if (sh_video)
-    sh_video->pts = priv->v_pts =demuxer->video->pts=  priv->video_pack_no *
+        priv->v_pts =demuxer->video->pts=  priv->video_pack_no *
          (float)sh_video->frametime;
     else
         priv->v_pts = priv->video_pack_no;
@@ -225,8 +225,8 @@ static demuxer_t* demux_open_nsv ( demuxer_t* demuxer )
             // new video stream! parse header
             sh_video->disp_w=hdr[12]|(hdr[13]<<8);
             sh_video->disp_h=hdr[14]|(hdr[15]<<8);
-            sh_video->bih=calloc(1,sizeof(BITMAPINFOHEADER));
-            sh_video->bih->biSize=sizeof(BITMAPINFOHEADER);
+            sh_video->bih=calloc(1,sizeof(*sh_video->bih));
+            sh_video->bih->biSize=sizeof(*sh_video->bih);
             sh_video->bih->biPlanes=1;
             sh_video->bih->biBitCount=24;
             sh_video->bih->biWidth=hdr[12]|(hdr[13]<<8);
@@ -322,8 +322,6 @@ static int nsv_check_file ( demuxer_t* demuxer )
 static void demux_close_nsv(demuxer_t* demuxer) {
     nsv_priv_t* priv = demuxer->priv;
 
-    if(!priv)
-        return;
     free(priv);
 
 }

@@ -35,7 +35,7 @@ const tvi_info_t tvi_info_dummy = {
 };
 
 /* private data's */
-typedef struct {
+typedef struct priv {
     int width;
     int height;
 } priv_t;
@@ -45,7 +45,7 @@ typedef struct {
 /* handler creator - entry point ! */
 static tvi_handle_t *tvi_init_dummy(tv_param_t* tv_param)
 {
-    return new_handle();
+    return tv_new_handle(sizeof(priv_t), &functions);
 }
 
 /* initialisation */

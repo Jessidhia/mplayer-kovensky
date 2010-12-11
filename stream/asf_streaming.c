@@ -401,9 +401,9 @@ static int asf_streaming_parse_header(int fd, streaming_ctrl_t* streaming_ctrl) 
 
 len_err_out:
   mp_tmsg(MSGT_NETWORK, MSGL_FATAL, "Invalid length in ASF header!\n");
-  if (buffer) free(buffer);
-  if (v_rates) free(v_rates);
-  if (a_rates) free(a_rates);
+  free(buffer);
+  free(v_rates);
+  free(a_rates);
   return -1;
 }
 
@@ -672,7 +672,7 @@ static int asf_http_parse_response(asf_http_streaming_ctrl_t *asf_http_ctrl, HTT
 				  len = (unsigned int)(end-pragma);
 				}
 				if(len > sizeof(features) - 1) {
-				  mp_tmsg(MSGT_NETWORK,MSGL_WARN,"ASF HTTP PARSE WARNING : Pragma %s cut from %d bytes to %d\n",pragma,len,sizeof(features) - 1);
+				  mp_tmsg(MSGT_NETWORK,MSGL_WARN,"ASF HTTP PARSE WARNING : Pragma %s cut from %zd bytes to %d\n",pragma,len,sizeof(features) - 1);
 				  len = sizeof(features) - 1;
 				}
 				strncpy( features, pragma, len );
@@ -727,7 +727,7 @@ static int asf_http_streaming_start( stream_t *stream, int *demuxer_type ) {
 		http_hdr = asf_http_request( stream->streaming_ctrl );
 		mp_msg(MSGT_NETWORK,MSGL_DBG2,"Request [%s]\n", http_hdr->buffer );
 		for(i=0; i < (int)http_hdr->buffer_size ; ) {
-			int r = send( fd, http_hdr->buffer+i, http_hdr->buffer_size-i, 0 );
+			int r = send( fd, http_hdr->buffer+i, http_hdr->buffer_size-i, DEFAULT_SEND_FLAGS );
 			if(r <0) {
 				mp_tmsg(MSGT_NETWORK,MSGL_ERR,"socket write error: %s\n",strerror(errno));
 				goto err_out;

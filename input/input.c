@@ -183,6 +183,7 @@ static const mp_cmd_t mp_cmds[] = {
   { MP_CMD_LOADFILE, "loadfile", 1, { {MP_CMD_ARG_STRING, {0}}, {MP_CMD_ARG_INT,{0}}, {-1,{0}} } },
   { MP_CMD_LOADLIST, "loadlist", 1, { {MP_CMD_ARG_STRING, {0}}, {MP_CMD_ARG_INT,{0}}, {-1,{0}} } },
   { MP_CMD_RUN, "run", 1, { {MP_CMD_ARG_STRING,{0}}, {-1,{0}} } },
+  { MP_CMD_CAPTURING, "capturing", 0, { {-1,{0}} } },
   { MP_CMD_VF_CHANGE_RECTANGLE, "change_rectangle", 2, { {MP_CMD_ARG_INT,{0}}, {MP_CMD_ARG_INT,{0}}, {-1,{0}}}},
   { MP_CMD_AF_EQ_SET, "af_eq_set_bands", 1, { {MP_CMD_ARG_STRING, {0}}, {-1,{0}}}}, //turbos
 #ifdef CONFIG_TV_TELETEXT
@@ -218,6 +219,7 @@ static const mp_cmd_t mp_cmds[] = {
   { MP_CMD_AF_ADD, "af_add", 1,  { {MP_CMD_ARG_STRING, {0}}, {-1,{0}} } },
   { MP_CMD_AF_DEL, "af_del", 1,  { {MP_CMD_ARG_STRING, {0}}, {-1,{0}} } },
   { MP_CMD_AF_CLR, "af_clr", 0, { {-1,{0}} } },
+  { MP_CMD_AF_CMDLINE, "af_cmdline", 2, { {MP_CMD_ARG_STRING, {0}}, {MP_CMD_ARG_STRING, {0}}, {-1,{0}} } },
 
   { 0, NULL, 0, {} }
 };
@@ -506,6 +508,7 @@ static const mp_cmd_bind_t def_cmd_binds[] = {
 #endif
   { { 'T', 0 }, "vo_ontop" },
   { { 'f', 0 }, "vo_fullscreen" },
+  { { 'C', 0 }, "step_property_osd capturing" },
   { { 's', 0 }, "screenshot 0" },
   { { 'S', 0 }, "screenshot 1" },
   { { 'w', 0 }, "panscan -0.1" },
@@ -634,21 +637,16 @@ static const m_option_t input_conf[] = {
     OPT_STRING("js-dev", input.js_dev, CONF_GLOBAL),
     OPT_STRING("ar-dev", input.ar_dev, CONF_GLOBAL),
     OPT_STRING("file", input.in_file, CONF_GLOBAL),
-    OPT_FLAG_ON("default-bindings", input.default_bindings, CONF_GLOBAL),
-    OPT_FLAG_OFF("nodefault-bindings", input.default_bindings, CONF_GLOBAL),
+    OPT_MAKE_FLAGS("default-bindings", input.default_bindings, CONF_GLOBAL),
   { NULL, NULL, 0, 0, 0, 0, NULL}
 };
 
 static const m_option_t mp_input_opts[] = {
   { "input", &input_conf, CONF_TYPE_SUBCONFIG, 0, 0, 0, NULL},
-    OPT_FLAG_OFF("nojoystick", input.use_joystick,  CONF_GLOBAL),
-    OPT_FLAG_ON("joystick", input.use_joystick, CONF_GLOBAL),
-    OPT_FLAG_OFF("nolirc", input.use_lirc, CONF_GLOBAL),
-    OPT_FLAG_ON("lirc", input.use_lirc, CONF_GLOBAL),
-    OPT_FLAG_OFF("nolircc", input.use_lircc, CONF_GLOBAL),
-    OPT_FLAG_ON("lircc", input.use_lircc, CONF_GLOBAL),
-    OPT_FLAG_OFF("noar", input.use_ar, CONF_GLOBAL),
-    OPT_FLAG_ON("ar", input.use_ar, CONF_GLOBAL),
+    OPT_MAKE_FLAGS("joystick", input.use_joystick, CONF_GLOBAL),
+    OPT_MAKE_FLAGS("lirc", input.use_lirc, CONF_GLOBAL),
+    OPT_MAKE_FLAGS("lircc", input.use_lircc, CONF_GLOBAL),
+    OPT_MAKE_FLAGS("ar", input.use_ar, CONF_GLOBAL),
   { NULL, NULL, 0, 0, 0, 0, NULL}
 };
 
@@ -693,8 +691,7 @@ void mp_input_rm_cmd_fd(struct input_ctx *ictx, int fd)
     return;
   if(cmd_fds[i].close_func)
     cmd_fds[i].close_func(cmd_fds[i].fd);
-  if(cmd_fds[i].buffer)
-    talloc_free(cmd_fds[i].buffer);
+  talloc_free(cmd_fds[i].buffer);
 
   if (i + 1 < ictx->num_cmd_fd)
       memmove(&cmd_fds[i], &cmd_fds[i+1],
@@ -1157,10 +1154,8 @@ static mp_cmd_t* interpret_key(struct input_ctx *ictx, int code)
     ictx->num_key_down--;
     ictx->last_key_down = 0;
     ictx->ar_state = -1;
-    if (ictx->ar_cmd) {
-      mp_cmd_free(ictx->ar_cmd);
-      ictx->ar_cmd = NULL;
-    }
+    mp_cmd_free(ictx->ar_cmd);
+    ictx->ar_cmd = NULL;
     return ret;
 }
 
@@ -1507,8 +1502,7 @@ static void bind_keys(struct input_ctx *ictx,
     memset(&bind_section->cmd_binds[i],0,2*sizeof(mp_cmd_bind_t));
     bind = &bind_section->cmd_binds[i];
   }
-  if(bind->cmd)
-      talloc_free(bind->cmd);
+  talloc_free(bind->cmd);
   bind->cmd = talloc_strdup(bind_section->cmd_binds, cmd);
   memcpy(bind->input,keys,(MP_MAX_KEY_DOWN+1)*sizeof(int));
 }
@@ -1678,8 +1672,7 @@ void mp_input_set_section(struct input_ctx *ictx, char *name)
 
     ictx->cmd_binds = NULL;
     ictx->cmd_binds_default = NULL;
-    if (ictx->section)
-        talloc_free(ictx->section);
+    talloc_free(ictx->section);
     if (name)
         ictx->section = talloc_strdup(ictx, name);
     else
@@ -1783,18 +1776,19 @@ struct input_ctx *mp_input_init(struct input_conf *input_conf)
 
   if (input_conf->in_file) {
     struct stat st;
-    if (stat(input_conf->in_file, &st))
-      mp_tmsg(MSGT_INPUT, MSGL_ERR, "Can't stat %s: %s\n", input_conf->in_file, strerror(errno));
-    else {
-      int in_file_fd = open(input_conf->in_file,
-                            S_ISFIFO(st.st_mode) ? O_RDWR : O_RDONLY);
-      if(in_file_fd >= 0)
-          mp_input_add_cmd_fd(ictx, in_file_fd, 1, NULL,
-                              (mp_close_func_t)close);
-      else
-	mp_tmsg(MSGT_INPUT, MSGL_ERR, "Can't open %s: %s\n",
-               input_conf->in_file, strerror(errno));
-    }
+    int mode = O_RDONLY;
+    // Use RDWR for FIFOs to ensure they stay open over multiple accesses.
+    // Note that on Windows stat may fail for named pipes, but due to how the
+    // API works, using RDONLY should be ok.
+    if (stat(input_conf->in_file, &st) == 0 && S_ISFIFO(st.st_mode))
+      mode = O_RDWR;
+    int in_file_fd = open(input_conf->in_file, mode);
+    if(in_file_fd >= 0)
+      mp_input_add_cmd_fd(ictx, in_file_fd, 1, NULL,
+                          (mp_close_func_t)close);
+    else
+      mp_tmsg(MSGT_INPUT, MSGL_ERR, "Can't open %s: %s\n",
+              input_conf->in_file, strerror(errno));
   }
   return ictx;
 }

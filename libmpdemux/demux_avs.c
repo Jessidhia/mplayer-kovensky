@@ -32,6 +32,7 @@
 #include "stheader.h"
 #include "libvo/fastmemcpy.h"
 
+#include "loader/wine/winbase.h"
 #include "loader/wine/windef.h"
 
 #ifdef WIN32_LOADER
@@ -41,10 +42,6 @@
 #include "demux_avs.h"
 
 #define MAX_AVS_SIZE    16 * 1024 /* 16k should be enough */
-
-HMODULE WINAPI LoadLibraryA(LPCSTR);
-FARPROC WINAPI GetProcAddress(HMODULE,LPCSTR);
-int     WINAPI FreeLibrary(HMODULE);
 
 typedef WINAPI AVS_ScriptEnvironment* (*imp_avs_create_script_environment)(int version);
 typedef WINAPI AVS_Value (*imp_avs_invoke)(AVS_ScriptEnvironment *, const char * name, AVS_Value args, const char** arg_names);
@@ -302,7 +299,7 @@ static demuxer_t* demux_open_avs(demuxer_t* demuxer)
         sh_video->fps = (double) AVS->video_info->fps_numerator / (double) AVS->video_info->fps_denominator;
         sh_video->frametime = 1.0 / sh_video->fps;
 
-        sh_video->bih = malloc(sizeof(BITMAPINFOHEADER) + (256 * 4));
+        sh_video->bih = malloc(sizeof(*sh_video->bih) + (256 * 4));
         sh_video->bih->biCompression = sh_video->format;
         sh_video->bih->biBitCount = avs_bits_per_pixel(AVS->video_info);
         //sh_video->bih->biPlanes = 2;
@@ -335,7 +332,7 @@ static demuxer_t* demux_open_avs(demuxer_t* demuxer)
         demuxer->audio->sh = sh_audio;
         sh_audio->ds = demuxer->audio;
 
-        sh_audio->wf = malloc(sizeof(WAVEFORMATEX));
+        sh_audio->wf = malloc(sizeof(*sh_audio->wf));
         sh_audio->wf->wFormatTag = sh_audio->format =
             (AVS->video_info->sample_type == AVS_SAMPLE_FLOAT) ? 0x3 : 0x1;
         sh_audio->wf->nChannels = sh_audio->channels = AVS->video_info->nchannels;
