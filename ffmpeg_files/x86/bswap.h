@@ -28,14 +28,14 @@
 #include "config.h"
 #include "libavutil/common.h"
 
-#define bswap_16 bswap_16
+#define bswap_16 ff_bswap_16
 static av_always_inline av_const uint16_t bswap_16(uint16_t x)
 {
     __asm__("rorw $8, %0" : "+r"(x));
     return x;
 }
 
-#define bswap_32 bswap_32
+#define bswap_32 ff_bswap_32
 static av_always_inline av_const uint32_t bswap_32(uint32_t x)
 {
 #if HAVE_BSWAP
@@ -50,7 +50,7 @@ static av_always_inline av_const uint32_t bswap_32(uint32_t x)
 }
 
 #if ARCH_X86_64
-#define bswap_64 bswap_64
+#define bswap_64 ff_bswap_64
 static inline uint64_t av_const bswap_64(uint64_t x)
 {
     __asm__("bswap  %0": "=r" (x) : "0" (x));
