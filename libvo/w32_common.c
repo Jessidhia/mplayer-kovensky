@@ -466,7 +466,6 @@ static char *get_display_name(void) {
  * \return 1 = Success, 0 = Failure
  */
 int vo_w32_init(void) {
-    HICON mplayerIcon = 0;
     char exedir[MAX_PATH];
     HINSTANCE user32;
     HICON mplayerIcon = NULL;
