@@ -23,6 +23,7 @@
 // #include <unistd.h>
 #include <limits.h>
 #include <stdbool.h>
+#include <string.h>
 
 #include "config.h"
 #include "options.h"
@@ -73,6 +74,11 @@ typedef struct lavf_priv {
     int vstreams[MAX_V_STREAMS];
     int sstreams[MAX_S_STREAMS];
     int cur_program;
+    int nb_streams_last;
+    bool internet_radio_hack;
+    bool use_dts;
+    bool seek_by_bytes;
+    int bitrate;
 }lavf_priv_t;
 
 static int mp_read(void *opaque, uint8_t *buf, int size) {
@@ -130,9 +136,9 @@ static int64_t mp_read_seek(void *opaque, int stream_idx, int64_t ts, int flags)
 }
 
 static void list_formats(void) {
-    AVInputFormat *fmt;
     mp_msg(MSGT_DEMUX, MSGL_INFO, "Available lavf input formats:\n");
-    for (fmt = first_iformat; fmt; fmt = fmt->next)
+    AVInputFormat *fmt = NULL;
+    while (fmt = av_iformat_next(fmt))
         mp_msg(MSGT_DEMUX, MSGL_INFO, "%15s : %s\n", fmt->name, fmt->long_name);
 }
 
@@ -178,6 +184,10 @@ static int lavf_check_file(demuxer_t *demuxer){
         }
         probe_data_size += read_size;
         avpd.filename= demuxer->stream->url;
+        if (!avpd.filename) {
+            mp_msg(MSGT_DEMUX, MSGL_WARN, "Stream url is not set!\n");
+            avpd.filename = "";
+        }
         if (!strncmp(avpd.filename, "ffmpeg://", 9))
             avpd.filename += 9;
         avpd.buf_size= probe_data_size;
@@ -197,37 +207,52 @@ static int lavf_check_file(demuxer_t *demuxer){
     }else
         mp_msg(MSGT_HEADER,MSGL_V,"LAVF_check: %s\n", priv->avif->long_name);
 
+    demuxer->filetype = priv->avif->long_name;
+    if (!demuxer->filetype)
+        demuxer->filetype = priv->avif->name;
+
     return DEMUXER_TYPE_LAVF;
 }
 
-static const char * const preferred_list[] = {
-    "dxa",
-    "flv",
-    "gxf",
-    "nut",
-    "nuv",
-    "mov,mp4,m4a,3gp,3g2,mj2",
-    "mpc",
-    "mpc8",
-    "mp3",
-    "mxf",
-    "ogg",
-    "swf",
-    "vqf",
-    "w64",
-    "wv",
+static bool matches_avinputformat_name(struct lavf_priv *priv,
+                                       const char *name)
+{
+    const char *avifname = priv->avif->name;
+    while (1) {
+        const char *next = strchr(avifname, ',');
+        if (!next)
+            return !strcmp(avifname, name);
+        int len = next - avifname;
+        if (len == strlen(name) && !memcmp(avifname, name, len))
+            return true;
+        avifname = next + 1;
+    }
+}
+
+/* formats for which an internal demuxer is preferred */
+static const char * const preferred_internal[] = {
+    /* lavf Matroska demuxer doesn't support ordered chapters and fails
+     * for more files */
+    "matroska",
+#if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(52, 99, 0)
+    /* Seeking doesn't work with lavf FLAC demuxer in FFmpeg versions
+     * without a FLAC parser. In principle this could use a runtime check to
+     * switch if a shared library is updated. */
+    "flac",
+#endif
+    /* lavf gives neither pts nor dts for some video frames in .rm */
+    "rm",
     NULL
 };
 
 static int lavf_check_preferred_file(demuxer_t *demuxer){
     if (lavf_check_file(demuxer)) {
-        const char * const *p = preferred_list;
+        const char * const *p;
         lavf_priv_t *priv = demuxer->priv;
-        while (*p) {
-            if (strcmp(*p, priv->avif->name) == 0)
-                return DEMUXER_TYPE_LAVF_PREFERRED;
-            p++;
-        }
+        for (p = preferred_internal; *p; p++)
+            if (matches_avinputformat_name(priv, *p))
+                return 0;
+        return DEMUXER_TYPE_LAVF_PREFERRED;
     }
     return 0;
 }
@@ -272,7 +297,7 @@ static void handle_stream(demuxer_t *demuxer, AVFormatContext *avfc, int i) {
                 break;
             stream_type = "audio";
             priv->astreams[priv->audio_streams] = i;
-            wf= calloc(sizeof(WAVEFORMATEX) + codec->extradata_size, 1);
+            wf= calloc(sizeof(*wf) + codec->extradata_size, 1);
             // mp4a tag is used for all mp4 files no matter what they actually contain
             if(codec->codec_tag == MKTAG('m', 'p', '4', 'a'))
                 codec->codec_tag= 0;
@@ -348,17 +373,19 @@ static void handle_stream(demuxer_t *demuxer, AVFormatContext *avfc, int i) {
             if(!sh_video) break;
             stream_type = "video";
             priv->vstreams[priv->video_streams] = i;
-            bih=calloc(sizeof(BITMAPINFOHEADER) + codec->extradata_size,1);
+            bih=calloc(sizeof(*bih) + codec->extradata_size,1);
 
             if(codec->codec_id == CODEC_ID_RAWVIDEO) {
                 switch (codec->pix_fmt) {
                     case PIX_FMT_RGB24:
                         codec->codec_tag= MKTAG(24, 'B', 'G', 'R');
+                    case PIX_FMT_BGR24:
+                        codec->codec_tag= MKTAG(24, 'R', 'G', 'B');
                 }
             }
             if(!codec->codec_tag)
                 codec->codec_tag= mp_av_codec_get_tag(mp_bmp_taglists, codec->codec_id);
-            bih->biSize= sizeof(BITMAPINFOHEADER) + codec->extradata_size;
+            bih->biSize= sizeof(*bih) + codec->extradata_size;
             bih->biWidth= codec->width;
             bih->biHeight= codec->height;
             bih->biBitCount= codec->bits_per_coded_sample;
@@ -422,8 +449,14 @@ static void handle_stream(demuxer_t *demuxer, AVFormatContext *avfc, int i) {
                 type = 'a';
             else if(codec->codec_id == CODEC_ID_DVD_SUBTITLE)
                 type = 'v';
+            else if(codec->codec_id == CODEC_ID_XSUB)
+                type = 'x';
+            else if(codec->codec_id == CODEC_ID_DVB_SUBTITLE)
+                type = 'b';
             else if(codec->codec_id == CODEC_ID_DVB_TELETEXT)
                 type = 'd';
+            else if(codec->codec_id == CODEC_ID_HDMV_PGS_SUBTITLE)
+                type = 'p';
             else
                 break;
             sh_sub = new_sh_sub_sid(demuxer, i, priv->sub_streams);
@@ -460,7 +493,10 @@ static void handle_stream(demuxer_t *demuxer, AVFormatContext *avfc, int i) {
     }
     if (stream_type) {
         AVCodec *avc = avcodec_find_decoder(codec->codec_id);
-        mp_msg(MSGT_DEMUX, MSGL_INFO, "[lavf] stream %d: %s (%s), -%cid %d", i, stream_type, avc ? avc->name : "unknown", *stream_type, stream_id);
+        const char *codec_name = avc ? avc->name : "unknown";
+        if (!avc && *stream_type == 's' && demuxer->s_streams[stream_id])
+            codec_name = sh_sub_type2str(((sh_sub_t *)demuxer->s_streams[stream_id])->type);
+        mp_msg(MSGT_DEMUX, MSGL_INFO, "[lavf] stream %d: %s (%s), -%cid %d", i, stream_type, codec_name, *stream_type, stream_id);
         if (lang && lang->value && *stream_type != 'v')
             mp_msg(MSGT_DEMUX, MSGL_INFO, ", -%clang %s", *stream_type, lang->value);
         if (title && title->value)
@@ -488,8 +524,15 @@ static demuxer_t* demux_open_lavf(demuxer_t *demuxer){
 
     if (lavfdopts->cryptokey)
         parse_cryptokey(avfc, lavfdopts->cryptokey);
-    if (opts->user_correct_pts != 0)
-        avfc->flags |= AVFMT_FLAG_GENPTS;
+    if (matches_avinputformat_name(priv, "avi")) {
+        /* for avi libavformat returns the avi timestamps in .dts,
+         * some made-up stuff that's not really pts in .pts */
+        priv->use_dts = true;
+        demuxer->timestamp_type = TIMESTAMP_TYPE_SORT;
+    } else {
+        if (opts->user_correct_pts != 0)
+            avfc->flags |= AVFMT_FLAG_GENPTS;
+    }
     if (index_mode == 0)
         avfc->flags |= AVFMT_FLAG_IGNIDX;
 
@@ -553,12 +596,15 @@ static demuxer_t* demux_open_lavf(demuxer_t *demuxer){
 
     for(i=0; i<avfc->nb_streams; i++)
         handle_stream(demuxer, avfc, i);
+    priv->nb_streams_last = avfc->nb_streams;
+
     if(avfc->nb_programs) {
         int p;
         for (p = 0; p < avfc->nb_programs; p++) {
             AVProgram *program = avfc->programs[p];
             t = av_metadata_get(program->metadata, "title", NULL, 0);
             mp_msg(MSGT_HEADER,MSGL_INFO,"LAVF: Program %d %s\n", program->id, t ? t->value : "");
+            mp_msg(MSGT_IDENTIFY, MSGL_V, "PROGRAM_ID=%d\n", program->id);
         }
     }
 
@@ -574,9 +620,76 @@ static demuxer_t* demux_open_lavf(demuxer_t *demuxer){
         demuxer->video->id=-2; // audio-only
     } //else if (best_video > 0 && demuxer->video->id == -1) demuxer->video->id = best_video;
 
-    demuxer->accurate_seek = true;
+    /* libavformat sets bitrate for mpeg based on pts at start and end
+     * of file, which fails for files with pts resets. So calculate our
+     * own bitrate estimate. */
+    if (priv->avif->flags & AVFMT_TS_DISCONT) {
+        for (int i = 0; i < avfc->nb_streams; i++)
+            priv->bitrate += avfc->streams[i]->codec->bit_rate;
+        /* pts-based is more accurate if there are no resets; try to make
+         * a somewhat reasonable guess */
+        if (!avfc->duration || avfc->duration == AV_NOPTS_VALUE
+            || priv->bitrate && (avfc->bit_rate < priv->bitrate / 2
+                                 || avfc->bit_rate > priv->bitrate * 2))
+            priv->seek_by_bytes = true;
+        if (!priv->bitrate)
+            priv->bitrate = 1440000;
+    }
+    demuxer->accurate_seek = !priv->seek_by_bytes;
 
     return demuxer;
+}
+
+static void check_internet_radio_hack(struct demuxer *demuxer)
+{
+    struct lavf_priv *priv = demuxer->priv;
+    struct AVFormatContext *avfc = priv->avfc;
+
+    if (!matches_avinputformat_name(priv, "ogg"))
+        return;
+    if (priv->nb_streams_last == avfc->nb_streams)
+        return;
+    if (avfc->nb_streams - priv->nb_streams_last == 1
+        && priv->video_streams == 0 && priv->sub_streams == 0
+        && demuxer->a_streams[priv->audio_streams-1]->format == 0x566f // vorbis
+        && (priv->audio_streams == 2 || priv->internet_radio_hack)
+        && demuxer->a_streams[0]->format == 0x566f) {
+        // extradata match could be checked but would require parsing
+        // headers, as the comment section will vary
+        if (!priv->internet_radio_hack) {
+            mp_msg(MSGT_DEMUX, MSGL_V,
+                   "[lavf] enabling internet ogg radio hack\n");
+#if LIBAVFORMAT_VERSION_MAJOR < 53
+            mp_tmsg(MSGT_DEMUX, MSGL_WARN, "[lavf] This looks like an "
+                    "internet radio ogg stream with track changes.\n"
+                    "Playback will likely fail after %d track changes "
+                    "due to libavformat limitations.\n"
+                    "You may be able to work around that limitation by "
+                    "using -demuxer ogg.\n", MAX_STREAMS);
+#endif
+        }
+#if LIBAVFORMAT_VERSION_MAJOR < 53
+        if (avfc->nb_streams == MAX_STREAMS) {
+            mp_tmsg(MSGT_DEMUX, MSGL_WARN, "[lavf] This is the %dth "
+                    "track.\nPlayback will likely fail at the next change.\n"
+                    "You may be able to work around this limitation by "
+                    "using -demuxer ogg.\n", MAX_STREAMS);
+        }
+#endif
+        priv->internet_radio_hack = true;
+        // use new per-track metadata as global metadata
+        AVMetadataTag *t = NULL;
+        AVStream *stream = avfc->streams[avfc->nb_streams - 1];
+        while ((t = av_metadata_get(stream->metadata, "", t,
+                                   AV_METADATA_IGNORE_SUFFIX)))
+            demux_info_add(demuxer, t->key, t->value);
+    } else {
+        if (priv->internet_radio_hack)
+            mp_tmsg(MSGT_DEMUX, MSGL_WARN, "[lavf] Internet radio ogg hack "
+                    "was enabled, but stream characteristics changed.\n"
+                    "This may or may not work.\n");
+        priv->internet_radio_hack = false;
+    }
 }
 
 static int demux_lavf_fill_buffer(demuxer_t *demux, demux_stream_t *dsds){
@@ -592,9 +705,16 @@ static int demux_lavf_fill_buffer(demuxer_t *demux, demux_stream_t *dsds){
     if(av_read_frame(priv->avfc, &pkt) < 0)
         return 0;
 
+    // handle any new streams that might have been added
+    for (id = priv->nb_streams_last; id < priv->avfc->nb_streams; id++)
+        handle_stream(demux, priv->avfc, id);
+    check_internet_radio_hack(demux);
+
+    priv->nb_streams_last = priv->avfc->nb_streams;
+
     id= pkt.stream_index;
 
-    if(id==demux->audio->id){
+    if (id == demux->audio->id || priv->internet_radio_hack) {
         // audio
         ds=demux->audio;
         if(!ds->sh){
@@ -632,10 +752,14 @@ static int demux_lavf_fill_buffer(demuxer_t *demux, demux_stream_t *dsds){
         av_free_packet(&pkt);
     }
 
-    if(pkt.pts != AV_NOPTS_VALUE){
-        dp->pts=pkt.pts * av_q2d(priv->avfc->streams[id]->time_base);
+    int64_t ts = priv->use_dts ? pkt.dts : pkt.pts;
+    if(ts != AV_NOPTS_VALUE){
+        dp->pts = ts * av_q2d(priv->avfc->streams[id]->time_base);
         priv->last_pts= dp->pts * AV_TIME_BASE;
-        if(pkt.convergence_duration)
+        // always set endpts for subtitles, even if PKT_FLAG_KEY is not set,
+        // otherwise they will stay on screen to long if e.g. ASS is demuxed from mkv
+        if((ds == demux->sub || (pkt.flags & PKT_FLAG_KEY)) &&
+           pkt.convergence_duration > 0)
             dp->endpts = dp->pts + pkt.convergence_duration * av_q2d(priv->avfc->streams[id]->time_base);
     }
     dp->pos=demux->filepos;
@@ -649,6 +773,14 @@ static void demux_seek_lavf(demuxer_t *demuxer, float rel_seek_secs, float audio
     lavf_priv_t *priv = demuxer->priv;
     int avsflags = 0;
     mp_msg(MSGT_DEMUX,MSGL_DBG2,"demux_seek_lavf(%p, %f, %f, %d)\n", demuxer, rel_seek_secs, audio_delay, flags);
+
+    if (priv->seek_by_bytes) {
+        int64_t pos = demuxer->filepos;
+        rel_seek_secs *= priv->bitrate / 8;
+        pos += rel_seek_secs;
+        av_seek_frame(priv->avfc, -1, pos, AVSEEK_FLAG_BYTE);
+        return;
+    }
 
     if (flags & SEEK_ABSOLUTE) {
       priv->last_pts = 0;
@@ -679,14 +811,25 @@ static int demux_lavf_control(demuxer_t *demuxer, int cmd, void *arg)
     switch (cmd) {
         case DEMUXER_CTRL_CORRECT_PTS:
 	    return DEMUXER_CTRL_OK;
-        case DEMUXER_CTRL_GET_TIME_LENGTH:
+    case DEMUXER_CTRL_GET_TIME_LENGTH:
+        if (priv->seek_by_bytes) {
+            /* Our bitrate estimate may be better than would be used in
+             * otherwise similar fallback code at higher level */
+            if (demuxer->movi_end <= 0)
+                return DEMUXER_CTRL_DONTKNOW;
+            *(double *)arg = (demuxer->movi_end - demuxer->movi_start) * 8 /
+                priv->bitrate;
+            return DEMUXER_CTRL_GUESS;
+        }
 	    if (priv->avfc->duration == 0 || priv->avfc->duration == AV_NOPTS_VALUE)
 	        return DEMUXER_CTRL_DONTKNOW;
 
 	    *((double *)arg) = (double)priv->avfc->duration / AV_TIME_BASE;
 	    return DEMUXER_CTRL_OK;
 
-	case DEMUXER_CTRL_GET_PERCENT_POS:
+    case DEMUXER_CTRL_GET_PERCENT_POS:
+        if (priv->seek_by_bytes)
+            return DEMUXER_CTRL_DONTKNOW; // let it use the fallback code
 	    if (priv->avfc->duration == 0 || priv->avfc->duration == AV_NOPTS_VALUE)
 	        return DEMUXER_CTRL_DONTKNOW;
 
@@ -798,6 +941,18 @@ redo:
                         break;
                 }
             }
+            if (prog->aid >= 0 && prog->aid < MAX_A_STREAMS &&
+                demuxer->a_streams[prog->aid]) {
+                sh_audio_t *sh = demuxer->a_streams[prog->aid];
+                prog->aid = sh->aid;
+            } else
+                prog->aid = -2;
+            if (prog->vid >= 0 && prog->vid < MAX_V_STREAMS &&
+                demuxer->v_streams[prog->vid]) {
+                sh_video_t *sh = demuxer->v_streams[prog->vid];
+                prog->vid = sh->vid;
+            } else
+                prog->vid = -2;
             if(prog->progid == -1 && prog->vid == -2 && prog->aid == -2)
             {
                 p = (p + 1) % priv->avfc->nb_programs;

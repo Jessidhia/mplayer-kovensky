@@ -78,7 +78,7 @@ private:
 
 // A structure of RTP-specific state, kept so that we can cleanly
 // reclaim it:
-typedef struct RTPState {
+struct RTPState {
   char const* sdpDescription;
   RTSPClient* rtspClient;
   SIPClient* sipClient;
@@ -113,12 +113,14 @@ static char* openURL_sip(SIPClient* client, char const* url) {
 
 #ifdef CONFIG_LIBNEMESI
 extern int rtsp_transport_tcp;
+extern int rtsp_transport_http;
 #else
 int rtsp_transport_tcp = 0;
+int rtsp_transport_http = 0;
 #endif
 
 extern int rtsp_port;
-#ifdef CONFIG_LIBAVCODEC
+#ifdef CONFIG_FFMPEG
 extern AVCodecContext *avcctx;
 #endif
 
@@ -147,7 +149,11 @@ extern "C" demuxer_t* demux_open_rtp(demuxer_t* demuxer) {
       char const* url = demuxer->stream->streaming_ctrl->url->url;
       extern int verbose;
       if (strcmp(protocol, "rtsp") == 0) {
-	rtspClient = RTSPClient::createNew(*env, verbose, "MPlayer");
+	if (rtsp_transport_http == 1) {
+	  rtsp_transport_http = demuxer->stream->streaming_ctrl->url->port;
+	  rtsp_transport_tcp = 1;
+	}
+	rtspClient = RTSPClient::createNew(*env, verbose, "MPlayer", rtsp_transport_http);
 	if (rtspClient == NULL) {
 	  fprintf(stderr, "Failed to create RTSP client: %s\n",
 		  env->getResultMsg());
@@ -393,7 +399,7 @@ extern "C" void demux_close_rtp(demuxer_t* demuxer) {
   delete rtpState->videoBufferQueue;
   delete[] rtpState->sdpDescription;
   delete rtpState;
-#ifdef CONFIG_LIBAVCODEC
+#ifdef CONFIG_FFMPEG
   av_freep(&avcctx);
 #endif
 
@@ -531,7 +537,7 @@ static demux_packet_t* getBuffer(demuxer_t* demuxer, demux_stream_t* ds,
   if (dp == NULL) return NULL;
     }
 
-#ifdef CONFIG_LIBAVCODEC
+#ifdef CONFIG_FFMPEG
   extern AVCodecParserContext * h264parserctx;
   int consumed, poutbuf_size = 1;
   const uint8_t *poutbuf = NULL;
@@ -562,7 +568,7 @@ static demux_packet_t* getBuffer(demuxer_t* demuxer, demux_stream_t* ds,
   if (headersize == 1) // amr
     dp->buffer[0] =
         ((AMRAudioSource*)bufferQueue->readSource())->lastFrameHeader();
-#ifdef CONFIG_LIBAVCODEC
+#ifdef CONFIG_FFMPEG
     } else {
       bufferQueue->dp = dp = bufferQueue->nextpacket;
       bufferQueue->nextpacket = NULL;

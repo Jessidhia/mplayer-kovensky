@@ -57,7 +57,9 @@
 #include "libmpcodecs/img_format.h"
 #include "codec-cfg.h"
 
-#ifndef CODECS2HTML
+#ifdef CODECS2HTML
+#define CODEC_CFG_MIN 20100000
+#else
 #include "codecs.conf.h"
 #endif
 
@@ -77,6 +79,7 @@
 #define TYPE_VIDEO      0
 #define TYPE_AUDIO      1
 
+static int codecs_conf_release;
 char * codecs_file = NULL;
 
 static int add_to_fourcc(char *s, char *alias, unsigned int *fourcc,
@@ -390,14 +393,14 @@ static int validate_codec(codecs_t *c, int type)
     }
 
 #if 0
-#warning codec->driver == 4;... <- this should not be put in here...
-#warning Where are they defined ????????????
+//FIXME: codec->driver == 4;... <- this should not be put in here...
+//FIXME: Where are they defined ????????????
     if (!c->dll && (c->driver == 4 ||
                     (c->driver == 2 && type == TYPE_VIDEO))) {
         mp_tmsg(MSGT_CODECCFG,MSGL_ERR,"\ncodec(%s) needs a 'dll'!\n", c->name);
         return 0;
     }
-#warning Can guid.f1 be 0? How does one know that it was not given?
+// FIXME: Can guid.f1 be 0? How does one know that it was not given?
 //      if (!(codec->flags & CODECS_FLAG_AUDIO) && codec->driver == 4)
 
     if (type == TYPE_VIDEO)
@@ -580,6 +583,7 @@ int parse_codec_cfg(const char *cfgfile)
         tmp = atoi(token[0]);
         if (tmp < CODEC_CFG_MIN)
             goto err_out_release_num;
+        codecs_conf_release = tmp;
         while ((tmp = get_token(1, 1)) == RET_EOL)
             /* NOTHING */;
         if (tmp == RET_EOF)
@@ -778,19 +782,13 @@ static void codecs_free(codecs_t* codecs,int count) {
     int i;
     for ( i = 0; i < count; i++)
         if ( codecs[i].name ) {
-            if( codecs[i].name )
-                free(codecs[i].name);
-            if( codecs[i].info )
-                free(codecs[i].info);
-            if( codecs[i].comment )
-                free(codecs[i].comment);
-            if( codecs[i].dll )
-                free(codecs[i].dll);
-            if( codecs[i].drv )
-                free(codecs[i].drv);
+            free(codecs[i].name);
+            free(codecs[i].info);
+            free(codecs[i].comment);
+            free(codecs[i].dll);
+            free(codecs[i].drv);
         }
-    if (codecs)
-        free(codecs);
+    free(codecs);
 }
 
 void codecs_uninit_free(void) {
@@ -917,7 +915,7 @@ void list_codecs(int audioflag){
 
 
 #ifdef CODECS2HTML
-void wrapline(FILE *f2,char *s){
+static void wrapline(FILE *f2,char *s){
     int c;
     if(!s){
         fprintf(f2,"-");
@@ -928,7 +926,7 @@ void wrapline(FILE *f2,char *s){
     }
 }
 
-void parsehtml(FILE *f1,FILE *f2,codecs_t *codec,int section,int dshow){
+static void parsehtml(FILE *f1,FILE *f2,codecs_t *codec){
     int c,d;
     while((c=fgetc(f1))>=0){
         if(c!='%'){
@@ -1034,6 +1032,8 @@ int main(int argc, char* argv[])
      */
     if (!(nr_codecs = parse_codec_cfg((argc>1)?argv[1]:"etc/codecs.conf")))
         exit(1);
+    if (codecs_conf_release < CODEC_CFG_MIN)
+        exit(1);
 
     if (argc > 1) {
         int i, j;
@@ -1052,6 +1052,7 @@ int main(int argc, char* argv[])
         printf("/* GENERATED FROM %s, DO NOT EDIT! */\n\n",argv[1]);
         printf("#include <stddef.h>\n");
         printf("#include \"codec-cfg.h\"\n\n");
+        printf("#define CODEC_CFG_MIN %i\n\n", codecs_conf_release);
 
         for (i=0; i<2; i++) {
             printf("const codecs_t %s[] = {\n", nm[i]);
@@ -1131,30 +1132,30 @@ int main(int argc, char* argv[])
                 case 5:
                     if(cl[i].status==CODECS_STATUS_WORKING)
 //                if(!(!strcmp(cl[i].drv,"vfw") || !strcmp(cl[i].drv,"dshow") || !strcmp(cl[i].drv,"vfwex") || !strcmp(cl[i].drv,"acm")))
-                        parsehtml(f1,f2,&cl[i],section,dshow);
+                        parsehtml(f1,f2,&cl[i]);
                     break;
 #if 0
                 case 1:
                 case 6:
                     if(cl[i].status==CODECS_STATUS_WORKING)
                         if((!strcmp(cl[i].drv,"vfw") || !strcmp(cl[i].drv,"dshow") || !strcmp(cl[i].drv,"vfwex") || !strcmp(cl[i].drv,"acm")))
-                            parsehtml(f1,f2,&cl[i],section,dshow);
+                            parsehtml(f1,f2,&cl[i]);
                     break;
 #endif
                 case 2:
                 case 7:
                     if(cl[i].status==CODECS_STATUS_PROBLEMS)
-                        parsehtml(f1,f2,&cl[i],section,dshow);
+                        parsehtml(f1,f2,&cl[i]);
                     break;
                 case 3:
                 case 8:
                     if(cl[i].status==CODECS_STATUS_NOT_WORKING)
-                        parsehtml(f1,f2,&cl[i],section,dshow);
+                        parsehtml(f1,f2,&cl[i]);
                     break;
                 case 4:
                 case 9:
                     if(cl[i].status==CODECS_STATUS_UNTESTED)
-                        parsehtml(f1,f2,&cl[i],section,dshow);
+                        parsehtml(f1,f2,&cl[i]);
                     break;
                 default:
                     printf("Warning! unimplemented section: %d\n",section);
@@ -1162,7 +1163,6 @@ int main(int argc, char* argv[])
             }
             fseek(f1,pos,SEEK_SET);
             skiphtml(f1);
-//void parsehtml(FILE *f1,FILE *f2,codecs_t *codec,int section,int dshow){
 
             continue;
         }

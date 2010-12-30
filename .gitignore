@@ -6,14 +6,14 @@
 .depend
 .svn
 
-/ffmpeg
 /config.h
 /config.mak
-/configure.log
-/mencoder
+/config.log
 /mplayer
 /version.h
 /codecs.conf.h
 /codec-cfg
 /codec-cfg-test
 /codecs2html
+/tags
+/TAGS

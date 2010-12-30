@@ -51,7 +51,6 @@ extern const vf_info_t vf_info_scale;
 extern const vf_info_t vf_info_format;
 extern const vf_info_t vf_info_noformat;
 extern const vf_info_t vf_info_flip;
-extern const vf_info_t vf_info_rgb2bgr;
 extern const vf_info_t vf_info_rotate;
 extern const vf_info_t vf_info_mirror;
 extern const vf_info_t vf_info_palette;
@@ -119,6 +118,7 @@ extern const vf_info_t vf_info_geq;
 extern const vf_info_t vf_info_ow;
 extern const vf_info_t vf_info_tcdump;
 extern const vf_info_t vf_info_fixpts;
+extern const vf_info_t vf_info_stereo3d;
 
 // list of available filters:
 static const vf_info_t* const filter_list[]={
@@ -128,25 +128,18 @@ static const vf_info_t* const filter_list[]={
 #endif
     &vf_info_crop,
     &vf_info_expand,
-#ifdef CONFIG_LIBPOSTPROC
-    &vf_info_pp,
-#endif
     &vf_info_scale,
 //    &vf_info_osd,
     &vf_info_vo,
     &vf_info_format,
     &vf_info_noformat,
     &vf_info_flip,
-#ifdef CONFIG_LIBSWSCALE_INTERNALS
-    &vf_info_rgb2bgr,
-#endif
     &vf_info_rotate,
     &vf_info_mirror,
-#ifdef CONFIG_LIBSWSCALE_INTERNALS
     &vf_info_palette,
-#endif
     &vf_info_pp7,
-#ifdef CONFIG_LIBAVCODEC
+#ifdef CONFIG_FFMPEG
+    &vf_info_pp,
     &vf_info_lavc,
     &vf_info_lavcdeint,
     &vf_info_screenshot,
@@ -163,9 +156,7 @@ static const vf_info_t* const filter_list[]={
     &vf_info_eq,
     &vf_info_eq2,
     &vf_info_gradfun,
-#ifdef CONFIG_LIBSWSCALE_INTERNALS
     &vf_info_halfpack,
-#endif
     &vf_info_dint,
     &vf_info_1bpp,
     &vf_info_2xsai,
@@ -197,11 +188,13 @@ static const vf_info_t* const filter_list[]={
     &vf_info_delogo,
     &vf_info_remove_logo,
     &vf_info_hue,
-#ifdef CONFIG_LIBAVCODEC_INTERNALS
+#ifdef CONFIG_FFMPEG_INTERNALS
     &vf_info_spp,
     &vf_info_fspp,
     &vf_info_qp,
     &vf_info_mcdeint,
+#endif
+#ifdef CONFIG_FFMPEG_EVAL_API
     &vf_info_geq,
 #endif
     &vf_info_yuvcsp,
@@ -219,6 +212,7 @@ static const vf_info_t* const filter_list[]={
     &vf_info_ow,
     &vf_info_tcdump,
     &vf_info_fixpts,
+    &vf_info_stereo3d,
     NULL
 };
 

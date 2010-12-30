@@ -35,6 +35,8 @@
 #include "geometry.h"
 #include "old_vo_wrapper.h"
 #include "input/input.h"
+#include "mp_fifo.h"
+
 
 #include "mp_msg.h"
 
@@ -73,10 +75,6 @@ int vo_directrendering=0;
 int vo_colorkey = 0x0000ff00; // default colorkey is green
                               // (0xff000000 means that colorkey has been disabled)
 
-// name to be used instead of the vo's default
-char *vo_winname;
-// title to be applied to movie window
-char *vo_wintitle;
 
 //
 // Externally visible list of all vo drivers
@@ -239,7 +237,7 @@ const struct vo_driver *video_out_drivers[] =
 #ifdef CONFIG_VESA
         &video_out_vesa,
 #endif
-#ifdef CONFIG_DFBMGA
+#ifdef CONFIG_DIRECTFB
         &video_out_dfbmga,
 #endif
 #ifdef CONFIG_VIDIX
@@ -264,7 +262,7 @@ const struct vo_driver *video_out_drivers[] =
 #ifdef CONFIG_YUV4MPEG
         &video_out_yuv4mpeg,
 #endif
-#ifdef CONFIG_LIBAVCODEC
+#ifdef CONFIG_FFMPEG
         &video_out_png,
 #endif
 #ifdef CONFIG_JPEG
@@ -359,8 +357,12 @@ void vo_flip_page(struct vo *vo, unsigned int pts_us, int duration)
 
 void vo_check_events(struct vo *vo)
 {
-    if (!vo->config_ok)
+    if (!vo->config_ok) {
+        if (vo->registered_fd != -1)
+            mp_input_rm_key_fd(vo->input_ctx, vo->registered_fd);
+        vo->registered_fd = -1;
         return;
+    }
     vo->driver->check_events(vo);
 }
 
@@ -372,6 +374,8 @@ void vo_seek_reset(struct vo *vo)
 
 void vo_destroy(struct vo *vo)
 {
+    if (vo->registered_fd != -1)
+        mp_input_rm_key_fd(vo->input_ctx, vo->registered_fd);
     vo->driver->uninit(vo);
     talloc_free(vo);
 }
@@ -400,6 +404,8 @@ struct vo *init_best_video_out(struct MPOpts *opts, struct vo_x11_state *x11,
         .x11 = x11,
         .key_fifo = key_fifo,
         .input_ctx = input_ctx,
+        .event_fd = -1,
+        .registered_fd = -1,
     };
     // first try the preferred drivers, with their optional subdevice param:
     if (vo_list && vo_list[0])
@@ -468,6 +474,13 @@ struct vo *init_best_video_out(struct MPOpts *opts, struct vo_x11_state *x11,
     return NULL;
 }
 
+static int event_fd_callback(void *ctx, int fd)
+{
+    struct vo *vo = ctx;
+    vo_check_events(vo);
+    return mplayer_get_key(vo->key_fifo, 0);
+}
+
 int vo_config(struct vo *vo, uint32_t width, uint32_t height,
                      uint32_t d_width, uint32_t d_height, uint32_t flags,
                      char *title, uint32_t format)
@@ -494,6 +507,11 @@ int vo_config(struct vo *vo, uint32_t width, uint32_t height,
                                  title, format);
     vo->config_ok = (ret == 0);
     vo->config_count += vo->config_ok;
+    if (vo->registered_fd == -1 && vo->event_fd != -1 && vo->config_ok) {
+        mp_input_add_key_fd(vo->input_ctx, vo->event_fd, 1, event_fd_callback,
+                            NULL, vo);
+        vo->registered_fd = vo->event_fd;
+    }
     return ret;
 }
 
@@ -670,8 +688,7 @@ range_t *str2range(char *s)
 	r[i].min = r[i].max = -1;
 	return r;
 out_err:
-	if (r)
-		free(r);
+	free(r);
 	return NULL;
 }
 

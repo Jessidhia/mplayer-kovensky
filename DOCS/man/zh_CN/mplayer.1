@@ -1,4 +1,4 @@
-.\" sync with en/mplayer.1 rev. 31292
+.\" sync with en/mplayer.1 rev. 32661
 .\" Encoding: UTF-8
 .\"
 .\" MPlayer (C) 2000-2010 MPlayer 团队
@@ -65,8 +65,13 @@ mencoder \- 影视编解码器
 .
 .br
 .B mplayer
+[br]://[标题][/设备]
+[选项组]
+.
+.br
+.B mplayer
 [dvd|dvdnav]://[标题|[开始标题]\-结束标题][/设备]
-[选项]
+[选项组]
 .
 .br
 .B mplayer
@@ -154,7 +159,7 @@ tivo://主机/[list|llist|fsid]
 通过许多原生的和可执行的编解码器的支持, 它能播放绝大部分的 MPEG/\:VOB, AVI,
 ASF/\:WMA/\:WMV, RM, QT/\:MOV/\:MP4, Ogg/\:OGM, MKV, VIVO, FLI, NuppelVideo,
 yuv4mpeg, FILM 和 RoQ 文件。
-你还能观看 VCD、SVCD、DVD、3ivx、DivX 3/4/5、WMV 甚至 H.264 格式的电影。
+你还能观看 VCD、SVCD、DVD、蓝光 DVD、3ivx、DivX 3/4/5、WMV 甚至 H.264 格式的电影。
 .PP
 MPlayer 广泛地支持音视频输出驱动。
 它不仅可以使用 X11, Xv, DGA, OpenGL, SVGAlib, fbdev, AAlib, libcaca,
@@ -244,7 +249,7 @@ MPlayer 有个完全可配置的, 命令驱动的控制层,
 静音。
 .IPs "_ (仅用于 MPEG-TS、AVI 和 libav 库格式)"
 循环可用的像轨。
-.IPs "# (仅用于 DVD、MPEG、Matroska、AVI 和 libav 库格式)"
+.IPs "# (仅用于 DVD、蓝光 DVD、MPEG、Matroska、AVI 和 libav 库格式)"
 循环可用的音轨。
 .IPs "TAB（仅用于 MPEG-TS 和 libav 库格式）"
 循环可用的节目。
@@ -271,6 +276,8 @@ MPlayer 有个完全可配置的, 命令驱动的控制层,
 切换对齐字幕: 上 / 中 / 下。
 .IPs "x 和 z"
 调整字幕延迟增加/减少 0.1 秒。
+.IPs "c（仅用于 \-capture）"
+开始/停止抓取主媒体流。
 .IPs "r 和 t"
 上/下调整字幕位置。
 .IPs "i (仅用于 \-edlout 模式)"
@@ -422,11 +429,13 @@ MPlayer 有个完全可配置的, 命令驱动的控制层,
 .
 （以下按键只有当编译时启用对于电视字幕的支持（teletext）时才有效：这些按键用于控制电
 视字幕，数据可能来自模拟电视输入或是 MPEG 传输流。）
+（以下按键用于控制电视信号的电视字幕。数据可能来源于模拟电视信号或 MPEG 传
+输数据流。）
 .RE
 .PP
 .PD 0
 .RS
-.IPs "X\\\\"
+.IPs "X\ \ \ \ "
 打开/\:关闭电视字幕。
 .IPs "Q和W"
 切换至下一个/\:上一个电视字幕页面。
@@ -826,13 +835,35 @@ MOUSE_BTN0\-MOUSE_BTN0_DBL。
 .
 .TP
 .B \-edlout <文件名>
-新建文件并写入 EDL(编辑决定列表) 记录。
-回放时, 用户击 "i" 键标记跳过块的开始结束处。
-这提供了用户一个以后能精调 EDL (记录)项的开始点。
+新建文件并写入 EDL（编辑决定列表）记录。
+回放时, 用户按“i”键标记跳过块的开始结束处。
+这提供了用户一个以后能精调 EDL 项的开始点。
 详情请参见 http://www.mplayerhq.hu/\:DOCS/\:HTML/\:en/\:edl.html。
 .
 .TP
-.B \-enqueue (仅用于 GUI)
+.B \-edl-backward-delay <数值>
+当在播放并回倒过程中使用 EDL 时，可能会停在某条 EDL 记录中间。
+在此情况下，MPlayer 会进一步回倒至这条 EDL 记录的起始位值，之后会立即跳过
+EDL 记录所描述的场景。
+为避免这种现象，MPlayer 会跳至距 EDL 记录前端固定间隔的一个位置。
+该参数使你能够以秒为单位指定这个时间间隔。
+（默认值：2 秒）。
+.
+.TP
+.B \-edl-start-pts
+根据所播放文件的起始时间调整 EDL 记录的位置信息。 某些格式，尤其是 MPEG TS，
+通常起始于一个非零的当前时间标签值，并且当以 \-edlout 选项生成 EDL 文件时，
+EDL 记录含有一些只对这个特定文件来说是正确的绝对数值。如果重新编码成另一种格
+式，该 EDL 文件不再适用。使用 \-edl-start-pts 将自动根据起始时间调整 EDL 位
+置信息：当生成 EDL 文件时，每条 EDL 记录将减去起始时间值；当使用 EDL 文件播
+放时，每个 EDL 位置信息将加上文件的起始时间值。
+.
+.TP
+.B \-noedl-start-pts
+禁止调整 EDL 位置信息。
+.
+.TP
+.B \-enqueue（仅用于 GUI）
 将命令行中给定的文件排入播放列表但不立刻播放。
 .
 .TP
@@ -888,8 +919,8 @@ mplayer \-heartbeat\-cmd "gnome\-screensaver\-command \-p" file
 是 \-msglevel identify=4 的简写形式。使用便于解析的格式显示文件参数。
 同时打印更为详细的关于字幕和音轨的语言与 ID 号的信息。
 在某些情形下，使用 \-msglevel identify=6 能得到更多的信息。
-例如，对于一张 DVD 碟片，该选项能列出每个标题的章节和时长，以及一个碟片 ID 号。
-将此选项与 \-frames 0 一起使用能禁止所有输出。
+例如，对于一张 DVD 或蓝光 DVD，该选项能列出每个标题的章节和时长，以及一个碟片 ID 号。
+将此选项与 \-frames 0 一起使用能禁止所有视频输出。
 封装脚本 TOOLS/\:midentify.sh 禁止 MPlayer 的其它输出，
 并且（很可能）shellescapes（脚本转义）了文件名。
 .
@@ -1085,7 +1116,7 @@ MPlayer 从标准输入读取以新行 (\\n) 分隔开的命令行,
 .I 注意:
 请参见 \-input cmdlist 的命令列表和 DOCS/tech/slave.txt 中的描述。
 另外，该选项并非用来禁用其它的输入，例如通过视频窗口。要使用其它方法实现那种效果，例如
-\-input nodefault\-binds:conf=/dev/null。
+\-input nodefault\-bindings:conf=/dev/null。
 .
 .TP
 .B \-softsleep
@@ -1101,7 +1132,34 @@ MPlayer 从标准输入读取以新行 (\\n) 分隔开的命令行,
 .
 .
 .
-.SH "分离器/媒体流选项"
+.TP
+.B \-udp\-ip <ip>
+设置 \-udp\-master 发送的数据报所使用的目标地址。将其设置为广播地址将允许多个
+被动方使用同一个广播地址与主动方同步（默认值：127.0.0.1）。
+.
+.TP
+.B \-udp\-master
+在播放每一帧之前向 \-udp\-ip 的 \-udp\-port 端口发送数据报。该数据报指示了主动
+方的文件播放位置。
+.
+.TP
+.B \-udp\-port <端口号>
+设置 \-udp\-master 发送的数据报使用的目标端口，以及 \-udp\-slave 监听的端口
+（默认值：23867）。
+.
+.TP
+.B \-udp\-seek\-threshold <秒数>
+当主动方定位时，被动方必须决定是否也要定位，或是以解码帧而不在帧间停顿的方式
+赶上主动方。如果主动方距离被动方已超过 <秒数> 秒，则被动方选择定位。
+否则，其选择赶上或等待主动方。
+该选项在大多数情况下应当保留为其默认的 1 秒设置。
+.
+.TP
+.B \-udp\-slave
+监听 \-udp\-port 指定的端口并同步主动方的播放位置。
+.
+.
+.SH "流分离器/媒体流选项"
 .
 .TP
 .B \-a52drc <级别>
@@ -1174,6 +1232,19 @@ MPlayer 在 verbose (\-v) 模式下会打印可用的语言。
 以容许较快的缓存填充和流转储。
 .
 .TP
+.B \-bluray\-angle <角度 ID>（仅用于蓝光 DVD）
+有些蓝光碟片包含一些可从多个角度观看的场景。
+这里你可以告诉 MPlayer 使用哪个角度（默认值：1）。
+.
+.TP
+.B \-bluray\-chapter <章节 ID>（仅用于蓝光 DVD）
+告诉 MPlayer 从哪个蓝光 DVD 章节开始当前标题内容的播放（默认值：1）。
+.
+.TP
+.B \-bluray\-device <碟片路径>（仅用于蓝光 DVD）
+指定蓝光碟片的位置。必须是一个具有蓝光 DVD 结构的目录。
+.
+.TP
 .B \-cache <千字节>
 此选项指定用多少内存(以 kBytes 为单位)作为播放文件或 URL 的预缓冲。
 对速度慢的媒体特别有用。
@@ -1190,6 +1261,15 @@ MPlayer 在 verbose (\-v) 模式下会打印可用的语言。
 .B \-cache\-seek\-min <百分数>
 如果查寻到的位置处于从当前位置算起的缓存大小的 <百分数> 之内,
 MPlayer 等待填充缓存到此位置而不是执行流查寻(默认是: 50)。
+.
+.TP
+.B \-capture（仅用于 MPlayer）
+提供将主媒体流（并非额外的音频流或其它类型的媒体流）抓取至文件的功能。使用 
+\-dumpfile 指定存放的文件，默认为“stream.dump”。
+如果使用了该选项，则可以通过按绑定至该功能的按键来开始和停止抓取操作。（参见
+“交互式控制”部分）。
+与 \-dumpstream 相同，除了 MPEG 媒体流，该选项可能产生不了可用的输出。
+需注意的是，由于缓冲有延迟，抓取到的数据的开始和结束位置比你所见到的位置靠后。
 .
 .TP
 .B \-cdda <选项1:选项2> (仅适用于 CDDA)
@@ -1307,7 +1387,7 @@ HTTP 请求时发送 cookies。
 .TP
 .B \-dumpfile <文件名> (仅用于 MPlayer)
 指定 MPlayer 应该转储到的文件。
-应该与 \-dumpaudio / \-dumpvideo / \-dumpstream 一起使用。
+应该与 \-dumpaudio / \-dumpvideo / \-dumpstream \-capture 一起使用。
 .
 .TP
 .B \-dumpstream (仅用于 MPlayer)
@@ -1703,6 +1783,11 @@ radio://1, radio://104.4, radio_set_channel 1
 (参见 http://www.live555.com/\:mplayer/)。
 .
 .TP
+.B \-rtsp\-stream\-over\-http（仅用于 LIVE555）
+与‘http://’形式的 URL 一同使用，用以指定生成的 RTP 和 RTCP 输入包通过 HTTP 协
+议传送。
+.
+.TP
 .B \-saveidx <文件名>
 强制重建索引并转储到 <文件名>。
 目前只对 AVI 文件有效。
@@ -1805,7 +1890,9 @@ TV 制式取决于捕捉卡。参见控制台输出的可用 TV 制式列表。
 .IPs channel=<参数值>
 设置调谐器到 <参数值> 频道.
 .IPs chanlist=<参数值>
-可用参数: europe-east, europe-west, us-bcast, us-cable, 等等
+可用参数：argentina, australia, china-bcast, europe-east, europe-west, france,
+ireland, italy, japan-bcast, japan-cable, newzealand, russia, southafrica,
+us-bcast, us-cable, us-cable-hrc
 .IPs channels=<频道>\-<名称>,<频道>\-<名称>,...
 设置频道的名称。
 .I 注意：
@@ -2195,7 +2282,8 @@ MPlayer 运行在 verbose (\-v) 模式时, 打印可用的字幕标识。
 .
 .TP
 .B \-nosub
-禁止所有默认情况下自动选择的字幕（就像比如 Matroska/mkv 流分离器所支持的那样）。
+禁用所有默认情况下自动选择的内部字幕（就像 Matroska/mkv 之类的流分离器所支持的那样）。
+使用 \-noautosub 以禁止自动加载外部字幕文件。
 .
 .TP
 .B \-slang <语言代号[,语言代号,...]> (也请参见 \-sid)
@@ -2314,8 +2402,8 @@ MPlayer 在 verbose (\-v) 模式下会打印可用的语言。
 .PD 1
 .
 .TP
-.B "\-subcc \ "
-显示 DVD 的隐藏式(CC)字幕。
+.B "\-subcc <1\-4>\ "
+显示来自指定频道的 DVD 外挂字幕。
 它们
 .B 不
 是 VOB 字幕, 它们是为听力有障碍的人准备的特殊的 ASCII 字幕,
@@ -2621,6 +2709,14 @@ OSS 音频输出驱动
 .TP
 .B coreaudio（仅适用于 Mac OS X）
 Mac OS X 自带的音频输出驱动
+.PD 0
+.RSs
+.IPs device_id=<标识符>
+所使用的输出设备的标识符（0 = 默认设备）
+.IPs help
+列出所有可用输出设备的标识符。
+.RE
+.PD 1
 .
 .TP
 .B "openal\ "
@@ -3565,9 +3661,9 @@ OpenGL 视频输出驱动, 简版。
 视频尺寸一定小于 OpenGL 实现的最大纹理尺寸。
 瞄准能与甚至最基本的 OpenGL 实现一起工作,
 但也利用较新的扩展, 允许支持更多的色彩空间和直接渲染。
-要获取最佳的速度，请尝试类似于
+要获取最佳的速度，请尝试添加选项
 .br
-\-vo gl:yuv=2:rectangle=2:force\-pbo:ati\-hack \-dr \-noslices
+\-dr \-noslices
 .br
 的选项。
 此代码执行极少的检测, 所以如果某个特性不工作,
@@ -3696,6 +3792,27 @@ GL_ARB_fragment_shader！）。至少需要三个纹理单位。提供饱和度�
 详情参见 lscale。
 .IPs filter-strength=<值>
 设置支持该强度值的 lscale/cscale 滤镜的效果强度。
+.IPs stereo=<值>
+选择立体显示的方式。
+可能需要使用 -aspect 以修正宽高比的数值。
+实验性的选项，勿对其期望太高。
+.RSss
+0：标准 2D 显示
+.br
+1：左右分割的输入信号，产生全色彩的红蓝立体图像。
+.br
+2：左右分割的输入信号，产生全色彩的红蓝立体图像。
+.br
+3：左右分割的输入信号，产生四重缓冲的立体图像。
+只有少数 OpenGL 显卡支持
+.RE
+.RE
+.sp 1
+.RS
+以下选项只有助于编写自定义的片断程序。
+.RE
+.sp 1
+.RSs
 .IPs customprog=<文件名>
 从 <文件名> 装载定制的片断程序。
 示例参见 TOOLS/edgedect.fp。
@@ -4053,11 +4170,14 @@ iTVC16) MPEG 解码器芯片 (Hauppauge WinTV PVR-150/250/350/500)
 .
 .TP
 .B yuv4mpeg
-变换视频流为无压缩 YUV 4:2:0 图像序列并储存到文件 (默认是: ./stream.yuv)。
-格式与 mjpegtools 所用的一样,
-所以如果想要用 mjpegtools 套装软件处理视频, 这就有用。
-它支持 YV12, RGB (24 bpp) 和 BGR (24 bpp) 格式。
-能与 \-fixed\-vo 选项组合来连接具有相同维数和 fps 值的文件。
+将视频流转换为未压缩的 YUV 4:2:0 图像序列并将其储存到文件中（默认位置：
+./stream.yuv）。
+使用的格式与 mjpegtools 所用的相同，所以如果想用 mjpegtools 套装软件处理视频, 
+该选项就有所帮助。
+该选项支持 YV12 格式。
+如果源文件格式不同且为隔行扫描制式，则注意要使用 -vf scale=::1 以确保转换时
+使用隔行扫描模式。
+可与 \-fixed\-vo 选项组合使用以拼接具有相同宽高值和频速的文件。
 .PD 0
 .RSs
 .IPs interlaced
@@ -5019,6 +5139,8 @@ s8, floatle, floatbe, floatne, mulaw, alaw, mpeg2, ac3 和 imaadpcm。
 .br
 此过滤器有第二个功能: 测量总体的最高声音水平并通过 MPlayer 显示出来。
 此估计的音量能用来设置 MEncoder 的音量以使用最大动态范围。
+该功能当前只适用于浮点型数据，使用例如 \-af\-adv force=5 或 
+\-af stats。
 .br
 .I 注意:
 此过滤器不能重返进入, 所以对每个音频流只能启用一次。
@@ -5677,21 +5799,11 @@ spal：   768x576 （正方形像素PAL）
 将YUV色彩值限制在CCIR 601定义的范围内而不做实际的色彩转换。
 .
 .TP
-.B rgb2bgr[=swap]
-RGB 24/32 <\-> BGR 24/32色彩空间转换。
-.PD 0
-.RSs
-.IPs "swap\ "
-同样是执行R <\-> B转换。
-.RE
-.PD 1
-.
-.TP
 .B palette
 使用palette（调色板）进行RGB/BGR 8 \-> 15/16/24/32bpp色彩空间转换。
 .
 .TP
-.B format[=fourcc]
+.B format[=fourcc[:outfourcc]]
 限制下一个滤镜使用的色彩空间而不做任何转换。
 与色彩调整滤镜共同作用完成实际转换。
 .br
@@ -5700,7 +5812,18 @@ RGB 24/32 <\-> BGR 24/32色彩空间转换。
 .PD 0
 .RSs
 .IPs <fourcc>
-格式名称如rgb15、bgr24、yv12（默认值：yuy2）
+格式名称如 rgb15、bgr24、yv12（默认值：yuy2）
+.IPs <outfourcc>
+用于替换为输出格式的格式名。
+如果该值不能 100% 与 <fourcc> 的值相兼容，将导致程序崩溃。
+.br
+有效用法示例：
+.br
+format=rgb24:bgr24 format=yuyv:yuy2
+.br
+无效用法示例（程序将崩溃）：
+.br
+format=rgb24:yv12
 .RE
 .PD 1
 .
@@ -6985,6 +7108,94 @@ h参数值。
 .IPs <threshold>
 决定像素值低于多少就被认作是黑色的阈值（默认值：32）。
 .RE
+.PD 1
+.
+.TP
+.B stereo3d[=输入格式:输出格式]
+stereo3d 选项用于转换不同的立体图像格式。
+.RSs
+.IPs <输入格式>
+输入的立体图像格式。可设值有：
+.RS
+.B sbsl 或 side_by_side_left_first
+.RS
+由左而右平行排列（左眼图像在左，右眼图像在右）
+.RE
+.B sbsr 或 side_by_side_right_first
+.RS
+由左而右交换左右眼图像地排列（右眼图像在左，左眼图像在右）
+.RE
+.B abl 或 above_below_left_first
+.RS
+由上而下排列（左眼图像在上，右眼图像在下）
+.RE
+.B abl 或 above_below_right_first
+.RS
+由上而下排列（右眼图像在上，左眼图像在下）
+.RE
+.B ab2l 或 above_below_half_height_left_first
+.RS
+由上而下排列，纵向分辨率减半（左眼图像在上，右眼图像在下）
+.RE
+.B ab2r 或 above_below_half_height_right_first
+.RS
+由上而下排列，纵向分辨率减半（右眼图像在上，左眼图像在下）
+.RE
+.RE
+.IPs <输出格式>
+输出的立体图像格式。可设值除了所有输入格式外还有：
+.RS
+.B arcg 或 anaglyph_red_cyan_gray
+.RS
+红/青立体灰度图像（红色图层通过左眼图像，青色图层通过右眼图像）cyan
+.RE
+.B arch 或 anaglyph_red_cyan_half_color
+.RS
+红/青立体半彩色图像（红色图层通过左眼图像，青色图层通过右眼图像）
+.RE
+.B arcc 或 anaglyph_red_cyan_color
+.RS
+红/青立体彩色图像（红色图层通过左眼图像，青色图层通过右眼图像）
+.RE
+.B arcd 或 anaglyph_red_cyan_dubois
+.RS
+通过 Dubois 的最小二次影射优化的红/青立体彩色图像（红色图层通过左眼图像，青色图层通
+过右眼图像）
+.RE
+.B agmg 或 anaglyph_green_magenta_gray
+.RS
+绿/品红立体灰度图像（绿色图层通过左眼图像，品红图层通过右眼图像）
+.RE
+.B agmh 或 anaglyph_green_magenta_half_color
+.RS
+绿/品红立体半彩色图像（绿色图层通过左眼图像，品红图层通过右眼图像）
+.RE
+.B agmc 或 anaglyph_green_magenta_color
+.RS
+绿/品红立体彩色图像（绿色图层通过左眼图像，品红图层通过右眼图像）
+.RE
+.B aybg 或 anaglyph_yellow_blue_gray
+.RS
+黄/蓝立体灰度图像（黄色图层通过左眼图像，蓝色图层通过右眼图像）
+.B aybh 或 anaglyph_yellow_blue_half_color
+.RS
+黄/蓝立体半彩色图像（黄色图层通过左眼图像，蓝色图层通过右眼图像）
+.RE
+.B aybc 或 anaglyph_yellow_blue_color
+.RS
+黄/蓝立体彩色图像（黄色图层通过左眼图像，蓝色图层通过右眼图像）
+.RE
+.B ml 或 mono_left
+.RS
+单眼图像输出（只输出左眼图像）
+.RE
+.B mr 或 mono_right
+.RS
+单眼图像输出（只输出右眼图像）
+.RE
+.RE
+.RE
+.PD 1
 .
 .TP
 .B gradfun[=strength[:radius]]
@@ -7261,6 +7472,21 @@ Specify an initial value for the PTS.
 .TP
 .B \-vobsuboutindex <index>
 指定输出文件中字幕的索引号（默认值：0）。
+.
+.TP
+.B \-force\-key\-frames <时间点>,<时间点>,...
+强制在指定的时间点上使用关键帧，准确来说是每个指定的时间点之后的第一个帧。
+.sp 1
+该选项可用于保证输出文件的章节标记处或其它特定的位置有定位点。
+.sp 1
+指定的时间标记必须按升序排列。
+.sp 1
+因为 MEncoder 不在滤镜链中传递时间标记，所以很可能需要使用 fixpts 滤镜以使该选
+项生效。
+.sp 1
+并非所有的编解码器可以强制使用关键帧。
+当前已实现该功能的编码器如下：
+lavc，x264，xvid。
 .
 .
 .
@@ -9277,6 +9503,12 @@ DivX配置集（DivX Profile）限制选项的使用和VBV（短时间内的峰�
 第2级的简单配置集
 .IPs "sp3\ \ "
 第3级的简单配置集
+.IPs "sp4a\ \ "
+第4a级的简单配置集
+.IPs "sp5\ \ "
+第5级的简单配置集
+.IPs "sp6\ \ "
+第6级的简单配置集
 .IPs "asp0\ "
 第0级的高级简单配置集
 .IPs "asp1\ "
@@ -9377,7 +9609,7 @@ MPlayer与其它一些播放器能正确播放这些文件，除此之外的播�
 .
 .PP
 .sp 1
-以下选项只存在于Xvid 1.1.x中。
+以下选项只适用于 Xvid 1.1.x 以及之后的版本。
 .
 .TP
 .B bvhq=<0|1>
@@ -9385,9 +9617,29 @@ MPlayer与其它一些播放器能正确播放这些文件，除此之外的播�
 选运动矢量，对于P帧这种方式是通过vhq选项实现的。
 该方式产生的B帧看上去较好，而同时也几乎不影响性能（默认值：1）。
 .
+.TP
+.B vbv_bufsize=<0...>（仅用于二阶段编码模式）
+以比特为单位指定视频缓冲校验器（VBV）的缓冲大小（默认值：0 \- 禁用 VBV 校
+验）。
+VBV 提供限制峰值比特率的功能，以使视频能在硬件播放器上正常播放。
+例如，Home 配置集使用 vbv_bufsize=3145728。
+如果设置了 vbv_bufsize，则应当同时设置 vbv_maxrate。
+注意，没有所谓 vbv_peakrate 的选项，因为 Xvid 实际上并不使用这种选项控制比
+特率；其它的 VBV 选项足以限制峰值比特率。
+.
+.TP
+.B vbv_initial=<0...vbv_bufsize>（仅用于二阶段编码模式）
+以比特为单位指定 VBV 缓冲初始填充的大小（默认值：vbv_bufsize 的 75%）。
+默认值通常是你所需的值。
+.
+.TP
+.B vbv_maxrate=<0...>（仅用于二阶段编码模式）
+以比特/秒为单位指定最大处理的比特率（默认值：0）。
+例如，Home 配置集使用 vbv_maxrate=4854000。
+.
 .PP
 .sp 1
-以下选项只存在于1.2.x版的Xvid中。
+以下选项只适用于 Xvid 1.2.x 以及之后的版本。
 .
 .TP
 .B threads=<0\-n>
@@ -9456,28 +9708,90 @@ H.264的量化参数是基于对数尺度的。
 后续的阶段是ABR模式的，并且必须指定比特率。
 .REss
 .
+.
 .TP
-.B turbo=<0\-2>
-快速第一阶段模式。
-在二阶段或更多阶段编码的第一阶段中，可以通过禁用一些对于最终阶段输出质量影响甚
-小，甚至没有影响的选项，以提升运行速度。
+.B profile=<配置集名>
+限制所用选项必须与一个 H.264 配置集相兼容。
 .PD 0
 .RSs
-.IPs 0
-禁用（默认值）
-.IPs 1
-减小subq、frameref的值，并且禁用一些宏块间划分分析的模式。
-.IPs 2
-减小subq、frameref至1，使用菱形运动估计搜索，并且禁用所有划分分析模式。
+.IPs baseline
+no8x8dct bframes=0 nocabac cqm=flat weightp=0 nointerlaced qp>0
+.IPs main
+no8x8dct cqm=flat qp>0
+.IPs high
+qp>0（默认限制）
 .RE
-.RS
-第1级可以最多使第一阶段的速度加快至2倍，而与完全质量的第一阶段模式相比，对于最
-终阶段的全局PSNR没有任何改变。
-.br
-第2级可以最多使第一阶段的速度加快至4倍，而与完全质量的第一阶段模式相比，对于最
-终阶段的全局PSNR有大约+/\- 0.05dB的改变。
-.REss
+.PD 1
 .
+.TP
+.B preset=<预设值集>
+使用一套预设值集以选用编码设置。
+.PD 0
+.RSs
+.IPs ultrafast
+no8x8dct aq_mode=0 b_adapt=0 bframes=0 nodeblock nombtree me=dia
+nomixed_refs partitions=none ref=1 scenecut=0 subq=0 trellis=0
+noweight_b weightp=0
+.IPs superfast
+nombtree me=dia nomixed_refs partitions=i8x8,i4x4 ref=1 subq=1 trellis=0
+weightp=0
+.IPs veryfast
+nombtree nomixed_refs ref=1 subq=2 trellis=0 weightp=0
+.IPs faster
+nomixed_refs rc_lookahead=20 ref=5 subq=4 weightp=1
+.IPs fast
+rc_lookahead=30 ref=2 subq=6
+.IPs medium
+Default settings apply.
+.IPs slow
+b_adapt=2 direct=auto me=umh rc_lookahead=50 ref=5 subq=8
+.IPs slower
+b_adapt=2 direct=auto me=umh partitions=all rc_lookahead=60 ref=8 subq=9
+trellis=2
+.IPs veryslow
+b_adapt=2 b_frames=8 direct=auto me=umh me_range=24 partitions=all ref=16
+subq=10 trellis=2 rc_lookahead=60
+.IPs placebo
+bframes=16 b_adapt=2 direct=auto nofast_pskip me=tesa me_range=24
+partitions=all rc_lookahead=60 ref=16 subq=10 trellis=2
+.RE
+.PD 1
+.
+.TP
+.B tune=<名称,[名称,...]>
+调整设置以适应一个特定种类的视频片源或场景。
+用户明确指定的设置会覆盖任何调整的设置。
+多个调整选项间以逗号分隔，但同一时间只能使用一个心理调整选项。
+.PD 0
+.RSs
+.IPs "film（心理调整选项）"
+deblock=-1,-1 psy-rd=<unset>,0.15
+.IPs "animation（心理调整选项）"
+b_frames={+2} deblock=1,1 psy-rd=0.4:<unset> aq_strength=0.6
+ref={double if >1 else 1}
+.IPs "grain（心理调整选项）"
+aq_strength=0.5 nodct_decimate deadzone_inter=6 deadzone_intra=6
+deblock=-2,-2 ipratio=1.1 pbratio=1.1 psy-rd=<unset>,0.25 qcomp=0.8
+.IPs "stillimage（心理调整选项）"
+aq_strength=1.2 deblock=-3,-3 psy-rd=2.0,0.7
+.IPs "psnr（心理调整选项）"
+aq_mode=0 nopsy
+.IPs "ssim（心理调整选项）"
+aq_mode=2 nopsy
+.IPs fastdecode
+nocabac nodeblock noweight_b weightp=0
+.IPs zerolatency
+bframes=0 force_cfr rc_lookahead=0 sync_lookahead=0 sliced_threads
+.RE
+.PD 1
+.
+.TP
+.B slow_firstpass
+当 pass=1 时禁用以下运行较快的选项：
+no_8x8dct me=dia partitions=none ref=1 subq={2 if >2 else unchanged}
+trellis=0 fast_pskip
+这些选项大幅度地提高编码速度，同时对于最终阶段的编码质量只有很少甚至没有影响。
+使用 preset=placebo 隐含地开启了该选项。
 .TP
 .B keyint=<value>
 设置IDR帧间的最大间隔（默认值：250）。
@@ -10658,10 +10972,17 @@ GUI 播放列表
 .\" 示例
 .\" --------------------------------------------------------------------------
 .
-.SH "MPLAYER的使用范例"
+.SH "MPLAYER 的使用范例"
 .
 .PP
-.B 快速上手播放 DVD:
+.B 快递上手播放蓝光 DVD：
+.nf
+mplayer br:////path/to/disc
+mplayer br:// \-bluray\-device /path/to/disc
+.fi
+.
+.PP
+.B 快速上手播放 DVD：
 .nf
 mplayer dvd://1
 .fi
@@ -10778,7 +11099,7 @@ mplayer \-rawaudio format=0xff \-demuxer rawaudio \-af pan=2:.32:.32:.39:.06:.06
 .PP
 .B 使用geq滤镜产生的颠倒的棋盘：
 .nf
-mplayer \-vf geq='128+(p(X\,Y)\-128)*(0.5\-gt(mod(X/SW\,128)\,64))*(0.5\-gt(mod(Y/SH\,128)\,64))*4'
+mplayer \-vf geq='128+(p(X\\,Y)\-128)*(0.5\-gt(mod(X/SW\\,128)\\,64))*(0.5\-gt(mod(Y/SH\\,128)\\,64))*4'
 .fi
 .
 .
@@ -10852,14 +11173,11 @@ rar p test-SVCD.rar | mencoder \-ovc lavc \-lavcopts vcodec=mpeg4:vbitrate=800 \
 MPlayer 最初由 Arpad Gereoffy 制作。
 其它许多贡献者的部分清单, 请参见 AUTHORS(作者) 文件。
 .PP
-MPlayer 是 (C) 2000\-2009 The MPlayer Team (MPlayer 团队) 所有
+MPlayer 是 (C) 2000\-2010 The MPlayer Team (MPlayer 团队) 所有
 .PP
 本(英文)手册页主要由 Gabucino, Jonas Jermann 和 Diego Biurrun 编写,
 由 Diego Biurrun 维护。
-视频滤镜、通用编解码器选项、特定编解码器专用选项三个章节由
-JRaSH <jrash06 AT 163.com> 重新翻译
-参于翻译本中文手册页的有: JRaSH<jrash06 At 163.com>,
-Sheldon Jin <jinsh2 AT yahoo.com>, Lu Ran <hephooey AT fastmail.fm> 等。
+JRaSH <jrash06 AT 163.com> 翻译
 有关本文的联系请发送邮件到 MPlayer-DOCS 邮件列表。
 与翻译相关的邮件属于 MPlayer-translations 邮件列表。
 .\" end of file

@@ -113,9 +113,6 @@ struct vo_x11_state {
 
 extern int metacity_hack;
 
-extern int vo_fs_layer;
-extern int vo_wm_type;
-extern int vo_fs_type;
 extern char** vo_fstype_list;
 
 extern char *mDisplayName;
@@ -172,8 +169,6 @@ void xv_setup_colorkeyhandling(struct vo *vo, const char *ck_method_str, const c
 /*** test functions for common suboptions ***/
 int xv_test_ck( void * arg );
 int xv_test_ckm( void * arg );
-
-void vo_x11_putkey(struct vo *vo, int key);
 
 #ifdef CONFIG_XF86VM
 void vo_vm_switch(struct vo *vo);

@@ -34,6 +34,7 @@
 #include "libvo/sub.h"
 #include "m_option.h"
 #include "m_property.h"
+#include "m_config.h"
 #include "metadata.h"
 #include "libmpcodecs/vf.h"
 #include "libmpcodecs/vd.h"
@@ -103,24 +104,78 @@ static void rescale_input_coordinates(struct MPContext *mpctx, int ix, int iy,
            vo->dheight, vo_fs);
 }
 
-static int sub_source_by_pos(MPContext *mpctx, int pos)
+static int sub_pos_by_source(MPContext *mpctx, int src)
 {
-    int source = -1;
-    int top = -1;
+    int i, cnt = 0;
+    if (src >= SUB_SOURCES || mpctx->sub_counts[src] == 0)
+        return -1;
+    for (i = 0; i < src; i++)
+        cnt += mpctx->sub_counts[i];
+    return cnt;
+}
+
+static int sub_source_and_index_by_pos(MPContext *mpctx, int *pos)
+{
+    int start = 0;
     int i;
     for (i = 0; i < SUB_SOURCES; i++) {
-        int j = mpctx->global_sub_indices[i];
-        if ((j >= 0) && (j > top) && (pos >= j)) {
-            source = i;
-            top = j;
+        int cnt = mpctx->sub_counts[i];
+        if (*pos >= start && *pos < start + cnt) {
+            *pos -= start;
+            return i;
         }
+        start += cnt;
     }
-    return source;
+    *pos = -1;
+    return -1;
+}
+
+static int sub_source_by_pos(MPContext *mpctx, int pos)
+{
+    return sub_source_and_index_by_pos(mpctx, &pos);
+}
+
+static int sub_source_pos(MPContext *mpctx)
+{
+    int pos = mpctx->global_sub_pos;
+    sub_source_and_index_by_pos(mpctx, &pos);
+    return pos;
 }
 
 static int sub_source(MPContext *mpctx)
 {
     return sub_source_by_pos(mpctx, mpctx->global_sub_pos);
+}
+
+static void update_global_sub_size(MPContext *mpctx)
+{
+    struct MPOpts *opts = &mpctx->opts;
+    int i;
+    int cnt = 0;
+
+    // update number of demuxer sub streams
+    for (i = 0; i < MAX_S_STREAMS; i++)
+        if (mpctx->d_sub->demuxer->s_streams[i])
+            cnt++;
+    if (cnt > mpctx->sub_counts[SUB_SOURCE_DEMUX])
+        mpctx->sub_counts[SUB_SOURCE_DEMUX] = cnt;
+
+    // update global size
+    mpctx->global_sub_size = 0;
+    for (i = 0; i < SUB_SOURCES; i++)
+        mpctx->global_sub_size += mpctx->sub_counts[i];
+
+    // update global_sub_pos if we auto-detected a demuxer sub
+    if (mpctx->global_sub_pos == -1) {
+        int sub_id = -1;
+        if (mpctx->demuxer->sub)
+            sub_id = mpctx->demuxer->sub->id;
+        if (sub_id < 0)
+            sub_id = opts->sub_id;
+        if (sub_id >= 0 && sub_id < mpctx->sub_counts[SUB_SOURCE_DEMUX])
+            mpctx->global_sub_pos = sub_pos_by_source(mpctx, SUB_SOURCE_DEMUX) +
+                                    sub_id;
+    }
 }
 
 /**
@@ -172,6 +227,39 @@ static void log_sub(struct MPContext *mpctx)
 /// \ingroup Properties
 ///@{
 
+static int mp_property_generic_option(struct m_option *prop, int action,
+                                      void *arg, MPContext *mpctx)
+{
+    char *optname = prop->priv;
+    const struct m_option *opt = m_config_get_option(mpctx->mconfig, optname);
+    void *valptr = m_option_get_ptr(opt, &mpctx->opts);
+
+    switch (action) {
+    case M_PROPERTY_GET_TYPE:
+        *(const struct m_option **)arg = opt;
+        return M_PROPERTY_OK;
+    case M_PROPERTY_GET:
+        m_option_copy(opt, arg, valptr);
+        return M_PROPERTY_OK;
+    case M_PROPERTY_SET:
+        m_option_copy(opt, valptr, arg);
+        return M_PROPERTY_OK;
+    case M_PROPERTY_STEP_UP:
+        if (opt->type == &m_option_type_choice) {
+            int v = *(int *) valptr;
+            int best = v;
+            struct m_opt_choice_alternatives *alt;
+            for (alt = opt->priv; alt->name; alt++)
+                if ((unsigned) alt->value - v - 1 < (unsigned) best - v - 1)
+                    best = alt->value;
+            *(int *) valptr = best;
+            return M_PROPERTY_OK;
+        }
+        break;
+    }
+    return M_PROPERTY_NOT_IMPLEMENTED;
+}
+
 /// OSD level (RW)
 static int mp_property_osdlevel(m_option_t *prop, int action, void *arg,
                                 MPContext *mpctx)
@@ -209,14 +297,14 @@ static int mp_property_playback_speed(m_option_t *prop, int action,
             return M_PROPERTY_ERROR;
         M_PROPERTY_CLAMP(prop, *(float *) arg);
         opts->playback_speed = *(float *) arg;
-        build_afilter_chain(mpctx, mpctx->sh_audio, &ao_data);
+        reinit_audio_chain(mpctx);
         return M_PROPERTY_OK;
     case M_PROPERTY_STEP_UP:
     case M_PROPERTY_STEP_DOWN:
         opts->playback_speed += (arg ? *(float *) arg : 0.1) *
             (action == M_PROPERTY_STEP_DOWN ? -1 : 1);
         M_PROPERTY_CLAMP(prop, opts->playback_speed);
-        build_afilter_chain(mpctx, mpctx->sh_audio, &ao_data);
+        reinit_audio_chain(mpctx);
         return M_PROPERTY_OK;
     }
     return m_property_float_range(prop, action, arg, &opts->playback_speed);
@@ -236,10 +324,8 @@ static int mp_property_filename(m_option_t *prop, int action, void *arg,
     char *f;
     if (!mpctx->filename)
         return M_PROPERTY_UNAVAILABLE;
-    if (((f = strrchr(mpctx->filename, '/'))
-         || (f = strrchr(mpctx->filename, '\\'))) && f[1])
-        f++;
-    else
+    f = (char *)mp_basename(mpctx->filename);
+    if (!*f)
         f = mpctx->filename;
     return m_property_string_ro(prop, action, arg, f);
 }
@@ -317,6 +403,17 @@ static int mp_property_stream_length(m_option_t *prop, int action,
     return M_PROPERTY_NOT_IMPLEMENTED;
 }
 
+/// Current stream position in seconds (RO)
+static int mp_property_stream_time_pos(m_option_t *prop, int action,
+                                       void *arg, MPContext *mpctx)
+{
+    if (!mpctx->demuxer || mpctx->demuxer->stream_pts == MP_NOPTS_VALUE)
+        return M_PROPERTY_UNAVAILABLE;
+
+    return m_property_time_ro(prop, action, arg, mpctx->demuxer->stream_pts);
+}
+
+
 /// Media length in seconds (RO)
 static int mp_property_length(m_option_t *prop, int action, void *arg,
                               MPContext *mpctx)
@@ -324,7 +421,7 @@ static int mp_property_length(m_option_t *prop, int action, void *arg,
     double len;
 
     if (!mpctx->demuxer ||
-        !(int) (len = demuxer_get_time_length(mpctx->demuxer)))
+        !(int) (len = get_time_length(mpctx)))
         return M_PROPERTY_UNAVAILABLE;
 
     return m_property_time_ro(prop, action, arg, len);
@@ -346,18 +443,16 @@ static int mp_property_percent_pos(m_option_t *prop, int action,
         break;
     case M_PROPERTY_STEP_UP:
     case M_PROPERTY_STEP_DOWN:
-        pos = demuxer_get_percent_pos(mpctx->demuxer);
+        pos = get_percent_pos(mpctx);
         pos += (arg ? *(int*)arg : 10) *
             (action == M_PROPERTY_STEP_UP ? 1 : -1);
         M_PROPERTY_CLAMP(prop, pos);
         break;
     default:
-        return m_property_int_ro(prop, action, arg,
-                                 demuxer_get_percent_pos(mpctx->demuxer));
+        return m_property_int_ro(prop, action, arg, get_percent_pos(mpctx));
     }
 
-    mpctx->abs_seek_pos = SEEK_ABSOLUTE | SEEK_FACTOR;
-    mpctx->rel_seek_secs = pos / 100.0;
+    queue_seek(mpctx, MPSEEK_FACTOR, pos / 100.0, 0);
     return M_PROPERTY_OK;
 }
 
@@ -371,18 +466,15 @@ static int mp_property_time_pos(m_option_t *prop, int action,
     case M_PROPERTY_SET:
         if(!arg) return M_PROPERTY_ERROR;
         M_PROPERTY_CLAMP(prop, *(double*)arg);
-        mpctx->abs_seek_pos = SEEK_ABSOLUTE;
-        mpctx->rel_seek_secs = *(double*)arg;
+        queue_seek(mpctx, MPSEEK_ABSOLUTE, *(double*)arg, 0);
         return M_PROPERTY_OK;
     case M_PROPERTY_STEP_UP:
     case M_PROPERTY_STEP_DOWN:
-        mpctx->rel_seek_secs += (arg ? *(double*)arg : 10.0) *
-            (action == M_PROPERTY_STEP_UP ? 1.0 : -1.0);
+        queue_seek(mpctx, MPSEEK_RELATIVE, (arg ? *(double*)arg : 10.0) *
+                   (action == M_PROPERTY_STEP_UP ? 1.0 : -1.0), 0);
         return M_PROPERTY_OK;
     }
-    return m_property_time_ro(prop, action, arg,
-                              mpctx->sh_video ? mpctx->sh_video->pts :
-                              playing_audio_pts(mpctx));
+    return m_property_time_ro(prop, action, arg, get_current_time(mpctx));
 }
 
 /// Current chapter (RW)
@@ -435,25 +527,20 @@ static int mp_property_chapter(m_option_t *prop, int action, void *arg,
     }
 
     double next_pts = 0;
+    queue_seek(mpctx, MPSEEK_NONE, 0, 0);
     chapter = seek_chapter(mpctx, chapter, &next_pts, &chapter_name);
-    mpctx->rel_seek_secs = 0;
-    mpctx->abs_seek_pos = 0;
     if (chapter >= 0) {
-        if (next_pts > -1.0) {
-            mpctx->abs_seek_pos = SEEK_ABSOLUTE;
-            mpctx->rel_seek_secs = next_pts;
-        }
+        if (next_pts > -1.0)
+            queue_seek(mpctx, MPSEEK_ABSOLUTE, next_pts, 0);
         if (chapter_name)
             set_osd_tmsg(OSD_MSG_TEXT, 1, opts->osd_duration,
                          "Chapter: (%d) %s", chapter + 1, chapter_name);
-    }
-    else if (step_all > 0)
-        mpctx->rel_seek_secs = 1000000000.;
+    } else if (step_all > 0)
+        queue_seek(mpctx, MPSEEK_RELATIVE, 1000000000, 0);
     else
         set_osd_tmsg(OSD_MSG_TEXT, 1, opts->osd_duration,
                      "Chapter: (%d) %s", 0, mp_gtext("unknown"));
-    if (chapter_name)
-        talloc_free(chapter_name);
+    talloc_free(chapter_name);
     return M_PROPERTY_OK;
 }
 
@@ -536,8 +623,7 @@ static int mp_property_angle(m_option_t *prop, int action, void *arg,
 
     set_osd_tmsg(OSD_MSG_TEXT, 1, opts->osd_duration,
                  "Angle: %d/%d", angle, angles);
-    if (angle_name)
-        free(angle_name);
+    free(angle_name);
     return M_PROPERTY_OK;
 }
 
@@ -568,7 +654,7 @@ static int mp_property_metadata(m_option_t *prop, int action, void *arg,
             return M_PROPERTY_OK;
         case M_PROPERTY_GET_TYPE:
             if(!ka->arg) return M_PROPERTY_ERROR;
-            *(m_option_t**)ka->arg = &key_type;
+            *(const m_option_t**)ka->arg = &key_type;
             return M_PROPERTY_OK;
         }
     }
@@ -852,7 +938,7 @@ static int mp_property_audio(m_option_t *prop, int action, void *arg,
                              MPContext *mpctx)
 {
     int current_id, tmp;
-    if (!mpctx->demuxer || !mpctx->demuxer->audio)
+    if (!mpctx->demuxer || !mpctx->d_audio)
         return M_PROPERTY_UNAVAILABLE;
     current_id = mpctx->sh_audio ? mpctx->sh_audio->aid : -2;
 
@@ -900,12 +986,12 @@ static int mp_property_audio(m_option_t *prop, int action, void *arg,
             tmp = *((int *) arg);
         else
             tmp = -1;
-        int new_id = demuxer_switch_audio(mpctx->demuxer, tmp);
+        int new_id = demuxer_switch_audio(mpctx->d_audio->demuxer, tmp);
         if (new_id != current_id)
             uninit_player(mpctx, INITIALIZED_AO | INITIALIZED_ACODEC);
         if (new_id != current_id && new_id >= 0) {
             sh_audio_t *sh2;
-            sh2 = mpctx->demuxer->a_streams[mpctx->demuxer->audio->id];
+            sh2 = mpctx->d_audio->demuxer->a_streams[mpctx->demuxer->audio->id];
             sh2->ds = mpctx->demuxer->audio;
             mpctx->sh_audio = sh2;
             reinit_audio_chain(mpctx);
@@ -924,9 +1010,9 @@ static int mp_property_video(m_option_t *prop, int action, void *arg,
 {
     struct MPOpts *opts = &mpctx->opts;
     int current_id, tmp;
-    if (!mpctx->demuxer || !mpctx->demuxer->video)
+    if (!mpctx->demuxer || !mpctx->d_video)
         return M_PROPERTY_UNAVAILABLE;
-    current_id = mpctx->demuxer->video->id;
+    current_id = mpctx->d_video->id;
 
     switch (action) {
     case M_PROPERTY_GET:
@@ -954,17 +1040,17 @@ static int mp_property_video(m_option_t *prop, int action, void *arg,
             tmp = *((int *) arg);
         else
             tmp = -1;
-        opts->video_id = demuxer_switch_video(mpctx->demuxer, tmp);
+        opts->video_id = demuxer_switch_video(mpctx->d_video->demuxer, tmp);
         if (opts->video_id == -2
-            || (opts->video_id > -1 && mpctx->demuxer->video->id != current_id
+            || (opts->video_id > -1 && mpctx->d_video->id != current_id
                 && current_id != -2))
             uninit_player(mpctx, INITIALIZED_VCODEC |
                           (mpctx->opts.fixed_vo && opts->video_id != -2 ? 0 : INITIALIZED_VO));
-        if (opts->video_id > -1 && mpctx->demuxer->video->id != current_id) {
+        if (opts->video_id > -1 && mpctx->d_video->id != current_id) {
             sh_video_t *sh2;
-            sh2 = mpctx->demuxer->v_streams[mpctx->demuxer->video->id];
+            sh2 = mpctx->d_video->demuxer->v_streams[mpctx->d_video->id];
             if (sh2) {
-                sh2->ds = mpctx->demuxer->video;
+                sh2->ds = mpctx->d_video;
                 mpctx->sh_video = sh2;
                 reinit_video_chain(mpctx);
             }
@@ -1113,6 +1199,40 @@ static int mp_property_yuv_colorspace(m_option_t *prop, int action,
     return M_PROPERTY_NOT_IMPLEMENTED;
 }
 
+static int mp_property_capture(m_option_t *prop, int action,
+                               void *arg, MPContext *mpctx)
+{
+    struct MPOpts *opts = &mpctx->opts;
+
+    if (!mpctx->stream)
+        return M_PROPERTY_UNAVAILABLE;
+
+    if (!opts->capture_dump) {
+        mp_tmsg(MSGT_GLOBAL, MSGL_ERR,
+                "Capturing not enabled (forgot -capture parameter?)\n");
+        return M_PROPERTY_ERROR;
+    }
+
+    int capturing = !!mpctx->stream->capture_file;
+
+    int ret = m_property_flag(prop, action, arg, &capturing);
+    if (ret == M_PROPERTY_OK && capturing != !!mpctx->stream->capture_file) {
+        if (capturing) {
+            mpctx->stream->capture_file = fopen(opts->stream_dump_name, "wb");
+            if (!mpctx->stream->capture_file) {
+                mp_tmsg(MSGT_GLOBAL, MSGL_ERR,
+                        "Error opening capture file: %s\n", strerror(errno));
+                ret = M_PROPERTY_ERROR;
+            }
+        } else {
+            fclose(mpctx->stream->capture_file);
+            mpctx->stream->capture_file = NULL;
+        }
+    }
+
+    return ret;
+}
+
 /// Panscan (RW)
 static int mp_property_panscan(m_option_t *prop, int action, void *arg,
                                MPContext *mpctx)
@@ -1221,7 +1341,7 @@ static int mp_property_framedropping(m_option_t *prop, int action,
 static int mp_property_gamma(m_option_t *prop, int action, void *arg,
                              MPContext *mpctx)
 {
-    int *gamma = (int *)((char *)&mpctx->opts + (int)prop->priv);
+    int *gamma = (int *)((char *)&mpctx->opts + prop->offset);
     int r, val;
 
     if (!mpctx->sh_video)
@@ -1400,9 +1520,12 @@ static int mp_property_sub(m_option_t *prop, int action, void *arg,
 {
     struct MPOpts *opts = &mpctx->opts;
     demux_stream_t *const d_sub = mpctx->d_sub;
-    const int global_sub_size = mpctx->global_sub_size;
     int source = -1, reset_spu = 0;
+    int source_pos = -1;
     char *sub_name;
+
+    update_global_sub_size(mpctx);
+    const int global_sub_size = mpctx->global_sub_size;
 
     if (global_sub_size <= 0)
         return M_PROPERTY_UNAVAILABLE;
@@ -1426,10 +1549,7 @@ static int mp_property_sub(m_option_t *prop, int action, void *arg,
             sub_name = ass_track->name;
 #endif
         if (sub_name) {
-            char *tmp, *tmp2;
-            tmp = sub_name;
-            if ((tmp2 = strrchr(tmp, '/')))
-                tmp = tmp2 + 1;
+            const char *tmp = mp_basename(sub_name);
 
             snprintf(*(char **) arg, 63, "(%d) %s%s",
                      mpctx->set_of_sub_pos + 1,
@@ -1449,11 +1569,11 @@ static int mp_property_sub(m_option_t *prop, int action, void *arg,
         }
 #endif
 
-        if ((mpctx->demuxer->type == DEMUXER_TYPE_MATROSKA
-             || mpctx->demuxer->type == DEMUXER_TYPE_LAVF
-             || mpctx->demuxer->type == DEMUXER_TYPE_LAVF_PREFERRED
-             || mpctx->demuxer->type == DEMUXER_TYPE_OGG)
-             && d_sub && d_sub->sh && opts->sub_id >= 0) {
+        if ((d_sub->demuxer->type == DEMUXER_TYPE_MATROSKA
+             || d_sub->demuxer->type == DEMUXER_TYPE_LAVF
+             || d_sub->demuxer->type == DEMUXER_TYPE_LAVF_PREFERRED
+             || d_sub->demuxer->type == DEMUXER_TYPE_OGG)
+             && d_sub->sh && opts->sub_id >= 0) {
             const char* lang = ((sh_sub_t*)d_sub->sh)->lang;
             if (!lang) lang = mp_gtext("unknown");
             snprintf(*(char **) arg, 63, "(%d) %s", opts->sub_id, lang);
@@ -1510,15 +1630,17 @@ static int mp_property_sub(m_option_t *prop, int action, void *arg,
         return M_PROPERTY_NOT_IMPLEMENTED;
     }
 
-    if (mpctx->global_sub_pos >= 0)
+    if (mpctx->global_sub_pos >= 0) {
         source = sub_source(mpctx);
+        source_pos = sub_source_pos(mpctx);
+    }
 
     mp_msg(MSGT_CPLAYER, MSGL_DBG3,
            "subtitles: %d subs, (v@%d s@%d d@%d), @%d, source @%d\n",
            global_sub_size,
-           mpctx->global_sub_indices[SUB_SOURCE_VOBSUB],
-           mpctx->global_sub_indices[SUB_SOURCE_SUBS],
-           mpctx->global_sub_indices[SUB_SOURCE_DEMUX],
+           mpctx->sub_counts[SUB_SOURCE_VOBSUB],
+           mpctx->sub_counts[SUB_SOURCE_SUBS],
+           mpctx->sub_counts[SUB_SOURCE_DEMUX],
            mpctx->global_sub_pos, source);
 
     mpctx->set_of_sub_pos = -1;
@@ -1536,10 +1658,9 @@ static int mp_property_sub(m_option_t *prop, int action, void *arg,
 #endif
 
     if (source == SUB_SOURCE_VOBSUB) {
-        vobsub_id = vobsub_get_id_by_index(vo_vobsub, mpctx->global_sub_pos - mpctx->global_sub_indices[SUB_SOURCE_VOBSUB]);
+        vobsub_id = vobsub_get_id_by_index(vo_vobsub, source_pos);
     } else if (source == SUB_SOURCE_SUBS) {
-        mpctx->set_of_sub_pos =
-            mpctx->global_sub_pos - mpctx->global_sub_indices[SUB_SOURCE_SUBS];
+        mpctx->set_of_sub_pos = source_pos;
 #ifdef CONFIG_ASS
         if (opts->ass_enabled && mpctx->set_of_ass_tracks[mpctx->set_of_sub_pos])
             ass_track = mpctx->set_of_ass_tracks[mpctx->set_of_sub_pos];
@@ -1550,16 +1671,15 @@ static int mp_property_sub(m_option_t *prop, int action, void *arg,
             vo_osd_changed(OSDTYPE_SUBTITLE);
         }
     } else if (source == SUB_SOURCE_DEMUX) {
-        opts->sub_id =
-            mpctx->global_sub_pos - mpctx->global_sub_indices[SUB_SOURCE_DEMUX];
+        opts->sub_id = source_pos;
         if (d_sub && opts->sub_id < MAX_S_STREAMS) {
             int i = 0;
             // default: assume 1:1 mapping of sid and stream id
             d_sub->id = opts->sub_id;
-            d_sub->sh = mpctx->demuxer->s_streams[d_sub->id];
+            d_sub->sh = mpctx->d_sub->demuxer->s_streams[d_sub->id];
             ds_free_packs(d_sub);
             for (i = 0; i < MAX_S_STREAMS; i++) {
-                sh_sub_t *sh = mpctx->demuxer->s_streams[i];
+                sh_sub_t *sh = mpctx->d_sub->demuxer->s_streams[i];
                 if (sh && sh->sid == opts->sub_id) {
                     d_sub->id = i;
                     d_sub->sh = sh;
@@ -1600,6 +1720,7 @@ static int mp_property_sub_source(m_option_t *prop, int action, void *arg,
                                   MPContext *mpctx)
 {
     int source;
+    update_global_sub_size(mpctx);
     if (!mpctx->sh_video || mpctx->global_sub_size <= 0)
         return M_PROPERTY_UNAVAILABLE;
 
@@ -1636,9 +1757,10 @@ static int mp_property_sub_source(m_option_t *prop, int action, void *arg,
         if (*(int *) arg < 0)
             mpctx->global_sub_pos = -1;
         else if (*(int *) arg != sub_source(mpctx)) {
-            if (*(int *) arg != sub_source_by_pos(mpctx, mpctx->global_sub_indices[*(int *) arg]))
+            int new_pos = sub_pos_by_source(mpctx, *(int *)arg);
+            if (new_pos == -1)
                 return M_PROPERTY_UNAVAILABLE;
-            mpctx->global_sub_pos = mpctx->global_sub_indices[*(int *) arg];
+            mpctx->global_sub_pos = new_pos;
         }
         break;
     case M_PROPERTY_STEP_UP:
@@ -1655,7 +1777,7 @@ static int mp_property_sub_source(m_option_t *prop, int action, void *arg,
             else if (source < -1)
                 source = SUB_SOURCES - 1;
             if (source == cur_source || source == -1 ||
-                    source == sub_source_by_pos(mpctx, mpctx->global_sub_indices[source]))
+                    mpctx->sub_counts[source])
                 step_all -= step;
         }
         if (source == cur_source)
@@ -1663,7 +1785,7 @@ static int mp_property_sub_source(m_option_t *prop, int action, void *arg,
         if (source == -1)
             mpctx->global_sub_pos = -1;
         else
-            mpctx->global_sub_pos = mpctx->global_sub_indices[source];
+            mpctx->global_sub_pos = sub_pos_by_source(mpctx, source);
         break;
     }
     default:
@@ -1677,7 +1799,8 @@ static int mp_property_sub_source(m_option_t *prop, int action, void *arg,
 static int mp_property_sub_by_type(m_option_t *prop, int action, void *arg,
                                    MPContext *mpctx)
 {
-    int source, is_cur_source, offset;
+    int source, is_cur_source, offset, new_pos;
+    update_global_sub_size(mpctx);
     if (!mpctx->sh_video || mpctx->global_sub_size <= 0)
         return M_PROPERTY_UNAVAILABLE;
 
@@ -1690,17 +1813,18 @@ static int mp_property_sub_by_type(m_option_t *prop, int action, void *arg,
     else
         return M_PROPERTY_ERROR;
 
-    offset = mpctx->global_sub_indices[source];
-    if (offset < 0 || source != sub_source_by_pos(mpctx, offset))
+    offset = sub_pos_by_source(mpctx, source);
+    if (offset < 0)
         return M_PROPERTY_UNAVAILABLE;
 
     is_cur_source = sub_source(mpctx) == source;
+    new_pos = mpctx->global_sub_pos;
     switch (action) {
     case M_PROPERTY_GET:
         if (!arg)
             return M_PROPERTY_ERROR;
         if (is_cur_source) {
-            *(int *) arg = mpctx->global_sub_pos - offset;
+            *(int *) arg = sub_source_pos(mpctx);
             if (source == SUB_SOURCE_VOBSUB)
                 *(int *) arg = vobsub_get_id_by_index(vo_vobsub, *(int *) arg);
         }
@@ -1723,15 +1847,14 @@ static int mp_property_sub_by_type(m_option_t *prop, int action, void *arg,
             int index = *(int *)arg;
             if (source == SUB_SOURCE_VOBSUB)
                 index = vobsub_get_index_by_id(vo_vobsub, index);
-            mpctx->global_sub_pos = offset + index;
-            if (index < 0 || mpctx->global_sub_pos >= mpctx->global_sub_size
-                    || sub_source(mpctx) != source) {
-                mpctx->global_sub_pos = -1;
+            new_pos = offset + index;
+            if (index < 0 || index > mpctx->sub_counts[source]) {
+                new_pos = -1;
                 *(int *) arg = -1;
             }
         }
         else
-            mpctx->global_sub_pos = -1;
+            new_pos = -1;
         break;
     case M_PROPERTY_STEP_UP:
     case M_PROPERTY_STEP_DOWN: {
@@ -1740,27 +1863,27 @@ static int mp_property_sub_by_type(m_option_t *prop, int action, void *arg,
         int step = (step_all > 0) ? 1 : -1;
         int max_sub_pos_for_source = -1;
         if (!is_cur_source)
-            mpctx->global_sub_pos = -1;
+            new_pos = -1;
         while (step_all) {
-            if (mpctx->global_sub_pos == -1) {
+            if (new_pos == -1) {
                 if (step > 0)
-                    mpctx->global_sub_pos = offset;
+                    new_pos = offset;
                 else if (max_sub_pos_for_source == -1) {
                     // Find max pos for specific source
-                    mpctx->global_sub_pos = mpctx->global_sub_size - 1;
-                    while (mpctx->global_sub_pos >= 0
+                    new_pos = mpctx->global_sub_size - 1;
+                    while (new_pos >= 0
                             && sub_source(mpctx) != source)
-                        --mpctx->global_sub_pos;
+                        new_pos--;
                 }
                 else
-                    mpctx->global_sub_pos = max_sub_pos_for_source;
+                    new_pos = max_sub_pos_for_source;
             }
             else {
-                mpctx->global_sub_pos += step;
-                if (mpctx->global_sub_pos < offset ||
-                        mpctx->global_sub_pos >= mpctx->global_sub_size ||
+                new_pos += step;
+                if (new_pos < offset ||
+                        new_pos >= mpctx->global_sub_size ||
                         sub_source(mpctx) != source)
-                    mpctx->global_sub_pos = -1;
+                    new_pos = -1;
             }
             step_all -= step;
         }
@@ -1769,8 +1892,7 @@ static int mp_property_sub_by_type(m_option_t *prop, int action, void *arg,
     default:
         return M_PROPERTY_NOT_IMPLEMENTED;
     }
-    --mpctx->global_sub_pos;
-    return mp_property_sub(prop, M_PROPERTY_STEP_UP, NULL, mpctx);
+    return mp_property_sub(prop, M_PROPERTY_SET, &new_pos, mpctx);
 }
 
 /// Subtitle delay (RW)
@@ -1943,18 +2065,18 @@ static int mp_property_tv_color(m_option_t *prop, int action, void *arg,
         if (!arg)
             return M_PROPERTY_ERROR;
         M_PROPERTY_CLAMP(prop, *(int *) arg);
-        return tv_set_color_options(tvh, (int) prop->priv, *(int *) arg);
+        return tv_set_color_options(tvh, prop->offset, *(int *) arg);
     case M_PROPERTY_GET:
-        return tv_get_color_options(tvh, (int) prop->priv, arg);
+        return tv_get_color_options(tvh, prop->offset, arg);
     case M_PROPERTY_STEP_UP:
     case M_PROPERTY_STEP_DOWN:
-        if ((r = tv_get_color_options(tvh, (int) prop->priv, &val)) >= 0) {
+        if ((r = tv_get_color_options(tvh, prop->offset, &val)) >= 0) {
             if (!r)
                 return M_PROPERTY_ERROR;
             val += (arg ? *(int *) arg : 1) *
                 (action == M_PROPERTY_STEP_DOWN ? -1 : 1);
             M_PROPERTY_CLAMP(prop, val);
-            return tv_set_color_options(tvh, (int) prop->priv, val);
+            return tv_set_color_options(tvh, prop->offset, val);
         }
         return M_PROPERTY_ERROR;
     }
@@ -1967,7 +2089,7 @@ static int mp_property_teletext_common(m_option_t *prop, int action, void *arg,
                   MPContext *mpctx)
 {
     int val,result;
-    int base_ioctl=(int)prop->priv;
+    int base_ioctl = prop->offset;
     /*
       for teletext's GET,SET,STEP ioctls this is not 0
       SET is GET+1
@@ -2015,7 +2137,7 @@ static int mp_property_teletext_mode(m_option_t *prop, int action, void *arg,
         return result;
 
     if(teletext_control(mpctx->demuxer->teletext,
-                        (int)prop->priv, &val)==VBI_CONTROL_TRUE && val)
+                        prop->offset, &val)==VBI_CONTROL_TRUE && val)
         mp_input_set_section(mpctx->input, "teletext");
     else
         mp_input_set_section(mpctx->input, "tv");
@@ -2070,6 +2192,8 @@ static const m_option_t mp_properties[] = {
      M_OPT_MIN, 0, 0, NULL },
     { "stream_length", mp_property_stream_length, CONF_TYPE_POSITION,
      M_OPT_MIN, 0, 0, NULL },
+    { "stream_time_pos", mp_property_stream_time_pos, CONF_TYPE_TIME,
+     M_OPT_MIN, 0, 0, NULL },
     { "length", mp_property_length, CONF_TYPE_TIME,
      M_OPT_MIN, 0, 0, NULL },
     { "percent_pos", mp_property_percent_pos, CONF_TYPE_INT,
@@ -2086,6 +2210,12 @@ static const m_option_t mp_properties[] = {
      0, 0, 0, NULL },
     { "pause", mp_property_pause, CONF_TYPE_FLAG,
      M_OPT_RANGE, 0, 1, NULL },
+    { "capturing", mp_property_capture, CONF_TYPE_FLAG,
+     M_OPT_RANGE, 0, 1, NULL },
+    { "pts_association_mode", mp_property_generic_option, &m_option_type_choice,
+     0, 0, 0, "pts-association-mode" },
+    { "hr_seek", mp_property_generic_option, &m_option_type_choice,
+     0, 0, 0, "hr-seek" },
 
     // Audio
     { "volume", mp_property_volume, CONF_TYPE_FLOAT,
@@ -2125,15 +2255,15 @@ static const m_option_t mp_properties[] = {
     { "framedropping", mp_property_framedropping, CONF_TYPE_INT,
      M_OPT_RANGE, 0, 2, NULL },
     { "gamma", mp_property_gamma, CONF_TYPE_INT,
-      M_OPT_RANGE, -100, 100, (void *)offsetof(struct MPOpts, vo_gamma_gamma)},
+      M_OPT_RANGE, -100, 100, .offset=offsetof(struct MPOpts, vo_gamma_gamma)},
     { "brightness", mp_property_gamma, CONF_TYPE_INT,
-      M_OPT_RANGE, -100, 100, (void *)offsetof(struct MPOpts, vo_gamma_brightness) },
+      M_OPT_RANGE, -100, 100, .offset=offsetof(struct MPOpts, vo_gamma_brightness) },
     { "contrast", mp_property_gamma, CONF_TYPE_INT,
-      M_OPT_RANGE, -100, 100, (void *)offsetof(struct MPOpts, vo_gamma_contrast) },
+      M_OPT_RANGE, -100, 100, .offset=offsetof(struct MPOpts, vo_gamma_contrast) },
     { "saturation", mp_property_gamma, CONF_TYPE_INT,
-      M_OPT_RANGE, -100, 100, (void *)offsetof(struct MPOpts, vo_gamma_saturation) },
+      M_OPT_RANGE, -100, 100, .offset=offsetof(struct MPOpts, vo_gamma_saturation) },
     { "hue", mp_property_gamma, CONF_TYPE_INT,
-      M_OPT_RANGE, -100, 100, (void *)offsetof(struct MPOpts, vo_gamma_hue) },
+      M_OPT_RANGE, -100, 100, .offset=offsetof(struct MPOpts, vo_gamma_hue) },
     { "panscan", mp_property_panscan, CONF_TYPE_FLOAT,
      M_OPT_RANGE, 0, 1, NULL },
     { "vsync", mp_property_vsync, CONF_TYPE_FLAG,
@@ -2189,24 +2319,24 @@ static const m_option_t mp_properties[] = {
 
 #ifdef CONFIG_TV
     { "tv_brightness", mp_property_tv_color, CONF_TYPE_INT,
-     M_OPT_RANGE, -100, 100, (void *) TV_COLOR_BRIGHTNESS },
+     M_OPT_RANGE, -100, 100, .offset=TV_COLOR_BRIGHTNESS },
     { "tv_contrast", mp_property_tv_color, CONF_TYPE_INT,
-     M_OPT_RANGE, -100, 100, (void *) TV_COLOR_CONTRAST },
+     M_OPT_RANGE, -100, 100, .offset=TV_COLOR_CONTRAST },
     { "tv_saturation", mp_property_tv_color, CONF_TYPE_INT,
-     M_OPT_RANGE, -100, 100, (void *) TV_COLOR_SATURATION },
+     M_OPT_RANGE, -100, 100, .offset=TV_COLOR_SATURATION },
     { "tv_hue", mp_property_tv_color, CONF_TYPE_INT,
-     M_OPT_RANGE, -100, 100, (void *) TV_COLOR_HUE },
+     M_OPT_RANGE, -100, 100, .offset=TV_COLOR_HUE },
 #endif
     { "teletext_page", mp_property_teletext_page, CONF_TYPE_INT,
-     M_OPT_RANGE, 100, 899,  (void*)TV_VBI_CONTROL_GET_PAGE },
+     M_OPT_RANGE, 100, 899, .offset=TV_VBI_CONTROL_GET_PAGE },
     { "teletext_subpage", mp_property_teletext_common, CONF_TYPE_INT,
-     M_OPT_RANGE, 0, 64, (void*)TV_VBI_CONTROL_GET_SUBPAGE },
+     M_OPT_RANGE, 0, 64, .offset=TV_VBI_CONTROL_GET_SUBPAGE },
     { "teletext_mode", mp_property_teletext_mode, CONF_TYPE_FLAG,
-     M_OPT_RANGE, 0, 1, (void*)TV_VBI_CONTROL_GET_MODE },
+     M_OPT_RANGE, 0, 1, .offset=TV_VBI_CONTROL_GET_MODE },
     { "teletext_format", mp_property_teletext_common, CONF_TYPE_INT,
-     M_OPT_RANGE, 0, 3, (void*)TV_VBI_CONTROL_GET_FORMAT },
+     M_OPT_RANGE, 0, 3, .offset=TV_VBI_CONTROL_GET_FORMAT },
     { "teletext_half_page", mp_property_teletext_common, CONF_TYPE_INT,
-     M_OPT_RANGE, 0, 2, (void*)TV_VBI_CONTROL_GET_HALF_PAGE },
+     M_OPT_RANGE, 0, 2, .offset=TV_VBI_CONTROL_GET_HALF_PAGE },
     { NULL, NULL, NULL, 0, 0, 0, NULL }
 };
 
@@ -2258,6 +2388,9 @@ static struct property_osd_display {
     // general
     { "loop", 0, -1, _("Loop: %s") },
     { "chapter", -1, -1, NULL },
+    { "capturing", 0, -1, _("Capturing: %s") },
+    { "pts_association_mode", 0, -1, "PTS association mode: %s" },
+    { "hr_seek", 0, -1, "hr-seek: %s" },
     // audio
     { "volume", OSD_VOLUME, -1, _("Volume") },
     { "mute", 0, -1, _("Mute: %s") },
@@ -2364,8 +2497,8 @@ static int show_property_osd(MPContext *mpctx, const char *pname)
  *
  * Toggle commands take 0 or 1 parameters. With no parameter
  * or a value less than the property minimum it just steps the
- * property to its next value. Otherwise it sets it to the given
- * value.
+ * property to its next or previous value respectively.
+ * Otherwise it sets it to the given value.
  *
  *@{
  */
@@ -2384,6 +2517,7 @@ static struct {
     { "chapter", MP_CMD_SEEK_CHAPTER, 0},
     { "angle", MP_CMD_SWITCH_ANGLE, 0},
     { "pause", MP_CMD_PAUSE, 0},
+    { "capturing", MP_CMD_CAPTURING, 1},
     // audio
     { "volume", MP_CMD_VOLUME, 0},
     { "mute", MP_CMD_MUTE, 1},
@@ -2451,6 +2585,8 @@ static int set_property_command(MPContext *mpctx, mp_cmd_t *cmd)
         // set to value
         if (cmd->nargs > 0 && cmd->args[0].v.i >= prop->min)
             r = mp_property_do(pname, M_PROPERTY_SET, &cmd->args[0].v.i, mpctx);
+        else if (cmd->nargs > 0)
+            r = mp_property_do(pname, M_PROPERTY_STEP_DOWN, NULL, mpctx);
         else
             r = mp_property_do(pname, M_PROPERTY_STEP_UP, NULL, mpctx);
     } else if (cmd->args[1].v.i)        //set
@@ -2545,7 +2681,7 @@ static void remove_subtitle_range(MPContext *mpctx, int start, int count)
     mpctx->global_sub_size -= count;
     mpctx->set_of_sub_size -= count;
     if (mpctx->set_of_sub_size <= 0)
-        mpctx->global_sub_indices[SUB_SOURCE_SUBS] = -1;
+        mpctx->sub_counts[SUB_SOURCE_SUBS] = 0;
 
     memmove(subs + start, subs + end, after * sizeof(*subs));
     memset(subs + start + after, 0, count * sizeof(*subs));
@@ -2577,24 +2713,19 @@ void run_command(MPContext *mpctx, mp_cmd_t *cmd)
     if (!set_property_command(mpctx, cmd))
         switch (cmd->id) {
         case MP_CMD_SEEK:{
-                float v;
-                int abs;
                 mpctx->add_osd_seek_info = true;
-                v = cmd->args[0].v.f;
-                abs = (cmd->nargs > 1) ? cmd->args[1].v.i : 0;
+                float v = cmd->args[0].v.f;
+                int abs = (cmd->nargs > 1) ? cmd->args[1].v.i : 0;
+                int exact = (cmd->nargs > 2) ? cmd->args[2].v.i : 0;
                 if (abs == 2) { /* Absolute seek to a specific timestamp in seconds */
-                    mpctx->abs_seek_pos = SEEK_ABSOLUTE;
-                    if (sh_video)
-                        mpctx->osd_function =
-                            (v > sh_video->pts) ? OSD_FFW : OSD_REW;
-                    mpctx->rel_seek_secs = v;
+                    queue_seek(mpctx, MPSEEK_ABSOLUTE, v, exact);
+                    mpctx->osd_function = v > get_current_time(mpctx) ?
+                        OSD_FFW : OSD_REW;
                 } else if (abs) {       /* Absolute seek by percentage */
-                    mpctx->abs_seek_pos = SEEK_ABSOLUTE | SEEK_FACTOR;
-                    if (sh_video)
-                        mpctx->osd_function = OSD_FFW;  // Direction isn't set correctly
-                    mpctx->rel_seek_secs = v / 100.0;
+                    queue_seek(mpctx, MPSEEK_FACTOR, v / 100.0, exact);
+                    mpctx->osd_function = OSD_FFW;  // Direction isn't set correctly
                 } else {
-                    mpctx->rel_seek_secs += v;
+                    queue_seek(mpctx, MPSEEK_RELATIVE, v, exact);
                     mpctx->osd_function = (v > 0) ? OSD_FFW : OSD_REW;
                 }
             }
@@ -2687,8 +2818,7 @@ void run_command(MPContext *mpctx, mp_cmd_t *cmd)
 
         case MP_CMD_EDL_MARK:
             if (edl_fd) {
-                float v = sh_video ? sh_video->pts :
-                    playing_audio_pts(mpctx);
+                float v = get_current_time(mpctx);
                 if (mpctx->begin_skip == MP_NOPTS_VALUE) {
                     mpctx->begin_skip = v;
                     mp_tmsg(MSGT_CPLAYER, MSGL_INFO, "EDL skip start, press 'i' again to end block.\n");
@@ -2717,7 +2847,7 @@ void run_command(MPContext *mpctx, mp_cmd_t *cmd)
         case MP_CMD_SPEED_INCR:{
                 float v = cmd->args[0].v.f;
                 opts->playback_speed += v;
-                build_afilter_chain(mpctx, sh_audio, &ao_data);
+                reinit_audio_chain(mpctx);
                 set_osd_tmsg(OSD_MSG_SPEED, 1, osd_duration, "Speed: x %6.2f",
                              opts->playback_speed);
             } break;
@@ -2725,7 +2855,7 @@ void run_command(MPContext *mpctx, mp_cmd_t *cmd)
         case MP_CMD_SPEED_MULT:{
                 float v = cmd->args[0].v.f;
                 opts->playback_speed *= v;
-                build_afilter_chain(mpctx, sh_audio, &ao_data);
+                reinit_audio_chain(mpctx);
                 set_osd_tmsg(OSD_MSG_SPEED, 1, osd_duration, "Speed: x %6.2f",
                              opts->playback_speed);
             } break;
@@ -2733,7 +2863,7 @@ void run_command(MPContext *mpctx, mp_cmd_t *cmd)
         case MP_CMD_SPEED_SET:{
                 float v = cmd->args[0].v.f;
                 opts->playback_speed = v;
-                build_afilter_chain(mpctx, sh_audio, &ao_data);
+                reinit_audio_chain(mpctx);
                 set_osd_tmsg(OSD_MSG_SPEED, 1, osd_duration, "Speed: x %6.2f",
                              opts->playback_speed);
             } break;
@@ -2801,12 +2931,12 @@ void run_command(MPContext *mpctx, mp_cmd_t *cmd)
         case MP_CMD_SUB_STEP:
             if (sh_video) {
                 int movement = cmd->args[0].v.i;
-                step_sub(subdata, sh_video->pts, movement);
+                step_sub(subdata, mpctx->video_pts, movement);
 #ifdef CONFIG_ASS
                 if (ass_track)
                     sub_delay +=
                         ass_step_sub(ass_track,
-                                     (sh_video->pts +
+                                     (mpctx->video_pts +
                                       sub_delay) * 1000 + .5, movement) / 1000.;
 #endif
                 set_osd_tmsg(OSD_MSG_SUB_DELAY, 1, osd_duration,
@@ -2820,7 +2950,7 @@ void run_command(MPContext *mpctx, mp_cmd_t *cmd)
 
         case MP_CMD_OSD:{
                 int v = cmd->args[0].v.i;
-                int max = (term_osd
+                int max = (opts->term_osd
                            && !sh_video) ? MAX_TERM_OSD_LEVEL : MAX_OSD_LEVEL;
                 if (opts->osd_level > max)
                     opts->osd_level = max;
@@ -2913,9 +3043,9 @@ void run_command(MPContext *mpctx, mp_cmd_t *cmd)
             break;
 
         case MP_CMD_OSD_SHOW_PROGRESSION:{
-                int len = demuxer_get_time_length(mpctx->demuxer);
-                int pts = demuxer_get_current_time(mpctx->demuxer);
-                set_osd_bar(mpctx, 0, "Position", 0, 100, demuxer_get_percent_pos(mpctx->demuxer));
+                int len = get_time_length(mpctx);
+                int pts = get_current_time(mpctx);
+                set_osd_bar(mpctx, 0, "Position", 0, 100, get_percent_pos(mpctx));
                 set_osd_msg(OSD_MSG_TEXT, 1, osd_duration,
                             "%c %02d:%02d:%02d / %02d:%02d:%02d",
                             mpctx->osd_function, pts/3600, (pts/60)%60, pts%60,
@@ -3114,28 +3244,22 @@ void run_command(MPContext *mpctx, mp_cmd_t *cmd)
             break;
 #endif /* CONFIG_TV */
         case MP_CMD_TV_TELETEXT_ADD_DEC:
-        {
             if (mpctx->demuxer->teletext)
                 teletext_control(mpctx->demuxer->teletext,TV_VBI_CONTROL_ADD_DEC,
                                  &(cmd->args[0].v.s));
             break;
-        }
         case MP_CMD_TV_TELETEXT_GO_LINK:
-        {
             if (mpctx->demuxer->teletext)
                 teletext_control(mpctx->demuxer->teletext,TV_VBI_CONTROL_GO_LINK,
                                  &(cmd->args[0].v.i));
             break;
-        }
 
         case MP_CMD_SUB_LOAD:
             if (sh_video) {
                 int n = mpctx->set_of_sub_size;
                 add_subtitles(mpctx, cmd->args[0].v.s, sh_video->fps, 0);
                 if (n != mpctx->set_of_sub_size) {
-                    if (mpctx->global_sub_indices[SUB_SOURCE_SUBS] < 0)
-                        mpctx->global_sub_indices[SUB_SOURCE_SUBS] =
-                            mpctx->global_sub_size;
+                    mpctx->sub_counts[SUB_SOURCE_SUBS]++;
                     ++mpctx->global_sub_size;
                 }
             }
@@ -3185,131 +3309,105 @@ void run_command(MPContext *mpctx, mp_cmd_t *cmd)
 
         case MP_CMD_GET_TIME_LENGTH:{
                 mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_LENGTH=%.2f\n",
-                       demuxer_get_time_length(mpctx->demuxer));
+                       get_time_length(mpctx));
             }
             break;
 
         case MP_CMD_GET_FILENAME:{
-                mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_FILENAME='%s'\n",
-                       get_metadata(mpctx, META_NAME));
+            char *inf = get_metadata(mpctx, META_NAME);
+            mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_FILENAME='%s'\n", inf);
+            talloc_free(inf);
             }
             break;
 
         case MP_CMD_GET_VIDEO_CODEC:{
-                char *inf = get_metadata(mpctx, META_VIDEO_CODEC);
-                if (!inf)
-                    inf = strdup("");
-                mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_VIDEO_CODEC='%s'\n", inf);
-                free(inf);
+            char *inf = get_metadata(mpctx, META_VIDEO_CODEC);
+            mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_VIDEO_CODEC='%s'\n", inf);
+            talloc_free(inf);
             }
             break;
 
         case MP_CMD_GET_VIDEO_BITRATE:{
-                char *inf = get_metadata(mpctx, META_VIDEO_BITRATE);
-                if (!inf)
-                    inf = strdup("");
-                mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_VIDEO_BITRATE='%s'\n", inf);
-                free(inf);
+            char *inf = get_metadata(mpctx, META_VIDEO_BITRATE);
+            mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_VIDEO_BITRATE='%s'\n", inf);
+            talloc_free(inf);
             }
             break;
 
         case MP_CMD_GET_VIDEO_RESOLUTION:{
-                char *inf = get_metadata(mpctx, META_VIDEO_RESOLUTION);
-                if (!inf)
-                    inf = strdup("");
-                mp_msg(MSGT_GLOBAL, MSGL_INFO,
-                       "ANS_VIDEO_RESOLUTION='%s'\n", inf);
-                free(inf);
+            char *inf = get_metadata(mpctx, META_VIDEO_RESOLUTION);
+            mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_VIDEO_RESOLUTION='%s'\n", inf);
+            talloc_free(inf);
             }
             break;
 
         case MP_CMD_GET_AUDIO_CODEC:{
-                char *inf = get_metadata(mpctx, META_AUDIO_CODEC);
-                if (!inf)
-                    inf = strdup("");
-                mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_AUDIO_CODEC='%s'\n", inf);
-                free(inf);
+            char *inf = get_metadata(mpctx, META_AUDIO_CODEC);
+            mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_AUDIO_CODEC='%s'\n", inf);
+            talloc_free(inf);
             }
             break;
 
         case MP_CMD_GET_AUDIO_BITRATE:{
-                char *inf = get_metadata(mpctx, META_AUDIO_BITRATE);
-                if (!inf)
-                    inf = strdup("");
-                mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_AUDIO_BITRATE='%s'\n", inf);
-                free(inf);
+            char *inf = get_metadata(mpctx, META_AUDIO_BITRATE);
+            mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_AUDIO_BITRATE='%s'\n", inf);
+            talloc_free(inf);
             }
             break;
 
         case MP_CMD_GET_AUDIO_SAMPLES:{
-                char *inf = get_metadata(mpctx, META_AUDIO_SAMPLES);
-                if (!inf)
-                    inf = strdup("");
-                mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_AUDIO_SAMPLES='%s'\n", inf);
-                free(inf);
+            char *inf = get_metadata(mpctx, META_AUDIO_SAMPLES);
+            mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_AUDIO_SAMPLES='%s'\n", inf);
+            talloc_free(inf);
             }
             break;
 
         case MP_CMD_GET_META_TITLE:{
-                char *inf = get_metadata(mpctx, META_INFO_TITLE);
-                if (!inf)
-                    inf = strdup("");
-                mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_META_TITLE='%s'\n", inf);
-                free(inf);
+            char *inf = get_metadata(mpctx, META_INFO_TITLE);
+            mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_META_TITLE='%s'\n", inf);
+            talloc_free(inf);
             }
             break;
 
         case MP_CMD_GET_META_ARTIST:{
-                char *inf = get_metadata(mpctx, META_INFO_ARTIST);
-                if (!inf)
-                    inf = strdup("");
-                mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_META_ARTIST='%s'\n", inf);
-                free(inf);
+            char *inf = get_metadata(mpctx, META_INFO_ARTIST);
+            mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_META_ARTIST='%s'\n", inf);
+            talloc_free(inf);
             }
             break;
 
         case MP_CMD_GET_META_ALBUM:{
-                char *inf = get_metadata(mpctx, META_INFO_ALBUM);
-                if (!inf)
-                    inf = strdup("");
-                mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_META_ALBUM='%s'\n", inf);
-                free(inf);
+            char *inf = get_metadata(mpctx, META_INFO_ALBUM);
+            mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_META_ALBUM='%s'\n", inf);
+            talloc_free(inf);
             }
             break;
 
         case MP_CMD_GET_META_YEAR:{
-                char *inf = get_metadata(mpctx, META_INFO_YEAR);
-                if (!inf)
-                    inf = strdup("");
-                mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_META_YEAR='%s'\n", inf);
-                free(inf);
+            char *inf = get_metadata(mpctx, META_INFO_YEAR);
+            mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_META_YEAR='%s'\n", inf);
+            talloc_free(inf);
             }
             break;
 
         case MP_CMD_GET_META_COMMENT:{
-                char *inf = get_metadata(mpctx, META_INFO_COMMENT);
-                if (!inf)
-                    inf = strdup("");
-                mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_META_COMMENT='%s'\n", inf);
-                free(inf);
+            char *inf = get_metadata(mpctx, META_INFO_COMMENT);
+            mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_META_COMMENT='%s'\n", inf);
+            talloc_free(inf);
             }
             break;
 
         case MP_CMD_GET_META_TRACK:{
-                char *inf = get_metadata(mpctx, META_INFO_TRACK);
-                if (!inf)
-                    inf = strdup("");
-                mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_META_TRACK='%s'\n", inf);
-                free(inf);
+            char *inf = get_metadata(mpctx, META_INFO_TRACK);
+            mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_META_TRACK='%s'\n", inf);
+            talloc_free(inf);
             }
             break;
 
         case MP_CMD_GET_META_GENRE:{
-                char *inf = get_metadata(mpctx, META_INFO_GENRE);
-                if (!inf)
-                    inf = strdup("");
-                mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_META_GENRE='%s'\n", inf);
-                free(inf);
+            char *inf = get_metadata(mpctx, META_INFO_GENRE);
+            mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_META_GENRE='%s'\n", inf);
+            talloc_free(inf);
             }
             break;
 
@@ -3320,15 +3418,11 @@ void run_command(MPContext *mpctx, mp_cmd_t *cmd)
 
         case MP_CMD_GET_PERCENT_POS:
             mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_PERCENT_POSITION=%d\n",
-                   demuxer_get_percent_pos(mpctx->demuxer));
+                   get_percent_pos(mpctx));
             break;
 
         case MP_CMD_GET_TIME_POS:{
-                float pos = 0;
-                if (sh_video)
-                    pos = sh_video->pts;
-                else if (sh_audio && mpctx->audio_out)
-                    pos = playing_audio_pts(mpctx);
+                float pos = get_current_time(mpctx);
                 mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_TIME_POSITION=%.1f\n", pos);
             }
             break;
@@ -3426,7 +3520,7 @@ void run_command(MPContext *mpctx, mp_cmd_t *cmd)
                 else
                     af_add(mpctx->mixer.afilter, af_command);
             }
-            build_afilter_chain(mpctx, sh_audio, &ao_data);
+            reinit_audio_chain(mpctx);
             free(af_args);
         }
         break;
@@ -3435,8 +3529,21 @@ void run_command(MPContext *mpctx, mp_cmd_t *cmd)
             break;
         af_uninit(mpctx->mixer.afilter);
         af_init(mpctx->mixer.afilter);
-        build_afilter_chain(mpctx, sh_audio, &ao_data);
+        reinit_audio_chain(mpctx);
         break;
+    case MP_CMD_AF_CMDLINE:
+        if (sh_audio) {
+            af_instance_t *af = af_get(sh_audio->afilter, cmd->args[0].v.s);
+            if (!af) {
+                mp_msg(MSGT_CPLAYER, MSGL_WARN,
+                       "Filter '%s' not found in chain.\n", cmd->args[0].v.s);
+                break;
+            }
+            af->control(af, AF_CONTROL_COMMAND_LINE, cmd->args[1].v.s);
+            af_reinit(sh_audio->afilter, af);
+        }
+        break;
+
         default:
                 mp_msg(MSGT_CPLAYER, MSGL_V,
                        "Received unknown cmd %s\n", cmd->name);

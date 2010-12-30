@@ -55,6 +55,7 @@ typedef struct sh_audio {
   // output format:
   int sample_format;
   int samplerate;
+  int container_out_samplerate;
   int samplesize;
   int channels;
   int o_bps; // == samplerate*samplesize*channels   (uncompr. bytes/sec)
@@ -75,7 +76,7 @@ typedef struct sh_audio {
   int a_out_buffer_size;
 //  void* audio_out;        // the audio_out handle, used for this audio stream
   struct af_stream *afilter;          // the audio filter stream
-  struct ad_functions *ad_driver;
+  const struct ad_functions *ad_driver;
 #ifdef CONFIG_DYNAMIC_PLUGINS
   void *dec_handle;
 #endif
@@ -146,8 +147,12 @@ sh_audio_t* new_sh_audio_aid(struct demuxer *demuxer,int id,int aid);
 sh_video_t* new_sh_video_vid(struct demuxer *demuxer,int id,int vid);
 #define new_sh_sub(d, i) new_sh_sub_sid(d, i, i)
 sh_sub_t *new_sh_sub_sid(struct demuxer *demuxer, int id, int sid);
+struct sh_sub *new_sh_sub_sid_lang(struct demuxer *demuxer, int id, int sid,
+                                   const char *lang);
 void free_sh_audio(struct demuxer *demuxer, int id);
 void free_sh_video(sh_video_t *sh);
+
+const char *sh_sub_type2str(int type);
 
 // video.c:
 int video_read_properties(sh_video_t *sh_video);

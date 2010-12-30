@@ -50,6 +50,7 @@ demuxer_t*  new_demuxers_demuxer(demuxer_t* vd, demuxer_t* ad, demuxer_t* sd) {
   // Video is the most important :-)
   ret->stream = vd->stream;
   ret->seekable = vd->seekable && ad->seekable && sd->seekable;
+  ret->stream_pts = MP_NOPTS_VALUE;
 
   ret->video = vd->video;
   ret->audio = ad->audio;
@@ -62,12 +63,12 @@ demuxer_t*  new_demuxers_demuxer(demuxer_t* vd, demuxer_t* ad, demuxer_t* sd) {
   if (vd) vd->video->demuxer = ret;
   if (ad) ad->audio->demuxer = ret;
   if (sd) sd->sub->demuxer = ret;
-#endif
 
   // HACK?, necessary for subtitle (and audio and video when implemented) switching
   memcpy(ret->v_streams, vd->v_streams, sizeof(ret->v_streams));
   memcpy(ret->a_streams, ad->a_streams, sizeof(ret->a_streams));
   memcpy(ret->s_streams, sd->s_streams, sizeof(ret->s_streams));
+#endif
 
   ret->desc = &demuxer_desc_demuxers;
 
@@ -112,7 +113,7 @@ static void demux_demuxers_seek(demuxer_t *demuxer,float rel_seek_secs,float aud
       pos = demuxer->video->first->pts;
   }
 
-  if(priv->ad != priv->vd) {
+  if(priv->ad != priv->vd && demuxer->audio->sh) {
     sh_audio_t* sh = demuxer->audio->sh;
     demux_seek(priv->ad,pos,audio_delay,1);
     // In case the demuxer don't set pts
@@ -151,11 +152,8 @@ static int demux_demuxers_control(demuxer_t *demuxer,int cmd, void *arg){
   dd_priv_t* priv = demuxer->priv;
   switch (cmd) {
     case DEMUXER_CTRL_GET_TIME_LENGTH:
-      *((double *)arg) = demuxer_get_time_length(priv->vd);
-      return DEMUXER_CTRL_OK;
     case DEMUXER_CTRL_GET_PERCENT_POS:
-      *((int *)arg) = demuxer_get_percent_pos(priv->vd);
-      return DEMUXER_CTRL_OK;
+      return demux_control(priv->vd, cmd, arg);
   }
   return DEMUXER_CTRL_NOTIMPL;
 }

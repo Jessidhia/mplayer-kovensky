@@ -383,12 +383,12 @@ mpeg_header_parser:
    }
 
    if(mp_vc1_decode_sequence_header(&picture, &videobuffer[4], videobuf_len-4)) {
-     sh_video->bih = calloc(1, sizeof(BITMAPINFOHEADER) + videobuf_len);
+     sh_video->bih = calloc(1, sizeof(*sh_video->bih) + videobuf_len);
      if(sh_video->bih == NULL) {
-       mp_msg(MSGT_DECVIDEO,MSGL_ERR,"Couldn't alloc %d bytes for VC-1 extradata!\n", sizeof(BITMAPINFOHEADER) + videobuf_len);
+       mp_msg(MSGT_DECVIDEO,MSGL_ERR,"Couldn't alloc %d bytes for VC-1 extradata!\n", sizeof(*sh_video->bih) + videobuf_len);
        return 0;
      }
-     sh_video->bih->biSize= sizeof(BITMAPINFOHEADER) + videobuf_len;
+     sh_video->bih->biSize= sizeof(*sh_video->bih) + videobuf_len;
      memcpy(sh_video->bih + 1, videobuffer, videobuf_len);
      sh_video->bih->biCompression = sh_video->format;
      sh_video->bih->biWidth = sh_video->disp_w = picture.display_picture_width;
@@ -407,7 +407,7 @@ mpeg_header_parser:
 return 1;
 }
 
-static void process_userdata(unsigned char* buf,int len){
+static void process_userdata(const unsigned char* buf,int len){
     int i;
     /* if the user data starts with "CC", assume it is a CC info packet */
     if(len>2 && buf[0]=='C' && buf[1]=='C'){

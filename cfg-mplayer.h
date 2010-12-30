@@ -26,23 +26,16 @@
 #include <stddef.h>
 
 #include "cfg-common.h"
-#include "libmpdemux/demux_ts.h"
 #include "libvo/vo_zr.h"
 #include "options.h"
 
 extern char *fb_mode_cfgfile;
 extern char *fb_mode_name;
-extern char *dfb_params;
 
 extern char *lirc_configfile;
 
 /* only used at startup (setting these values from configfile) */
 extern char *vo_geometry;
-
-extern char *ao_outputfilename;
-extern int ao_pcm_waveheader;
-
-extern int fs_layer;
 extern int stop_xscreensaver;
 extern int stop_screensaver;
 
@@ -56,9 +49,6 @@ extern int menu_fribidi_flip_commas;
 extern char *unrar_executable;
 
 extern const m_option_t dxr2_opts[];
-
-extern int sws_flags;
-extern char* pp_help;
 
 const m_option_t vd_conf[]={
     {"help", "Use MPlayer with an appropriate video file instead of live partners to avoid vd.\n", CONF_TYPE_PRINT, CONF_NOCFG|CONF_GLOBAL, 0, 0, NULL},
@@ -94,10 +84,8 @@ const m_option_t mplayer_opts[]={
      CONF_TYPE_PRINT, CONF_NOCFG, 0, 0, NULL},
     OPT_STRINGLIST("vo", video_driver_list, 0),
     OPT_STRINGLIST("ao", audio_driver_list, 0),
-    OPT_FLAG_ON("fixed-vo", fixed_vo, CONF_GLOBAL),
-    OPT_FLAG_OFF("nofixed-vo", fixed_vo, CONF_GLOBAL),
-    OPT_FLAG_ON("ontop", vo_ontop, 0),
-    OPT_FLAG_OFF("noontop", vo_ontop, 0),
+    OPT_MAKE_FLAGS("fixed-vo", fixed_vo, CONF_GLOBAL),
+    OPT_MAKE_FLAGS("ontop", vo_ontop, 0),
     {"rootwin", &vo_rootwin, CONF_TYPE_FLAG, 0, 0, 1, NULL},
     {"border", &vo_border, CONF_TYPE_FLAG, 0, 0, 1, NULL},
     {"noborder", &vo_border, CONF_TYPE_FLAG, 0, 1, 0, NULL},
@@ -111,9 +99,10 @@ const m_option_t mplayer_opts[]={
     {"softvol-max", &soft_vol_max, CONF_TYPE_FLOAT, CONF_RANGE, 10, 10000, NULL},
     {"volstep", &volstep, CONF_TYPE_INT, CONF_RANGE, 0, 100, NULL},
     {"volume", &start_volume, CONF_TYPE_FLOAT, CONF_RANGE, -1, 10000, NULL},
+    OPT_MAKE_FLAGS("gapless-audio", gapless_audio, 0),
     {"master", "Option -master has been removed, use -af volume instead.\n", CONF_TYPE_PRINT, 0, 0, 0, NULL},
-    // override audio buffer size (used only by -ao oss, anyway obsolete...)
-    {"abs", &ao_data.buffersize, CONF_TYPE_INT, CONF_MIN, 0, 0, NULL},
+    // override audio buffer size (used only by -ao oss/win32, obsolete)
+    OPT_INT("abs", ao_buffersize, 0),
 
     // -ao pcm options:
     {"aofile", "-aofile has been removed. Use -ao pcm:file=<filename> instead.\n", CONF_TYPE_PRINT, 0, 0, 0, NULL},
@@ -158,11 +147,6 @@ const m_option_t mplayer_opts[]={
     {"fbmode", &fb_mode_name, CONF_TYPE_STRING, 0, 0, 0, NULL},
     {"fbmodeconfig", &fb_mode_cfgfile, CONF_TYPE_STRING, 0, 0, 0, NULL},
 #endif
-#ifdef CONFIG_DIRECTFB
-#if DIRECTFBVERSION > 912
-    {"dfbopts", "-dfbopts has been removed. Use -vf directfb:dfbopts=... instead.\n", CONF_TYPE_PRINT, 0, 0, 0, NULL},
-#endif
-#endif
 
     // force window width/height or resolution (with -vm)
     OPT_INTRANGE("x", screen_size_x, 0, 0, 4096),
@@ -172,20 +156,17 @@ const m_option_t mplayer_opts[]={
     OPT_INTRANGE("screenh", vo_screenheight, CONF_OLD, 0, 4096),
     // Geometry string
     {"geometry", &vo_geometry, CONF_TYPE_STRING, 0, 0, 0, NULL},
-    OPT_FLAG_ON("force-window-position", force_window_position, 0),
-    OPT_FLAG_OFF("noforce-window-position", force_window_position, 0),
+    OPT_MAKE_FLAGS("force-window-position", force_window_position, 0),
     // vo name (X classname) and window title strings
-    {"name", &vo_winname, CONF_TYPE_STRING, 0, 0, 0, NULL},
-    {"title", &vo_wintitle, CONF_TYPE_STRING, 0, 0, 0, NULL},
+    OPT_STRING("name", vo_winname, 0),
+    OPT_STRING("title", vo_wintitle, 0),
     // set aspect ratio of monitor - useful for 16:9 TV-out
     OPT_FLOATRANGE("monitoraspect", force_monitor_aspect, 0, 0.0, 9.0),
     OPT_FLOATRANGE("monitorpixelaspect", monitor_pixel_aspect, 0, 0.2, 9.0),
     // video mode switching: (x11,xv,dga)
-    OPT_FLAG_ON("vm", vidmode, 0),
-    OPT_FLAG_OFF("novm", vidmode, 0),
+    OPT_MAKE_FLAGS("vm", vidmode, 0),
     // start in fullscreen mode:
-    OPT_FLAG_ON("fs", fullscreen, 0),
-    OPT_FLAG_OFF("nofs", fullscreen, 0),
+    OPT_MAKE_FLAGS("fs", fullscreen, 0),
     // set fullscreen switch method (workaround for buggy WMs)
     {"fsmode", "-fsmode is obsolete, avoid it and use -fstype instead.\nIf you really want it, try -fsmode-dontuse, but don't report bugs!\n", CONF_TYPE_PRINT, CONF_RANGE, 0, 31, NULL},
     {"fsmode-dontuse", &vo_fsmode, CONF_TYPE_INT, CONF_RANGE, 0, 31, NULL},
@@ -297,13 +278,13 @@ const m_option_t mplayer_opts[]={
     {"hardframedrop", &frame_dropping, CONF_TYPE_FLAG, 0, 0, 2, NULL},
     {"noframedrop", &frame_dropping, CONF_TYPE_FLAG, 0, 1, 0, NULL},
 
-    {"autoq", &auto_quality, CONF_TYPE_INT, CONF_RANGE, 0, 100, NULL},
+    OPT_INTRANGE("autoq", auto_quality, 0, 0, 100),
 
-    {"benchmark", &benchmark, CONF_TYPE_FLAG, 0, 0, 1, NULL},
+    OPT_FLAG_ON("benchmark", benchmark, 0),
 
     // dump some stream out instead of playing the file
     // this really should be in MEncoder instead of MPlayer... -> TODO
-    {"dumpfile", &stream_dump_name, CONF_TYPE_STRING, 0, 0, 0, NULL},
+    OPT_STRING("dumpfile", stream_dump_name, 0),
     {"dumpaudio", &stream_dump_type, CONF_TYPE_FLAG, 0, 0, 1, NULL},
     {"dumpvideo", &stream_dump_type, CONF_TYPE_FLAG, 0, 0, 2, NULL},
     {"dumpsub", &stream_dump_type, CONF_TYPE_FLAG, 0, 0, 3, NULL},
@@ -313,6 +294,8 @@ const m_option_t mplayer_opts[]={
     {"dumpmicrodvdsub", &stream_dump_type, CONF_TYPE_FLAG, 0, 0, 7, NULL},
     {"dumpjacosub", &stream_dump_type, CONF_TYPE_FLAG, 0, 0, 8, NULL},
     {"dumpsami", &stream_dump_type, CONF_TYPE_FLAG, 0, 0, 9, NULL},
+
+    OPT_MAKE_FLAGS("capture", capture_dump, 0),
 
 #ifdef CONFIG_LIRC
     {"lircconf", &lirc_configfile, CONF_TYPE_STRING, CONF_GLOBAL, 0, 0, NULL},
@@ -326,35 +309,34 @@ const m_option_t mplayer_opts[]={
     OPT_INTRANGE("loop", loop_times, 0, -1, 10000),
     {"playlist", NULL, CONF_TYPE_STRING, 0, 0, 0, NULL},
 
-    OPT_FLAG_ON("ordered-chapters", ordered_chapters, 0),
-    OPT_FLAG_OFF("noordered-chapters", ordered_chapters, 0),
+    OPT_MAKE_FLAGS("ordered-chapters", ordered_chapters, 0),
+    OPT_INTRANGE("chapter-merge-threshold", chapter_merge_threshold, 0, 0, 10000),
 
     // a-v sync stuff:
-    OPT_FLAG_ON("correct-pts", user_correct_pts, 0),
-    OPT_FLAG_OFF("nocorrect-pts", user_correct_pts, 0),
-    OPT_INTRANGE("pts-association-mode", user_pts_assoc_mode, 0, 0, 2),
-    {"noautosync", &autosync, CONF_TYPE_FLAG, 0, 0, -1, NULL},
-    {"autosync", &autosync, CONF_TYPE_INT, CONF_RANGE, 0, 10000, NULL},
+    OPT_MAKE_FLAGS("correct-pts", user_correct_pts, 0),
+    OPT_CHOICE("pts-association-mode", user_pts_assoc_mode, 0,
+               ({"auto", 0}, {"decoder", 1}, {"sort", 2})),
+    OPT_MAKE_FLAGS("initial-audio-sync", initial_audio_sync, 0),
+    OPT_CHOICE("hr-seek", hr_seek, 0,
+               ({"off", -1}, {"absolute", 0}, {"always", 1}, {"on", 1})),
+    OPT_FLAG_CONSTANTS("noautosync", autosync, 0, 0, -1),
+    OPT_INTRANGE("autosync", autosync, 0, 0, 10000),
 
-    {"softsleep", &softsleep, CONF_TYPE_FLAG, 0, 0, 1, NULL},
+    OPT_FLAG_ON("softsleep", softsleep, 0),
 #ifdef HAVE_RTC
-    {"nortc", &nortc, CONF_TYPE_FLAG, 0, 0, 1, NULL},
-    {"rtc", &nortc, CONF_TYPE_FLAG, 0, 1, 0, NULL},
-    {"rtc-device", &rtc_device, CONF_TYPE_STRING, 0, 0, 0, NULL},
+    OPT_MAKE_FLAGS("rtc", rtc, 0),
+    OPT_STRING("rtc-device", rtc_device, 0),
 #endif
 
-    {"term-osd", &term_osd, CONF_TYPE_FLAG, 0, 0, 1, NULL},
-    {"noterm-osd", &term_osd, CONF_TYPE_FLAG, 0, 1, 0, NULL},
-    {"term-osd-esc", &term_osd_esc, CONF_TYPE_STRING, 0, 0, 1, NULL},
-    {"playing-msg", &playing_msg, CONF_TYPE_STRING, 0, 0, 0, NULL},
+    OPT_MAKE_FLAGS("term-osd", term_osd, 0),
+    OPT_STRING("term-osd-esc", term_osd_esc, 0),
+    OPT_STRING("playing-msg", playing_msg, 0),
 
     {"slave", &slave_mode, CONF_TYPE_FLAG,CONF_GLOBAL , 0, 1, NULL},
-    {"idle", &player_idle_mode, CONF_TYPE_FLAG,CONF_GLOBAL , 0, 1, NULL},
-    {"noidle", &player_idle_mode, CONF_TYPE_FLAG,CONF_GLOBAL , 1, 0, NULL},
+    OPT_MAKE_FLAGS("idle", player_idle_mode, CONF_GLOBAL),
     {"use-stdin", "-use-stdin has been renamed to -noconsolecontrols, use that instead.", CONF_TYPE_PRINT, 0, 0, 0, NULL},
     OPT_INTRANGE("key-fifo-size", key_fifo_size, CONF_GLOBAL, 2, 65000),
-    {"noconsolecontrols", &noconsolecontrols, CONF_TYPE_FLAG, CONF_GLOBAL, 0, 1, NULL},
-    {"consolecontrols", &noconsolecontrols, CONF_TYPE_FLAG, CONF_GLOBAL, 1, 0, NULL},
+    OPT_MAKE_FLAGS("consolecontrols", consolecontrols, CONF_GLOBAL),
     {"mouse-movements", &enable_mouse_movements, CONF_TYPE_FLAG, CONF_GLOBAL, 0, 1, NULL},
     {"nomouse-movements", &enable_mouse_movements, CONF_TYPE_FLAG, CONF_GLOBAL, 1, 0, NULL},
     OPT_INTRANGE("doubleclick-time", doubleclick_time, 0, 0, 1000),
@@ -364,9 +346,7 @@ const m_option_t mplayer_opts[]={
     {"tvscan", "MPlayer was compiled without TV interface support.\n", CONF_TYPE_PRINT, 0, 0, 0, NULL},
 #endif /* CONFIG_TV */
 
-#include "cfg-common-opts.h"
-
-    {"list-properties", &list_properties, CONF_TYPE_FLAG, CONF_GLOBAL, 0, 1, NULL},
+    OPT_FLAG_ON("list-properties", list_properties, CONF_GLOBAL),
     {"identify", &mp_msg_levels[MSGT_IDENTIFY], CONF_TYPE_FLAG, CONF_GLOBAL, 0, MSGL_V, NULL},
     {"-help", (void *) help_text, CONF_TYPE_PRINT, CONF_NOCFG|CONF_GLOBAL, 0, 0, NULL},
     {"help", (void *) help_text, CONF_TYPE_PRINT, CONF_NOCFG|CONF_GLOBAL, 0, 0, NULL},

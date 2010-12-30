@@ -122,9 +122,16 @@ typedef struct MPContext {
     mixer_t mixer;
     struct vo *video_out;
 
-    // Show a video frame as quickly as possible without trying to adjust
-    // for AV sync. Used when starting a file or after seeking.
-    bool update_video_immediately;
+    /* We're starting playback from scratch or after a seek. Show first
+     * video frame immediately and reinitialize sync. */
+    bool restart_playback;
+    /* After playback restart (above) or audio stream change, adjust audio
+     * stream by cutting samples or adding silence at the beginning to make
+     * audio playback position match video position. */
+    bool syncing_audio;
+    bool hrseek_active;
+    bool hrseek_framedrop;
+    double hrseek_pts;
     // AV sync: the next frame should be shown when the audio out has this
     // much (in seconds) buffered data left. Increased when more data is
     // written to the ao, decreased when moving to the next frame.
@@ -144,6 +151,12 @@ typedef struct MPContext {
     // the same value if the status line is updated at a time where no new
     // video frame is shown.
     double last_av_difference;
+    /* timestamp of video frame currently visible on screen
+     * (or at least queued to be flipped by VO) */
+    double video_pts;
+
+    // used to prevent hanging in some error cases
+    unsigned int start_timestamp;
 
     // Timestamp from the last time some timing functions read the
     // current time, in (occasionally wrapping) microseconds. Used
@@ -151,8 +164,15 @@ typedef struct MPContext {
     unsigned int last_time;
 
     // Used to communicate the parameters of a seek between parts
-    double rel_seek_secs;
-    int abs_seek_pos;
+    struct seek_params {
+        enum seek_type {
+            MPSEEK_NONE, MPSEEK_RELATIVE, MPSEEK_ABSOLUTE, MPSEEK_FACTOR
+        } type;
+        double amount;
+        int exact;  // -1 = disable, 0 = default, 1 = enable
+        // currently not set by commands, only used internally by seek()
+        int direction; // -1 = backward, 0 = default, 1 = forward
+    } seek;
 
     /* Heuristic for relative chapter seeks: keep track which chapter
      * the user wanted to go to, even if we aren't exactly within the
@@ -169,7 +189,7 @@ typedef struct MPContext {
     int global_sub_pos; // this encompasses all subtitle sources
     int set_of_sub_pos;
     int set_of_sub_size;
-    int global_sub_indices[SUB_SOURCES];
+    int sub_counts[SUB_SOURCES];
     // set_of_ass_tracks[i] contains subtitles from set_of_subtitles[i]
     // parsed by libass or NULL if format unsupported
     struct ass_track *set_of_ass_tracks[MAX_SUBTITLE_FILES];
@@ -204,7 +224,6 @@ extern int file_filter;
 extern int forced_subs_only;
 
 struct ao_data;
-int build_afilter_chain(struct MPContext *mpctx, struct sh_audio *sh_audio, struct ao_data *ao_data);
 void uninit_player(struct MPContext *mpctx, unsigned int mask);
 void reinit_audio_chain(struct MPContext *mpctx);
 void init_vo_spudec(struct MPContext *mpctx);
@@ -215,8 +234,13 @@ int reinit_video_chain(struct MPContext *mpctx);
 void pause_player(struct MPContext *mpctx);
 void unpause_player(struct MPContext *mpctx);
 void add_step_frame(struct MPContext *mpctx);
+void queue_seek(struct MPContext *mpctx, enum seek_type type, double amount,
+                int exact);
 int seek_chapter(struct MPContext *mpctx, int chapter, double *seek_pts,
                  char **chapter_name);
+double get_time_length(struct MPContext *mpctx);
+double get_current_time(struct MPContext *mpctx);
+int get_percent_pos(struct MPContext *mpctx);
 int get_current_chapter(struct MPContext *mpctx);
 char *chapter_display_name(struct MPContext *mpctx, int chapter);
 

@@ -20,6 +20,9 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
+#ifndef MPLAYER_VO_COREVIDEO_H
+#define MPLAYER_VO_COREVIDEO_H
+
 #import <Cocoa/Cocoa.h>
 #import <QuartzCore/QuartzCore.h>
 #import <Carbon/Carbon.h>
@@ -40,7 +43,6 @@
 {
 	//Cocoa
 	NSWindow *window;
-	NSEvent *event;
 
 	//CoreVideo
 	CVPixelBufferRef frameBuffers[2];
@@ -48,15 +50,14 @@
 	CVOpenGLTextureRef texture;
 	NSRect textureFrame;
 
-    GLfloat	lowerLeft[2];
-    GLfloat lowerRight[2];
-    GLfloat upperRight[2];
-    GLfloat upperLeft[2];
+	GLfloat lowerLeft[2];
+	GLfloat lowerRight[2];
+	GLfloat upperRight[2];
+	GLfloat upperLeft[2];
 
 	BOOL mouseHide;
 
 	//menu command id
-	NSMenuItem *kQuitCmd;
 	NSMenuItem *kHalfScreenCmd;
 	NSMenuItem *kNormalScreenCmd;
 	NSMenuItem *kDoubleScreenCmd;
@@ -110,3 +111,5 @@
 - (void) mouseEvent: (NSEvent *) theEvent;
 - (void) check_events;
 @end
+
+#endif /* MPLAYER_VO_COREVIDEO_H */

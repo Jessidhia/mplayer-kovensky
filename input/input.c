@@ -45,6 +45,7 @@
 #include "path.h"
 #include "talloc.h"
 #include "options.h"
+#include "bstr.h"
 
 #include "joystick.h"
 
@@ -86,7 +87,7 @@ static const mp_cmd_t mp_cmds[] = {
   { MP_CMD_RADIO_SET_FREQ, "radio_set_freq", 1, { {MP_CMD_ARG_FLOAT,{0}}, {-1,{0}} } },
   { MP_CMD_RADIO_STEP_FREQ, "radio_step_freq", 1, { {MP_CMD_ARG_FLOAT,{0}}, {-1,{0}} } },
 #endif
-  { MP_CMD_SEEK, "seek", 1, { {MP_CMD_ARG_FLOAT,{0}}, {MP_CMD_ARG_INT,{0}}, {-1,{0}} } },
+  { MP_CMD_SEEK, "seek", 1, { {MP_CMD_ARG_FLOAT,{0}}, {MP_CMD_ARG_INT,{0}}, {MP_CMD_ARG_INT,{0}}, {-1,{0}} } },
   { MP_CMD_EDL_MARK, "edl_mark", 0, { {-1,{0}} } },
   { MP_CMD_AUDIO_DELAY, "audio_delay", 1, { {MP_CMD_ARG_FLOAT,{0}}, {MP_CMD_ARG_INT,{0}}, {-1,{0}} } },
   { MP_CMD_SPEED_INCR, "speed_incr", 1, { {MP_CMD_ARG_FLOAT,{0}}, {-1,{0}} } },
@@ -183,6 +184,7 @@ static const mp_cmd_t mp_cmds[] = {
   { MP_CMD_LOADFILE, "loadfile", 1, { {MP_CMD_ARG_STRING, {0}}, {MP_CMD_ARG_INT,{0}}, {-1,{0}} } },
   { MP_CMD_LOADLIST, "loadlist", 1, { {MP_CMD_ARG_STRING, {0}}, {MP_CMD_ARG_INT,{0}}, {-1,{0}} } },
   { MP_CMD_RUN, "run", 1, { {MP_CMD_ARG_STRING,{0}}, {-1,{0}} } },
+  { MP_CMD_CAPTURING, "capturing", 0, { {-1,{0}} } },
   { MP_CMD_VF_CHANGE_RECTANGLE, "change_rectangle", 2, { {MP_CMD_ARG_INT,{0}}, {MP_CMD_ARG_INT,{0}}, {-1,{0}}}},
   { MP_CMD_AF_EQ_SET, "af_eq_set_bands", 1, { {MP_CMD_ARG_STRING, {0}}, {-1,{0}}}}, //turbos
 #ifdef CONFIG_TV_TELETEXT
@@ -218,6 +220,7 @@ static const mp_cmd_t mp_cmds[] = {
   { MP_CMD_AF_ADD, "af_add", 1,  { {MP_CMD_ARG_STRING, {0}}, {-1,{0}} } },
   { MP_CMD_AF_DEL, "af_del", 1,  { {MP_CMD_ARG_STRING, {0}}, {-1,{0}} } },
   { MP_CMD_AF_CLR, "af_clr", 0, { {-1,{0}} } },
+  { MP_CMD_AF_CMDLINE, "af_cmdline", 2, { {MP_CMD_ARG_STRING, {0}}, {MP_CMD_ARG_STRING, {0}}, {-1,{0}} } },
 
   { 0, NULL, 0, {} }
 };
@@ -389,6 +392,16 @@ static const mp_key_name_t key_names[] = {
   { 0, NULL }
 };
 
+struct mp_key_name modifier_names[] = {
+    { KEY_MODIFIER_SHIFT, "Shift" },
+    { KEY_MODIFIER_CTRL,  "Ctrl" },
+    { KEY_MODIFIER_ALT,   "Alt" },
+    { KEY_MODIFIER_META,  "Meta" },
+    { 0 }
+};
+
+#define KEY_MODIFIER_MASK (KEY_MODIFIER_SHIFT | KEY_MODIFIER_CTRL | KEY_MODIFIER_ALT | KEY_MODIFIER_META)
+
 // This is the default binding. The content of input.conf overrides these.
 // The first arg is a null terminated array of key codes.
 // The second is the command
@@ -414,10 +427,14 @@ static const mp_cmd_bind_t def_cmd_binds[] = {
   { { MOUSE_BTN0, 0 }, "pause" },
   { { MOUSE_BTN2, 0 }, "vo_fullscreen" },
   { { KEY_RIGHT, 0 }, "seek 10" },
-  { { KEY_LEFT, 0 }, "seek -10" },
-  { { KEY_UP, 0 }, "seek 60" },
-  { { KEY_DOWN, 0 }, "seek -60" },
-  { { KEY_PAGE_UP, 0 }, "seek 600" },
+  { {  KEY_LEFT, 0 }, "seek -10" },
+  { { KEY_MODIFIER_SHIFT + KEY_RIGHT, 0 }, "seek  1 0 1" },
+  { { KEY_MODIFIER_SHIFT + KEY_LEFT,  0 }, "seek -1 0 1" },
+  { {  KEY_UP, 0 }, "seek 60" },
+  { {  KEY_DOWN, 0 }, "seek -60" },
+  { { KEY_MODIFIER_SHIFT + KEY_UP,    0 }, "seek  5 0 1" },
+  { { KEY_MODIFIER_SHIFT + KEY_DOWN,  0 }, "seek -5 0 1" },
+  { {  KEY_PAGE_UP, 0 }, "seek 600" },
   { { KEY_PAGE_DOWN, 0 }, "seek -600" },
   { { '+', 0 }, "audio_delay 0.100" },
   { { '-', 0 }, "audio_delay -0.100" },
@@ -468,6 +485,7 @@ static const mp_cmd_bind_t def_cmd_binds[] = {
   { { 'a', 0 }, "sub_alignment" },
   { { 'v', 0 }, "sub_visibility" },
   { { 'j', 0 }, "sub_select" },
+  { { 'J', 0 }, "sub_select -3" },
   { { 'F', 0 }, "forced_subs_only" },
   { { '#', 0 }, "switch_audio" },
   { { '_', 0 }, "step_property switch_video" },
@@ -506,6 +524,7 @@ static const mp_cmd_bind_t def_cmd_binds[] = {
 #endif
   { { 'T', 0 }, "vo_ontop" },
   { { 'f', 0 }, "vo_fullscreen" },
+  { { 'C', 0 }, "step_property_osd capturing" },
   { { 's', 0 }, "screenshot 0" },
   { { 'S', 0 }, "screenshot 1" },
   { { 'w', 0 }, "panscan -0.1" },
@@ -634,28 +653,42 @@ static const m_option_t input_conf[] = {
     OPT_STRING("js-dev", input.js_dev, CONF_GLOBAL),
     OPT_STRING("ar-dev", input.ar_dev, CONF_GLOBAL),
     OPT_STRING("file", input.in_file, CONF_GLOBAL),
-    OPT_FLAG_ON("default-bindings", input.default_bindings, CONF_GLOBAL),
-    OPT_FLAG_OFF("nodefault-bindings", input.default_bindings, CONF_GLOBAL),
+    OPT_MAKE_FLAGS("default-bindings", input.default_bindings, CONF_GLOBAL),
   { NULL, NULL, 0, 0, 0, 0, NULL}
 };
 
 static const m_option_t mp_input_opts[] = {
   { "input", &input_conf, CONF_TYPE_SUBCONFIG, 0, 0, 0, NULL},
-    OPT_FLAG_OFF("nojoystick", input.use_joystick,  CONF_GLOBAL),
-    OPT_FLAG_ON("joystick", input.use_joystick, CONF_GLOBAL),
-    OPT_FLAG_OFF("nolirc", input.use_lirc, CONF_GLOBAL),
-    OPT_FLAG_ON("lirc", input.use_lirc, CONF_GLOBAL),
-    OPT_FLAG_OFF("nolircc", input.use_lircc, CONF_GLOBAL),
-    OPT_FLAG_ON("lircc", input.use_lircc, CONF_GLOBAL),
-    OPT_FLAG_OFF("noar", input.use_ar, CONF_GLOBAL),
-    OPT_FLAG_ON("ar", input.use_ar, CONF_GLOBAL),
+    OPT_MAKE_FLAGS("joystick", input.use_joystick, CONF_GLOBAL),
+    OPT_MAKE_FLAGS("lirc", input.use_lirc, CONF_GLOBAL),
+    OPT_MAKE_FLAGS("lircc", input.use_lircc, CONF_GLOBAL),
+    OPT_MAKE_FLAGS("ar", input.use_ar, CONF_GLOBAL),
   { NULL, NULL, 0, 0, 0, 0, NULL}
 };
 
 static int default_cmd_func(int fd,char* buf, int l);
 
-static char *get_key_name(int key, char buffer[12]);
+static char *get_key_name(int key)
+{
+    char *ret = talloc_strdup(NULL, "");
+    for (int i = 0; modifier_names[i].name; i++) {
+        if (modifier_names[i].key & key) {
+            ret = talloc_asprintf_append_buffer(ret, "%s+",
+                                                modifier_names[i].name);
+            key -= modifier_names[i].key;
+        }
+    }
+    for (int i = 0; key_names[i].name != NULL; i++) {
+        if (key_names[i].key == key)
+            return talloc_asprintf_append_buffer(ret, "%s", key_names[i].name);
+    }
 
+    if (isascii(key))
+        return talloc_asprintf_append_buffer(ret, "%c", key);
+
+    // Print the hex key code
+    return talloc_asprintf_append_buffer(ret, "%#-8x", key);
+}
 
 int mp_input_add_cmd_fd(struct input_ctx *ictx, int fd, int select,
                         mp_cmd_func_t read_func, mp_close_func_t close_func)
@@ -693,8 +726,7 @@ void mp_input_rm_cmd_fd(struct input_ctx *ictx, int fd)
     return;
   if(cmd_fds[i].close_func)
     cmd_fds[i].close_func(cmd_fds[i].fd);
-  if(cmd_fds[i].buffer)
-    talloc_free(cmd_fds[i].buffer);
+  talloc_free(cmd_fds[i].buffer);
 
   if (i + 1 < ictx->num_cmd_fd)
       memmove(&cmd_fds[i], &cmd_fds[i+1],
@@ -1069,7 +1101,6 @@ static mp_cmd_t *get_cmd_from_keys(struct input_ctx *ictx, int n, int *keys)
 {
   char* cmd = NULL;
   mp_cmd_t* ret;
-  char key_buf[12];
 
   if (ictx->cmd_binds)
     cmd = find_bind_for_key(ictx->cmd_binds, n, keys);
@@ -1078,19 +1109,38 @@ static mp_cmd_t *get_cmd_from_keys(struct input_ctx *ictx, int n, int *keys)
   if (ictx->default_bindings && cmd == NULL)
     cmd = find_bind_for_key(def_cmd_binds,n,keys);
 
+<<<<<<< HEAD
   if(cmd == NULL)
+=======
+  if(cmd == NULL) {
+      char *key_buf = get_key_name(keys[0]);
+      mp_tmsg(MSGT_INPUT,MSGL_WARN,"No bind found for key '%s'.", key_buf);
+      talloc_free(key_buf);
+    if(n > 1) {
+      int s;
+      for(s=1; s < n; s++) {
+          key_buf = get_key_name(keys[s]);
+          mp_msg(MSGT_INPUT,MSGL_WARN,"-%s", key_buf);
+          talloc_free(key_buf);
+      }
+    }
+    mp_msg(MSGT_INPUT,MSGL_WARN,"                         \n");
+>>>>>>> uau/master
     return NULL;
   
   if (strcmp(cmd, "ignore") == 0) return NULL;
   ret =  mp_input_parse_cmd(cmd);
   if(!ret) {
-    mp_tmsg(MSGT_INPUT,MSGL_ERR,"Invalid command for bound key %s",
-           get_key_name(ictx->key_down[0], key_buf));
+    char *key_buf = get_key_name(ictx->key_down[0]);
+    mp_tmsg(MSGT_INPUT,MSGL_ERR,"Invalid command for bound key %s", key_buf);
+    talloc_free(key_buf);
     if (ictx->num_key_down > 1) {
       unsigned int s;
-      for(s=1; s < ictx->num_key_down; s++)
-          mp_msg(MSGT_INPUT,MSGL_ERR,"-%s", get_key_name(ictx->key_down[s],
-                                                         key_buf));
+      for(s=1; s < ictx->num_key_down; s++) {
+          char *key_buf = get_key_name(ictx->key_down[s]);
+          mp_msg(MSGT_INPUT,MSGL_ERR,"-%s", key_buf);
+          talloc_free(key_buf);
+      }
     }
     mp_msg(MSGT_INPUT,MSGL_ERR," : %s             \n",cmd);
   }
@@ -1102,6 +1152,14 @@ static mp_cmd_t* interpret_key(struct input_ctx *ictx, int code)
 {
   unsigned int j;
   mp_cmd_t* ret;
+
+    /* On normal keyboards shift changes the character code of non-special
+     * keys, so don't count the modifier separately for those. In other words
+     * we want to have "a" and "A" instead of "a" and "Shift+A"; but a separate
+     * shift modifier is still kept for special keys like arrow keys.
+     */
+    if ((code & ~KEY_MODIFIER_MASK) < 256)
+        code &= ~KEY_MODIFIER_SHIFT;
 
   if(mp_input_key_cb) {
       if (code & MP_KEY_DOWN)
@@ -1157,10 +1215,8 @@ static mp_cmd_t* interpret_key(struct input_ctx *ictx, int code)
     ictx->num_key_down--;
     ictx->last_key_down = 0;
     ictx->ar_state = -1;
-    if (ictx->ar_cmd) {
-      mp_cmd_free(ictx->ar_cmd);
-      ictx->ar_cmd = NULL;
-    }
+    mp_cmd_free(ictx->ar_cmd);
+    ictx->ar_cmd = NULL;
     return ret;
 }
 
@@ -1400,41 +1456,34 @@ mp_cmd_clone(mp_cmd_t* cmd) {
   return ret;
 }
 
-static char *get_key_name(int key, char buffer[12])
+int mp_input_get_key_from_name(const char *name)
 {
-  int i;
+    int modifiers = 0;
+    const char *p;
+    while (p = strchr(name, '+')) {
+        for (struct mp_key_name *m = modifier_names; m->name; m++)
+            if (!bstrcasecmp(BSTR(m->name), (struct bstr){name, p - name})) {
+                modifiers |= m->key;
+                goto found;
+            }
+        if (!strcmp(name, "+"))
+            return '+' + modifiers;
+        return -1;
+    found:
+        name = p + 1;
+    }
+    int len = strlen(name);
+    if (len == 1)   // Direct key code
+        return (unsigned char)name[0] + modifiers;
+    else if (len > 2 && strncasecmp("0x", name, 2) == 0)
+        return strtol(name, NULL, 16) + modifiers;
 
-  for(i = 0; key_names[i].name != NULL; i++) {
-    if(key_names[i].key == key)
-      return key_names[i].name;
-  }
+    for (int i = 0; key_names[i].name != NULL; i++) {
+        if (strcasecmp(key_names[i].name, name) == 0)
+            return key_names[i].key + modifiers;
+    }
 
-  if(isascii(key)) {
-    snprintf(buffer, 12, "%c",(char)key);
-    return buffer;
-  }
-
-  // Print the hex key code
-  snprintf(buffer, 12, "%#-8x",key);
-  return buffer;
-
-}
-
-int
-mp_input_get_key_from_name(const char *name) {
-  int i,ret = 0,len = strlen(name);
-  if(len == 1) { // Direct key code
-    ret = (unsigned char)name[0];
-    return ret;
-  } else if(len > 2 && strncasecmp("0x",name,2) == 0)
-    return strtol(name,NULL,16);
-
-  for(i = 0; key_names[i].name != NULL; i++) {
-    if(strcasecmp(key_names[i].name,name) == 0)
-      return key_names[i].key;
-  }
-
-  return -1;
+    return -1;
 }
 
 static int get_input_from_name(char* name,int* keys) {
@@ -1507,17 +1556,9 @@ static void bind_keys(struct input_ctx *ictx,
     memset(&bind_section->cmd_binds[i],0,2*sizeof(mp_cmd_bind_t));
     bind = &bind_section->cmd_binds[i];
   }
-  if(bind->cmd)
-      talloc_free(bind->cmd);
+  talloc_free(bind->cmd);
   bind->cmd = talloc_strdup(bind_section->cmd_binds, cmd);
   memcpy(bind->input,keys,(MP_MAX_KEY_DOWN+1)*sizeof(int));
-}
-
-static void add_binds(struct input_ctx *ictx, const mp_cmd_bind_t* list)
-{
-  int i;
-  for(i = 0 ; list[i].cmd ; i++)
-      bind_keys(ictx, list[i].input,list[i].cmd);
 }
 
 static int parse_config(struct input_ctx *ictx, char *file)
@@ -1625,10 +1666,14 @@ static int parse_config(struct input_ctx *ictx, char *file)
       // Found new line
       if(iter[0] == '\n' || iter[0] == '\r') {
 	int i;
-        char key_buf[12];
-	mp_tmsg(MSGT_INPUT,MSGL_ERR,"No command found for key %s", get_key_name(keys[0], key_buf));
-	for(i = 1; keys[i] != 0 ; i++)
-            mp_msg(MSGT_INPUT,MSGL_ERR,"-%s", get_key_name(keys[i], key_buf));
+        char *key_buf  = get_key_name(keys[0]);
+	mp_tmsg(MSGT_INPUT,MSGL_ERR,"No command found for key %s", key_buf);
+        talloc_free(key_buf);
+	for(i = 1; keys[i] != 0 ; i++) {
+            char *key_buf  = get_key_name(keys[i]);
+            mp_msg(MSGT_INPUT,MSGL_ERR,"-%s", key_buf);
+            talloc_free(key_buf);
+        }
         mp_msg(MSGT_INPUT,MSGL_ERR,"\n");
 	keys[0] = 0;
 	if(iter > buffer) {
@@ -1678,8 +1723,7 @@ void mp_input_set_section(struct input_ctx *ictx, char *name)
 
     ictx->cmd_binds = NULL;
     ictx->cmd_binds_default = NULL;
-    if (ictx->section)
-        talloc_free(ictx->section);
+    talloc_free(ictx->section);
     if (name)
         ictx->section = talloc_strdup(ictx, name);
     else
@@ -1783,18 +1827,19 @@ struct input_ctx *mp_input_init(struct input_conf *input_conf)
 
   if (input_conf->in_file) {
     struct stat st;
-    if (stat(input_conf->in_file, &st))
-      mp_tmsg(MSGT_INPUT, MSGL_ERR, "Can't stat %s: %s\n", input_conf->in_file, strerror(errno));
-    else {
-      int in_file_fd = open(input_conf->in_file,
-                            S_ISFIFO(st.st_mode) ? O_RDWR : O_RDONLY);
-      if(in_file_fd >= 0)
-          mp_input_add_cmd_fd(ictx, in_file_fd, 1, NULL,
-                              (mp_close_func_t)close);
-      else
-	mp_tmsg(MSGT_INPUT, MSGL_ERR, "Can't open %s: %s\n",
-               input_conf->in_file, strerror(errno));
-    }
+    int mode = O_RDONLY;
+    // Use RDWR for FIFOs to ensure they stay open over multiple accesses.
+    // Note that on Windows stat may fail for named pipes, but due to how the
+    // API works, using RDONLY should be ok.
+    if (stat(input_conf->in_file, &st) == 0 && S_ISFIFO(st.st_mode))
+      mode = O_RDWR;
+    int in_file_fd = open(input_conf->in_file, mode);
+    if(in_file_fd >= 0)
+      mp_input_add_cmd_fd(ictx, in_file_fd, 1, NULL,
+                          (mp_close_func_t)close);
+    else
+      mp_tmsg(MSGT_INPUT, MSGL_ERR, "Can't open %s: %s\n",
+              input_conf->in_file, strerror(errno));
   }
   return ictx;
 }

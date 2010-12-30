@@ -246,7 +246,8 @@ static void mov_build_index(mov_track_t* trak,int timescale){
       mp_msg(MSGT_DEMUX, MSGL_WARN,
              "MOV: durmap or chunkmap bigger than sample count (%i vs %i)\n",
              s, trak->samples_size);
-      trak->samples = realloc_struct(trak->samples, s, sizeof(mov_sample_t));
+      free(trak->samples);
+      trak->samples = calloc(s, sizeof(mov_sample_t));
       trak->samples_size = trak->samples ? s : 0;
     }
 
@@ -336,11 +337,10 @@ typedef struct {
 static int mov_check_file(demuxer_t* demuxer){
     int flags=0;
     int no=0;
-    mov_priv_t* priv=malloc(sizeof(mov_priv_t));
+    mov_priv_t* priv=calloc(1, sizeof(mov_priv_t));
 
     mp_msg(MSGT_DEMUX,MSGL_V,"Checking for MOV\n");
 
-    memset(priv,0,sizeof(mov_priv_t));
     priv->current_sub = -1;
 
     while(1){
@@ -367,7 +367,7 @@ static int mov_check_file(demuxer_t* demuxer){
 	    goto skip_chunk;
 	}
 #endif
-	else if(len<8) break; // invalid chunk
+	if(len<8) break; // invalid chunk
 
 	switch(id){
 	case MOV_FOURCC('f','t','y','p'): {
@@ -916,8 +916,7 @@ quit_vorbis_block:
 		  fclose(f); }
 #endif
 		// Emulate WAVEFORMATEX struct:
-		sh->wf=malloc(sizeof(WAVEFORMATEX) + (is_vorbis ? sh->codecdata_len : 0));
-		memset(sh->wf,0,sizeof(WAVEFORMATEX));
+		sh->wf=calloc(1, sizeof(*sh->wf) + (is_vorbis ? sh->codecdata_len : 0));
 		sh->wf->nChannels=sh->channels;
 		sh->wf->wBitsPerSample=(trak->stdata[18]<<8)+trak->stdata[19];
 		// sh->wf->nSamplesPerSec=trak->timescale;
@@ -1161,8 +1160,7 @@ static int gen_sh_video(sh_video_t* sh, mov_track_t* trak, int timescale) {
 		// emulate BITMAPINFOHEADER:
 		if (palette_count)
 		{
-		  sh->bih=malloc(sizeof(BITMAPINFOHEADER) + palette_count * 4);
-		  memset(sh->bih,0,sizeof(BITMAPINFOHEADER) + palette_count * 4);
+		  sh->bih=calloc(1, sizeof(*sh->bih) + palette_count * 4);
 		  sh->bih->biSize=40 + palette_count * 4;
 		  // fetch the relevant fields
 		  flag = AV_RB16(&trak->stdata[hdr_ptr]);
@@ -1246,20 +1244,18 @@ static int gen_sh_video(sh_video_t* sh, mov_track_t* trak, int timescale) {
 		else
 		{
 		 if (trak->fourcc == mmioFOURCC('a','v','c','1')) {
-		  if (trak->stream_header_len > 0xffffffff - sizeof(BITMAPINFOHEADER)) {
+		  if (trak->stream_header_len > 0xffffffff - sizeof(*sh->bih)) {
 		    mp_msg(MSGT_DEMUXER, MSGL_ERR, "Invalid extradata size %d, skipping\n",trak->stream_header_len);
 		    trak->stream_header_len = 0;
 		  }
-		  sh->bih=malloc(sizeof(BITMAPINFOHEADER) + trak->stream_header_len);
-		  memset(sh->bih,0,sizeof(BITMAPINFOHEADER) + trak->stream_header_len);
+		  sh->bih=calloc(1, sizeof(*sh->bih) + trak->stream_header_len);
 		  sh->bih->biSize=40  + trak->stream_header_len;
 		  memcpy(((unsigned char *)sh->bih)+40,  trak->stream_header, trak->stream_header_len);
 		  free (trak->stream_header);
 		  trak->stream_header_len = 0;
 		  trak->stream_header = NULL;
 		 } else {
-		  sh->bih=malloc(sizeof(BITMAPINFOHEADER));
-		  memset(sh->bih,0,sizeof(BITMAPINFOHEADER));
+		  sh->bih=calloc(1, sizeof(*sh->bih));
 		  sh->bih->biSize=40;
 		 }
 		}
@@ -1328,8 +1324,7 @@ static void lschunks(demuxer_t* demuxer,int level,off_t endpos,mov_track_t* trak
 		return;
 	    }
 	    if(!priv->track_db) mp_msg(MSGT_DEMUX, MSGL_V, "--------------\n");
-	    trak=malloc(sizeof(mov_track_t));
-	    memset(trak,0,sizeof(mov_track_t));
+	    trak=calloc(1, sizeof(mov_track_t));
 	    mp_msg(MSGT_DEMUX,MSGL_V,"MOV: Track #%d:\n",priv->track_db);
 	    trak->id=priv->track_db;
 	    priv->tracks[priv->track_db]=trak;
@@ -1772,6 +1767,7 @@ static int lschunks_intrak(demuxer_t* demuxer, int level, unsigned int id,
       mp_msg(MSGT_DEMUX, MSGL_V,
              "MOV: %*sSample duration table! (%d blocks)\n", level, "",
              len);
+      free(trak->durmap);
       trak->durmap = calloc(len, sizeof(mov_durmap_t));
       trak->durmap_size = trak->durmap ? len : 0;
       for (i = 0; i < trak->durmap_size; i++) {
@@ -1794,6 +1790,7 @@ static int lschunks_intrak(demuxer_t* demuxer, int level, unsigned int id,
              "MOV: %*sSample->Chunk mapping table!  (%d blocks) (ver:%d,flags:%d)\n", level, "",
              len, ver, flags);
       // read data:
+      free(trak->chunkmap);
       trak->chunkmap = calloc(len, sizeof(mov_chunkmap_t));
       trak->chunkmap_size = trak->chunkmap ? len : 0;
       for (i = 0; i < trak->chunkmap_size; i++) {
@@ -1816,8 +1813,9 @@ static int lschunks_intrak(demuxer_t* demuxer, int level, unsigned int id,
       trak->samplesize = ss;
       if (!ss) {
         // variable samplesize
-        trak->samples = realloc_struct(trak->samples, entries, sizeof(mov_sample_t));
-        trak->samples_size = entries;
+        free(trak->samples);
+        trak->samples = calloc(entries, sizeof(mov_sample_t));
+        trak->samples_size = trak->samples ? entries : 0;
         for (i = 0; i < trak->samples_size; i++)
           trak->samples[i].size = stream_read_dword(demuxer->stream);
       }
@@ -1832,7 +1830,8 @@ static int lschunks_intrak(demuxer_t* demuxer, int level, unsigned int id,
              len);
       // extend array if needed:
       if (len > trak->chunks_size) {
-        trak->chunks = realloc_struct(trak->chunks, len, sizeof(mov_chunk_t));
+        free(trak->chunks);
+        trak->chunks = calloc(len, sizeof(mov_chunk_t));
         trak->chunks_size = trak->chunks ? len : 0;
       }
       // read elements:
@@ -1849,7 +1848,8 @@ static int lschunks_intrak(demuxer_t* demuxer, int level, unsigned int id,
              len);
       // extend array if needed:
       if (len > trak->chunks_size) {
-        trak->chunks = realloc_struct(trak->chunks, len, sizeof(mov_chunk_t));
+        free(trak->chunks);
+        trak->chunks = calloc(len, sizeof(mov_chunk_t));
         trak->chunks_size = trak->chunks ? len : 0;
       }
       // read elements:
@@ -1873,6 +1873,7 @@ static int lschunks_intrak(demuxer_t* demuxer, int level, unsigned int id,
       mp_msg(MSGT_DEMUX, MSGL_V,
              "MOV: %*sSyncing samples (keyframes) table! (%d entries) (ver:%d,flags:%d)\n", level, "",
              entries, ver, flags);
+      free(trak->keyframes);
       trak->keyframes = calloc(entries, sizeof(unsigned int));
       trak->keyframes_size = trak->keyframes ? entries : 0;
       for (i = 0; i < trak->keyframes_size; i++)
@@ -1909,6 +1910,7 @@ static int lschunks_intrak(demuxer_t* demuxer, int level, unsigned int id,
              "MOV: %*sEdit list table (%d entries) (ver:%d,flags:%d)\n", level, "",
              entries, ver, flags);
 #if 1
+      free(trak->editlist);
       trak->editlist = calloc(entries, sizeof(mov_editlist_t));
       trak->editlist_size = trak->editlist ? entries : 0;
       for (i = 0; i < trak->editlist_size; i++) {

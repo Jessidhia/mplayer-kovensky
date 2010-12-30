@@ -51,7 +51,6 @@
 
 #ifdef CONFIG_RADIO_V4L
 #include <linux/videodev.h>
-#warning  "V4L is deprecated and will be removed in future"
 #endif
 
 #endif // !IOCTL_BT848_H_NAME
@@ -1225,10 +1224,8 @@ static void close_s(struct stream *stream){
     if (!priv) return;
 
 #ifdef CONFIG_RADIO_CAPTURE
-    if(priv->audio_ringbuffer){
-        free(priv->audio_ringbuffer);
-        priv->audio_ringbuffer=NULL;
-    }
+    free(priv->audio_ringbuffer);
+    priv->audio_ringbuffer = NULL;
 
     priv->do_capture=0;
 #endif

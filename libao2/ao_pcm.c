@@ -183,7 +183,7 @@ static int init(int rate,int channels,int format,int flags){
     mp_tmsg(MSGT_AO, MSGL_INFO, "[AO PCM] File: %s (%s)\nPCM: Samplerate: %iHz Channels: %s Format %s\n", ao_outputfilename,
            (ao_pcm_waveheader?"WAVE":"RAW PCM"), rate,
            (channels > 1) ? "Stereo" : "Mono", af_fmt2str_short(format));
-    mp_tmsg(MSGT_AO, MSGL_INFO, "[AO PCM] Info: Faster dumping is achieved with -vc null -vo null -ao pcm:fast\n[AO PCM] Info: To write WAVE files use -ao pcm:waveheader (default).\n");
+    mp_tmsg(MSGT_AO, MSGL_INFO, "[AO PCM] Info: Faster dumping is achieved with -novideo -ao pcm:fast\n[AO PCM] Info: To write WAVE files use -ao pcm:waveheader (default).\n");
 
     fp = fopen(ao_outputfilename, "wb");
     if(fp) {
@@ -218,8 +218,7 @@ static void uninit(int immed){
         }
     }
     fclose(fp);
-    if (ao_outputfilename)
-        free(ao_outputfilename);
+    free(ao_outputfilename);
     ao_outputfilename = NULL;
 }
 
@@ -252,18 +251,6 @@ static int get_space(void){
 // it should round it down to outburst*n
 // return: number of bytes played
 static int play(void* data,int len,int flags){
-
-// let libaf to do the conversion...
-#if 0
-//#if HAVE_BIGENDIAN
-    if (ao_data.format == AFMT_S16_LE) {
-      unsigned short *buffer = (unsigned short *) data;
-      register int i;
-      for(i = 0; i < len/2; ++i) {
-        buffer[i] = le2me_16(buffer[i]);
-      }
-    }
-#endif
 
     if (ao_data.channels == 5 || ao_data.channels == 6 || ao_data.channels == 8) {
         int frame_size = af_fmt2bits(ao_data.format) / 8;

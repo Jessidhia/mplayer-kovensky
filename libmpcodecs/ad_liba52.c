@@ -134,6 +134,7 @@ int channels=0;
 static sample_t dynrng_call (sample_t c, void *data)
 {
     struct MPOpts *opts = data;
+    //fprintf(stderr, "(%f, %f): %f\n", (double)c, (double)drc_level, (double)pow((double)c, drc_level));
     //fprintf(stderr, "(%lf, %lf): %lf\n", (double)c, opts->drc_level, pow(c, opts->drc_level));
     return pow(c, opts->drc_level);
 }
@@ -141,10 +142,11 @@ static sample_t dynrng_call (sample_t c, void *data)
 
 static int preinit(sh_audio_t *sh)
 {
+  struct MPOpts *opts = sh->opts;
   /* Dolby AC3 audio: */
   /* however many channels, 2 bytes in a word, 256 samples in a block, 6 blocks in a frame */
   if (sh->samplesize < 4) sh->samplesize = 4;
-  sh->audio_out_minsize=audio_output_channels*sh->samplesize*256*6;
+  sh->audio_out_minsize=opts->audio_output_channels*sh->samplesize*256*6;
   sh->audio_in_minsize=3840;
   a52_level = 1.0;
   return 1;
@@ -208,7 +210,7 @@ static int init(sh_audio_t *sh_audio)
   if (opts->drc_level < 0.001) {
 	  /* level == 0 --> no compression, init library without callback */
 	  a52_drc_action = DRC_NO_COMPRESSION;
-  } else if (opts->drc_level > 0.999 || opts->drc_level < 1.001) {
+  } else if (opts->drc_level > 0.999 && opts->drc_level < 1.001) {
 	  /* level == 1 --> full compression, do nothing at all (library default = full compression) */
 	  a52_drc_action = DRC_NO_ACTION;
   } else {
@@ -219,7 +221,7 @@ static int init(sh_audio_t *sh_audio)
 
   /* 'a52 cannot upmix' hotfix:*/
   a52_printinfo(sh_audio);
-  sh_audio->channels=audio_output_channels;
+  sh_audio->channels=opts->audio_output_channels;
 while(sh_audio->channels>0){
   switch(sh_audio->channels){
 	    case 1: a52_flags=A52_MONO; break;

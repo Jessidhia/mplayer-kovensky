@@ -41,8 +41,8 @@
 #include "libmpdemux/demuxer.h"
 #include "network.h"
 
+#include "libavutil/base64.h"
 
-extern const mime_struct_t mime_type_table[];
 extern int stream_cache_size;
 extern int network_bandwidth;
 
@@ -310,17 +310,16 @@ void
 http_free( HTTP_header_t *http_hdr ) {
 	HTTP_field_t *field, *field2free;
 	if( http_hdr==NULL ) return;
-	if( http_hdr->protocol!=NULL ) free( http_hdr->protocol );
-	if( http_hdr->uri!=NULL ) free( http_hdr->uri );
-	if( http_hdr->reason_phrase!=NULL ) free( http_hdr->reason_phrase );
-	if( http_hdr->field_search!=NULL ) free( http_hdr->field_search );
-	if( http_hdr->method!=NULL ) free( http_hdr->method );
-	if( http_hdr->buffer!=NULL ) free( http_hdr->buffer );
+	free(http_hdr->protocol);
+	free(http_hdr->uri);
+	free(http_hdr->reason_phrase);
+	free(http_hdr->field_search);
+	free(http_hdr->method);
+	free(http_hdr->buffer);
 	field = http_hdr->first_field;
 	while( field!=NULL ) {
 		field2free = field;
-		if (field->field_name)
-		  free(field->field_name);
+		free(field->field_name);
 		field = field->next;
 		free( field2free );
 	}
@@ -443,7 +442,7 @@ http_response_parse( HTTP_header_t *http_hdr ) {
 		hdr_ptr = ptr+((*ptr=='\r')?2:1);
 	} while( hdr_ptr<(http_hdr->buffer+pos_hdr_sep) );
 
-	if( field!=NULL ) free( field );
+	free(field);
 
 	if( pos_hdr_sep+hdr_sep_len<http_hdr->buffer_size ) {
 		// Response has data!
@@ -516,7 +515,7 @@ http_build_request( HTTP_header_t *http_hdr ) {
 		memcpy( ptr, http_hdr->body, http_hdr->body_size );
 	}
 
-	if( uri ) free( uri );
+	free(uri);
 	return http_hdr->buffer;
 }
 
@@ -606,10 +605,11 @@ http_set_uri( HTTP_header_t *http_hdr, const char *uri ) {
 	strcpy( http_hdr->uri, uri );
 }
 
-int
-http_add_basic_authentication( HTTP_header_t *http_hdr, const char *username, const char *password ) {
+static int
+http_add_authentication( HTTP_header_t *http_hdr, const char *username, const char *password, const char *auth_str ) {
 	char *auth = NULL, *usr_pass = NULL, *b64_usr_pass = NULL;
-	int encoded_len, pass_len=0, out_len;
+	int encoded_len, pass_len=0;
+	size_t auth_len, usr_pass_len;
 	int res = -1;
 	if( http_hdr==NULL || username==NULL ) return -1;
 
@@ -617,7 +617,8 @@ http_add_basic_authentication( HTTP_header_t *http_hdr, const char *username, co
 		pass_len = strlen(password);
 	}
 
-	usr_pass = malloc(strlen(username)+pass_len+2);
+	usr_pass_len = strlen(username) + 1 + pass_len;
+	usr_pass = malloc(usr_pass_len + 1);
 	if( usr_pass==NULL ) {
 		mp_msg(MSGT_NETWORK,MSGL_FATAL,"Memory allocation failed\n");
 		goto out;
@@ -625,29 +626,22 @@ http_add_basic_authentication( HTTP_header_t *http_hdr, const char *username, co
 
 	sprintf( usr_pass, "%s:%s", username, (password==NULL)?"":password );
 
-	// Base 64 encode with at least 33% more data than the original size
-	encoded_len = strlen(usr_pass)*2;
+	encoded_len = AV_BASE64_SIZE(usr_pass_len);
 	b64_usr_pass = malloc(encoded_len);
 	if( b64_usr_pass==NULL ) {
 		mp_msg(MSGT_NETWORK,MSGL_FATAL,"Memory allocation failed\n");
 		goto out;
 	}
+	av_base64_encode(b64_usr_pass, encoded_len, usr_pass, usr_pass_len);
 
-	out_len = base64_encode( usr_pass, strlen(usr_pass), b64_usr_pass, encoded_len);
-	if( out_len<0 ) {
-		mp_msg(MSGT_NETWORK,MSGL_FATAL,"Base64 out overflow\n");
-		goto out;
-	}
-
-	b64_usr_pass[out_len]='\0';
-
-	auth = malloc(encoded_len+22);
+	auth_len = encoded_len + 100;
+	auth = malloc(auth_len);
 	if( auth==NULL ) {
 		mp_msg(MSGT_NETWORK,MSGL_FATAL,"Memory allocation failed\n");
 		goto out;
 	}
 
-	sprintf( auth, "Authorization: Basic %s", b64_usr_pass);
+	snprintf(auth, auth_len, "%s: Basic %s", auth_str, b64_usr_pass);
 	http_set_field( http_hdr, auth );
 	res = 0;
 
@@ -657,6 +651,16 @@ out:
 	free( auth );
 
 	return res;
+}
+
+int
+http_add_basic_authentication( HTTP_header_t *http_hdr, const char *username, const char *password ) {
+	return http_add_authentication(http_hdr, username, password, "Authorization");
+}
+
+int
+http_add_basic_proxy_authentication( HTTP_header_t *http_hdr, const char *username, const char *password ) {
+	return http_add_authentication(http_hdr, username, password, "Proxy-Authorization");
 }
 
 void
@@ -672,7 +676,7 @@ http_debug_hdr( HTTP_header_t *http_hdr ) {
 	mp_msg(MSGT_NETWORK,MSGL_V,"method:             [%s]\n", http_hdr->method );
 	mp_msg(MSGT_NETWORK,MSGL_V,"status code:        [%d]\n", http_hdr->status_code );
 	mp_msg(MSGT_NETWORK,MSGL_V,"reason phrase:      [%s]\n", http_hdr->reason_phrase );
-	mp_msg(MSGT_NETWORK,MSGL_V,"body size:          [%d]\n", http_hdr->body_size );
+	mp_msg(MSGT_NETWORK,MSGL_V,"body size:          [%zd]\n", http_hdr->body_size );
 
 	mp_msg(MSGT_NETWORK,MSGL_V,"Fields:\n");
 	field = http_hdr->first_field;
@@ -681,57 +685,6 @@ http_debug_hdr( HTTP_header_t *http_hdr ) {
 		field = field->next;
 	}
 	mp_msg(MSGT_NETWORK,MSGL_V,"--- HTTP DEBUG HEADER --- END ---\n");
-}
-
-int
-base64_encode(const void *enc, int encLen, char *out, int outMax) {
-	static const char	b64[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-	unsigned char		*encBuf;
-	int			outLen;
-	unsigned int		bits;
-	unsigned int		shift;
-
-	encBuf = (unsigned char*)enc;
-	outLen = 0;
-	bits = 0;
-	shift = 0;
-	outMax &= ~3;
-
-	while(1) {
-		if( encLen>0 ) {
-			// Shift in byte
-			bits <<= 8;
-			bits |= *encBuf;
-			shift += 8;
-			// Next byte
-			encBuf++;
-			encLen--;
-		} else if( shift>0 ) {
-			// Pad last bits to 6 bits - will end next loop
-			bits <<= 6 - shift;
-			shift = 6;
-		} else {
-			// As per RFC 2045, section 6.8,
-			// pad output as necessary: 0 to 2 '=' chars.
-			while( outLen & 3 ){
-				*out++ = '=';
-				outLen++;
-			}
-
-			return outLen;
-		}
-
-		// Encode 6 bit segments
-		while( shift>=6 ) {
-			if (outLen >= outMax)
-				return -1;
-			shift -= 6;
-			*out = b64[ (bits >> shift) & 0x3F ];
-			out++;
-			outLen++;
-		}
-	}
 }
 
 static void print_icy_metadata(HTTP_header_t *http_hdr) {
@@ -754,7 +707,6 @@ static void print_icy_metadata(HTTP_header_t *http_hdr) {
 //! If this function succeeds you must closesocket stream->fd
 static int http_streaming_start(stream_t *stream, int* file_format) {
 	HTTP_header_t *http_hdr = NULL;
-	unsigned int i;
 	int fd = stream->fd;
 	int res = STREAM_UNSUPPORTED;
 	int redirect = 0;
@@ -843,16 +795,16 @@ static int http_streaming_start(stream_t *stream, int* file_format) {
 				// Look if we can use the Content-Type
 				content_type = http_get_field( http_hdr, "Content-Type" );
 				if( content_type!=NULL ) {
+					unsigned int i;
+
 					mp_msg(MSGT_NETWORK,MSGL_V,"Content-Type: [%s]\n", content_type );
 					// Check in the mime type table for a demuxer type
-					i = 0;
-					while(mime_type_table[i].mime_type != NULL) {
+					for (i = 0; mime_type_table[i].mime_type != NULL; i++) {
 						if( !strcasecmp( content_type, mime_type_table[i].mime_type ) ) {
 							*file_format = mime_type_table[i].demuxer_type;
 							res = seekable;
 							goto out;
 						}
-						i++;
 					}
 				}
 				// Not found in the mime type table, don't fail,

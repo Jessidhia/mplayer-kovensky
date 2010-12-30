@@ -209,7 +209,7 @@ static int initTextures(void)
     mp_msg (MSGT_VO, MSGL_V, "[%dx%d] !\n", texture_width, texture_height);
 
     if(texture_width < 64 || texture_height < 64) {
-      mp_msg (MSGT_VO, MSGL_FATAL, "[gl2] Give up .. usable texture size not avaiable, or texture config error !\n");
+      mp_msg (MSGT_VO, MSGL_FATAL, "[gl2] Give up .. usable texture size not available, or texture config error !\n");
       return -1;
     }
   } while (texture_width > 1 && texture_height > 1);
@@ -236,8 +236,7 @@ static int initTextures(void)
   texpercx = (GLfloat) texture_width / (GLfloat) image_width;
   texpercy = (GLfloat) texture_height / (GLfloat) image_height;
 
-  if (texgrid)
-    free(texgrid);
+  free(texgrid);
   texgrid = calloc (texnumx * texnumy, sizeof (struct TexSquare));
 
   raw_line_len = image_width * image_bytes;
@@ -430,9 +429,10 @@ static void resize(int x,int y){
   } else {
     //aspect(x, y, A_NOZOOM);
     if (WinID >= 0) {
-      int top = 0, left = 0, w = x, h = y;
-      geometry(&top, &left, &w, &h, vo_screenwidth, vo_screenheight);
-      glViewport(top, left, w, h);
+      int left = 0, top = 0, w = x, h = y;
+      geometry(&left, &top, &w, &h, vo_dwidth, vo_dheight);
+      top = y - h - top;
+      glViewport(left, top, w, h);
     } else
       glViewport( 0, 0, x, y );
   }
@@ -825,10 +825,8 @@ static void
 uninit(void)
 {
   if ( !vo_config_count ) return;
-  if (texgrid) {
-    free(texgrid);
-    texgrid = NULL;
-  }
+  free(texgrid);
+  texgrid = NULL;
   uninit_mpglcontext(&glctx);
 }
 

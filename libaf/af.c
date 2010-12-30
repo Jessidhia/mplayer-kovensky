@@ -70,7 +70,7 @@ static af_info_t* filter_list[]={
 #endif
    &af_info_volnorm,
    &af_info_extrastereo,
-#ifdef CONFIG_LIBAVCODEC
+#ifdef CONFIG_FFMPEG
    &af_info_lavcac3enc,
    &af_info_lavcresample,
 #endif
@@ -177,7 +177,7 @@ err_out:
 /* Create and insert a new filter of type name before the filter in the
    argument. This function can be called during runtime, the return
    value is the new filter */
-static af_instance_t* af_prepend(af_stream_t* s, af_instance_t* af, char* name)
+static af_instance_t* af_prepend(af_stream_t* s, af_instance_t* af, const char* name)
 {
   // Create the new filter and make sure it is OK
   af_instance_t* new=af_create(s,name);
@@ -201,7 +201,7 @@ static af_instance_t* af_prepend(af_stream_t* s, af_instance_t* af, char* name)
 /* Create and insert a new filter of type name after the filter in the
    argument. This function can be called during runtime, the return
    value is the new filter */
-static af_instance_t* af_append(af_stream_t* s, af_instance_t* af, char* name)
+static af_instance_t* af_append(af_stream_t* s, af_instance_t* af, const char* name)
 {
   // Create the new filter and make sure it is OK
   af_instance_t* new=af_create(s,name);
@@ -248,10 +248,7 @@ void af_remove(af_stream_t* s, af_instance_t* af)
   free(af);
 }
 
-/* Reinitializes all filters downstream from the filter given in the
-   argument the return value is AF_OK if success and AF_ERROR if
-   failure */
-static int af_reinit(af_stream_t* s, af_instance_t* af)
+int af_reinit(af_stream_t* s, af_instance_t* af)
 {
   do{
     af_data_t in; // Format of the input to current filter
@@ -410,6 +407,26 @@ static int fixup_output_format(af_stream_t* s)
     return AF_OK;
 }
 
+/**
+ * Automatic downmix to stereo in case the codec does not implement it.
+ */
+static void af_downmix(af_stream_t* s)
+{
+    static const char * const downmix_strs[AF_NCH + 1] = {
+        /*                FL       FR       RL       RR          FC          LF         AL      AR */
+        [3] = "pan=2:" "0.6:0:" "0:0.6:"                     "0.4:0.4",
+        [4] = "pan=2:" "0.6:0:" "0:0.6:" "0.4:0:"  "0:0.4",
+        [5] = "pan=2:" "0.5:0:" "0:0.5:" "0.2:0:"  "0:0.2:"  "0.3:0.3",
+        [6] = "pan=2:" "0.4:0:" "0:0.4:" "0.2:0:"  "0:0.2:"  "0.3:0.3:"   "0.1:0.1",
+        [7] = "pan=2:" "0.4:0:" "0:0.4:" "0.2:0:"  "0:0.2:"  "0.3:0.3:"              "0.1:0:" "0:0.1",
+        [8] = "pan=2:" "0.4:0:" "0:0.4:" "0.15:0:" "0:0.15:" "0.25:0.25:" "0.1:0.1:" "0.1:0:" "0:0.1",
+    };
+    const char *af_pan_str = downmix_strs[s->input.nch];
+
+    if (af_pan_str)
+        af_append(s, s->first, af_pan_str);
+}
+
 /* Initialize the stream "s". This function creates a new filter list
    if necessary according to the values set in input and output. Input
    and output should contain the format of the current movie and the
@@ -421,6 +438,7 @@ static int fixup_output_format(af_stream_t* s)
    The return value is 0 if success and -1 if failure */
 int af_init(af_stream_t* s)
 {
+    struct MPOpts *opts = s->opts;
   int i=0;
 
   // Sanity check
@@ -436,18 +454,23 @@ int af_init(af_stream_t* s)
 
   // Check if this is the first call
   if(!s->first){
+    // Append a downmix pan filter at the beginning of the chain if needed
+    if (s->input.nch != opts->audio_output_channels
+        && opts->audio_output_channels == 2)
+      af_downmix(s);
     // Add all filters in the list (if there are any)
-    if(!s->cfg.list){      // To make automatic format conversion work
-      if(!af_append(s,s->first,"dummy"))
-	return -1;
-    }
-    else{
+    if (s->cfg.list) {
       while(s->cfg.list[i]){
 	if(!af_append(s,s->last,s->cfg.list[i++]))
 	  return -1;
       }
     }
   }
+
+  // If we do not have any filters otherwise
+  // add dummy to make automatic format conversion work
+  if (!s->first && !af_append(s, s->first, "dummy"))
+    return -1;
 
   // Init filters
   if(AF_OK != af_reinit(s,s->first))
@@ -468,7 +491,7 @@ int af_init(af_stream_t* s)
                &(s->output.rate));
       if (!af) {
         char *resampler = "resample";
-#ifdef CONFIG_LIBAVCODEC
+#ifdef CONFIG_FFMPEG
         if ((AF_INIT_TYPE_MASK & s->cfg.force) == AF_INIT_SLOW)
           resampler = "lavcresample";
 #endif
@@ -492,7 +515,7 @@ int af_init(af_stream_t* s)
       if ((AF_INIT_TYPE_MASK & s->cfg.force) == AF_INIT_FAST) {
         char args[32];
 	sprintf(args, "%d", s->output.rate);
-#ifdef CONFIG_LIBAVCODEC
+#ifdef CONFIG_FFMPEG
 	if (strcmp(resampler, "lavcresample") == 0)
 	  strcat(args, ":1");
 	else
@@ -601,8 +624,7 @@ int af_resize_local_buffer(af_instance_t* af, af_data_t* data)
   mp_msg(MSGT_AFILTER, MSGL_V, "[libaf] Reallocating memory in module %s, "
 	 "old len = %i, new len = %i\n",af->info->name,af->data->len,len);
   // If there is a buffer free it
-  if(af->data->audio)
-    free(af->data->audio);
+  free(af->data->audio);
   // Create new buffer and check that it is OK
   af->data->audio = malloc(len);
   if(!af->data->audio){

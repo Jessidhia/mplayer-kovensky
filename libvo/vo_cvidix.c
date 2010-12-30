@@ -49,8 +49,6 @@ static const vo_info_t info = {
 
 LIBVO_EXTERN(cvidix)
 
-#define UNUSED(x) ((void)(x)) /* Removes warning about unused arguments */
-
 /* VIDIX related */
 static char *vidix_name;
 static uint32_t swidth,sheight,sformat;
@@ -136,18 +134,11 @@ static void flip_page(void){
 }
 
 static int draw_slice(uint8_t *src[], int stride[],int w, int h, int x, int y){
-  UNUSED(src);
-  UNUSED(stride);
-  UNUSED(w);
-  UNUSED(h);
-  UNUSED(x);
-  UNUSED(y);
   mp_msg(MSGT_VO, MSGL_FATAL, "vo_cvidix: error: didn't use vidix draw_slice!\n");
   return -1;
 }
 
 static int draw_frame(uint8_t *src[]){
-  UNUSED(src);
   mp_msg(MSGT_VO, MSGL_FATAL, "vo_cvidix: error: didn't use vidix draw_frame!\n");
   return -1;
 }
@@ -159,10 +150,8 @@ static int query_format(uint32_t format){
 static void uninit(void){
   if(!vo_config_count) return;
   vidix_term();
-  if(vidix_name){
-    free(vidix_name);
-	vidix_name = NULL;
-  }
+  free(vidix_name);
+  vidix_name = NULL;
 }
 
 static int preinit(const char *arg){

@@ -39,6 +39,7 @@
 #include <unistd.h>
 #include <errno.h>
 
+#include "libavutil/avutil.h"
 #include "osdep/shmem.h"
 #include "osdep/timer.h"
 #if defined(__MINGW32__)
@@ -102,13 +103,6 @@ static void cache_wakeup(stream_t *s)
   // signal process to wake up immediately
   kill(s->cache_pid, SIGUSR1);
 #endif
-}
-
-static void cache_stats(cache_vars_t *s)
-{
-  int newb=s->max_filepos-s->read_filepos; // new bytes in the buffer
-  mp_msg(MSGT_CACHE,MSGL_INFO,"0x%06X  [0x%06X]  0x%06X   ",(int)s->min_filepos,(int)s->read_filepos,(int)s->max_filepos);
-  mp_msg(MSGT_CACHE,MSGL_INFO,"%3d %%  (%3d%%)\n",100*newb/s->buffer_size,100*min_fill/s->buffer_size);
 }
 
 static int cache_read(cache_vars_t *s, unsigned char *buf, int size)
@@ -175,18 +169,21 @@ static int cache_fill(cache_vars_t *s)
 {
   int back,back2,newb,space,len,pos;
   off_t read=s->read_filepos;
+  int read_chunk;
 
   if(read<s->min_filepos || read>s->max_filepos){
       // seek...
       mp_msg(MSGT_CACHE,MSGL_DBG2,"Out of boundaries... seeking to 0x%"PRIX64"  \n",(int64_t)read);
-      // streaming: drop cache contents only if seeking backward or too much fwd:
-      if(s->stream->type!=STREAMTYPE_STREAM ||
-          read<s->min_filepos || read>=s->max_filepos+s->seek_limit)
+      // drop cache contents only if seeking backward or too much fwd.
+      // This is also done for on-disk files, since it loses the backseek cache.
+      // That in turn can cause major bandwidth increase and performance
+      // issues with e.g. mov or badly interleaved files
+      if(read<s->min_filepos || read>=s->max_filepos+s->seek_limit)
       {
         s->offset= // FIXME!?
         s->min_filepos=s->max_filepos=read; // drop cache content :(
         if(s->stream->eof) stream_reset(s->stream);
-        stream_seek(s->stream,read);
+        stream_seek_internal(s->stream,read);
         mp_msg(MSGT_CACHE,MSGL_DBG2,"Seek done. new pos: 0x%"PRIX64"  \n",(int64_t)stream_tell(s->stream));
       }
   }
@@ -217,10 +214,10 @@ static int cache_fill(cache_vars_t *s)
   // reduce space if needed:
   if(space>s->buffer_size-pos) space=s->buffer_size-pos;
 
-//  if(space>32768) space=32768; // limit one-time block size
-  if(space>4*s->sector_size) space=4*s->sector_size;
-
-//  if(s->seek_lock) return 0; // FIXME
+  // limit one-time block size
+  read_chunk = s->stream->read_chunk;
+  if (!read_chunk) read_chunk = 4*s->sector_size;
+  space = FFMIN(space, read_chunk);
 
 #if 1
   // back+newb+space <= buffer_size
@@ -230,12 +227,7 @@ static int cache_fill(cache_vars_t *s)
   s->min_filepos=read-back; // avoid seeking-back to temp area...
 #endif
 
-  // ....
-  //printf("Buffer fill: %d bytes of %d\n",space,s->buffer_size);
-  //len=stream_fill_buffer(s->stream);
-  //memcpy(&s->buffer[pos],s->stream->buffer,len); // avoid this extra copy!
-  // ....
-  len=stream_read(s->stream,&s->buffer[pos],space);
+  len = stream_read_internal(s->stream, &s->buffer[pos], space);
   s->eof= !len;
 
   s->max_filepos+=len;
@@ -363,7 +355,8 @@ static void dummy_sighandler(int x) {
 static void cache_mainloop(cache_vars_t *s) {
     int sleep_count = 0;
 #if FORKED_CACHE
-    signal(SIGUSR1, SIG_IGN);
+    struct sigaction sa = { .sa_handler = SIG_IGN };
+    sigaction(SIGUSR1, &sa, NULL);
 #endif
     do {
         if (!cache_fill(s)) {
@@ -371,7 +364,8 @@ static void cache_mainloop(cache_vars_t *s) {
             // Let signal wake us up, we cannot leave this
             // enabled since we do not handle EINTR in most places.
             // This might need extra code to work on BSD.
-            signal(SIGUSR1, dummy_sighandler);
+            sa.sa_handler = dummy_sighandler;
+            sigaction(SIGUSR1, &sa, NULL);
 #endif
             if (sleep_count < INITIAL_FILL_USLEEP_COUNT) {
                 sleep_count++;
@@ -379,11 +373,11 @@ static void cache_mainloop(cache_vars_t *s) {
             } else
                 usec_sleep(FILL_USLEEP_TIME); // idle
 #if FORKED_CACHE
-            signal(SIGUSR1, SIG_IGN);
+            sa.sa_handler = SIG_IGN;
+            sigaction(SIGUSR1, &sa, NULL);
 #endif
         } else
             sleep_count = 0;
-//        cache_stats(s->cache_data);
     } while (cache_execute_control(s));
 }
 
@@ -492,13 +486,17 @@ static void *ThreadProc( void *s ){
 
 int cache_stream_fill_buffer(stream_t *s){
   int len;
+  int sector_size;
   if(!s->cache_pid) return stream_fill_buffer(s);
 
-//  cache_stats(s->cache_data);
-
   if(s->pos!=((cache_vars_t*)s->cache_data)->read_filepos) mp_msg(MSGT_CACHE,MSGL_ERR,"!!! read_filepos differs!!! report this bug...\n");
+  sector_size = ((cache_vars_t*)s->cache_data)->sector_size;
+  if (sector_size > STREAM_MAX_SECTOR_SIZE) {
+    mp_msg(MSGT_CACHE, MSGL_ERR, "Sector size %i larger than maximum %i\n", sector_size, STREAM_MAX_SECTOR_SIZE);
+    sector_size = STREAM_MAX_SECTOR_SIZE;
+  }
 
-  len=cache_read(s->cache_data,s->buffer, ((cache_vars_t*)s->cache_data)->sector_size);
+  len=cache_read(s->cache_data,s->buffer, sector_size);
   //printf("cache_stream_fill_buffer->read -> %d\n",len);
 
   if(len<=0){ s->eof=1; s->buf_pos=s->buf_len=0; return 0; }
@@ -507,6 +505,8 @@ int cache_stream_fill_buffer(stream_t *s){
   s->buf_len=len;
   s->pos+=len;
 //  printf("[%d]",len);fflush(stdout);
+  if (s->capture_file)
+    stream_capture_do(s);
   return len;
 
 }
@@ -594,7 +594,8 @@ int cache_do_control(stream_t *stream, int cmd, void *arg) {
     case STREAM_CTRL_SEEK_TO_CHAPTER:
     case STREAM_CTRL_SEEK_TO_TIME:
     case STREAM_CTRL_SET_ANGLE:
-      stream->pos = s->read_filepos = s->control_new_pos;
+      if (s->control_res != STREAM_UNSUPPORTED)
+          stream->pos = s->read_filepos = s->control_new_pos;
       break;
   }
   return s->control_res;

@@ -267,6 +267,50 @@ const struct m_option_type m_option_type_intpair = {
     .set = copy_opt,
 };
 
+static int parse_choice(const struct m_option *opt, const char *name,
+                        const char *param, void *dst, int src)
+{
+    if (param == NULL)
+        return M_OPT_MISSING_PARAM;
+
+    struct m_opt_choice_alternatives *alt;
+    for (alt = opt->priv; alt->name; alt++)
+        if (!strcmp(param, alt->name))
+            break;
+    if (!alt->name) {
+        mp_msg(MSGT_CFGPARSER, MSGL_ERR, "Invalid value for option %s: %s\n",
+               name, param);
+        mp_msg(MSGT_CFGPARSER, MSGL_ERR, "Valid values are:");
+        for (alt = opt->priv; alt->name; alt++)
+            mp_msg(MSGT_CFGPARSER, MSGL_ERR, " %s", alt->name);
+        mp_msg(MSGT_CFGPARSER, MSGL_ERR, "\n");
+        return M_OPT_INVALID;
+    }
+    if (dst)
+        *(int *)dst = alt->value;
+
+    return 1;
+}
+
+static char *print_choice(const m_option_t *opt,  const void *val)
+{
+    int v = *(int *)val;
+    struct m_opt_choice_alternatives *alt;
+    for (alt = opt->priv; alt->name; alt++)
+        if (alt->value == v)
+            return strdup(alt->name);
+    abort();
+}
+
+const struct m_option_type m_option_type_choice = {
+    .name = "String",  // same as arbitrary strings in option list for now
+    .size = sizeof(int),
+    .parse = parse_choice,
+    .print = print_choice,
+    .save = copy_opt,
+    .set = copy_opt,
+};
+
 // Float
 
 #undef VAL
@@ -328,7 +372,7 @@ static char* print_double(const m_option_t* opt,  const void* val) {
 
 const m_option_type_t m_option_type_double = {
   "Double",
-  "double precission floating point number or ratio (numerator[:/]denominator)",
+  "double precision floating point number or ratio (numerator[:/]denominator)",
   sizeof(double),
   0,
   parse_double,
@@ -446,8 +490,7 @@ static int parse_str(const m_option_t* opt,const char *name, const char *param, 
   }
 
   if(dst) {
-    if(VAL(dst))
-      free(VAL(dst));
+    free(VAL(dst));
     VAL(dst) = strdup(param);
   }
 
@@ -462,7 +505,7 @@ static char* print_str(const m_option_t* opt,  const void* val) {
 static void copy_str(const m_option_t* opt,void* dst, const void* src) {
   if(dst && src) {
 #ifndef NO_FREE
-    if(VAL(dst)) free(VAL(dst)); //FIXME!!!
+    free(VAL(dst)); //FIXME!!!
 #endif
     VAL(dst) = VAL(src) ? strdup(VAL(src)) : NULL;
   }
@@ -531,10 +574,12 @@ static int str_list_add(char** add, int n,void* dst,int pre) {
   lst = realloc(lst,(n+ln+1)*sizeof(char*));
 
   if(pre) {
-    memmove(&lst[n],lst,(ln+1)*sizeof(char*));
+    memmove(&lst[n],lst,ln*sizeof(char*));
     memcpy(lst,add,n*sizeof(char*));
   } else
-    memcpy(&lst[ln],add,(n+1)*sizeof(char*));
+    memcpy(&lst[ln],add,n*sizeof(char*));
+  // (re-)add NULL-termination
+  lst[ln+n] = NULL;
 
   free(add);
 
@@ -575,7 +620,7 @@ static int str_list_del(char** del, int n,void* dst) {
   free(del);
 
   if(s == 0) {
-    if(lst) free(lst);
+    free(lst);
     VAL(dst) = NULL;
     return 1;
   }
@@ -588,7 +633,7 @@ static int str_list_del(char** del, int n,void* dst) {
   }
   d[s] = NULL;
 
-  if(lst) free(lst);
+  free(lst);
   VAL(dst) = d;
 
   return 1;
@@ -781,7 +826,7 @@ static void free_func_pf(void* src) {
   while(s) {
     n = s->next;
     free(s->name);
-    if(s->param) free(s->param);
+    free(s->param);
     free(s);
     s = n;
   }
@@ -1207,7 +1252,7 @@ static struct {
   {"ac3be", AF_FORMAT_AC3_BE},
   {"ac3ne", AF_FORMAT_AC3_NE},
   {"imaadpcm", AF_FORMAT_IMA_ADPCM},
-  // ORIDNARY
+  // ORDINARY
   {"u8", AF_FORMAT_U8},
   {"s8", AF_FORMAT_S8},
   {"u16le", AF_FORMAT_U16_LE},
@@ -1283,17 +1328,22 @@ const m_option_type_t m_option_type_afmt = {
 };
 
 
-static double parse_timestring(const char *str)
+int parse_timestring(const char *str, double *time, char endchar)
 {
-  int a, b;
+  int a, b, len;
   double d;
-  if (sscanf(str, "%d:%d:%lf", &a, &b, &d) == 3)
-    return 3600*a + 60*b + d;
-  else if (sscanf(str, "%d:%lf", &a, &d) == 2)
-    return 60*a + d;
-  else if (sscanf(str, "%lf", &d) == 1)
-    return d;
-  return -1e100;
+  *time = 0; /* ensure initialization for error cases */
+  if (sscanf(str, "%d:%d:%lf%n", &a, &b, &d, &len) >= 3)
+    *time = 3600*a + 60*b + d;
+  else if (sscanf(str, "%d:%lf%n", &a, &d, &len) >= 2)
+    *time = 60*a + d;
+  else if (sscanf(str, "%lf%n", &d, &len) >= 1)
+    *time = d;
+  else
+    return 0; /* unsupported time format */
+  if (str[len] && str[len] != endchar)
+    return 0; /* invalid extra characters at the end */
+  return len;
 }
 
 
@@ -1304,8 +1354,7 @@ static int parse_time(const m_option_t* opt,const char *name, const char *param,
   if (param == NULL || strlen(param) == 0)
     return M_OPT_MISSING_PARAM;
 
-  time = parse_timestring(param);
-  if (time == -1e100) {
+  if (!parse_timestring(param, &time, 0)) {
     mp_msg(MSGT_CFGPARSER, MSGL_ERR, "Option %s: invalid time: '%s'\n",
            name,param);
     return M_OPT_INVALID;
@@ -1363,7 +1412,7 @@ static int parse_time_size(const m_option_t* opt,const char *name, const char *p
 
   /* End at time parsing. This has to be last because the parsing accepts
    * even a number followed by garbage */
-  if ((end_at = parse_timestring(param)) == -1e100) {
+  if (!parse_timestring(param, &end_at, 0)) {
     mp_msg(MSGT_CFGPARSER, MSGL_ERR, "Option %s: invalid time or size: '%s'\n",
            name,param);
     return M_OPT_INVALID;
@@ -1675,8 +1724,6 @@ static int parse_obj_settings(const char* opt,char* str,const m_obj_list_t* list
   return 1;
 }
 
-static void free_obj_settings_list(void* dst);
-
 static int obj_settings_list_del(const char *opt_name,const char *param,void* dst, int src) {
   char** str_list = NULL;
   int r,i,idx_max = 0;
@@ -1733,6 +1780,23 @@ static int obj_settings_list_del(const char *opt_name,const char *param,void* ds
   VAL(dst) = obj_list;
 
   return 1;
+}
+
+static void free_obj_settings_list(void* dst) {
+  int n;
+  m_obj_settings_t *d;
+
+  if (!dst || !VAL(dst)) return;
+
+  d = VAL(dst);
+#ifndef NO_FREE
+  for (n = 0 ; d[n].name ; n++) {
+    free(d[n].name);
+    free_str_list(&(d[n].attribs));
+  }
+  free(d);
+#endif
+  VAL(dst) = NULL;
 }
 
 static int parse_obj_settings_list(const m_option_t* opt,const char *name,
@@ -1870,23 +1934,6 @@ static int parse_obj_settings_list(const m_option_t* opt,const char *name,
     VAL(dst) = res;
   }
   return 1;
-}
-
-static void free_obj_settings_list(void* dst) {
-  int n;
-  m_obj_settings_t *d;
-
-  if(!dst || !VAL(dst)) return;
-
-  d = VAL(dst);
-#ifndef NO_FREE
-  for(n = 0 ; d[n].name ; n++) {
-    free(d[n].name);
-    free_str_list(&(d[n].attribs));
-  }
-  free(d);
-#endif
-  VAL(dst) = NULL;
 }
 
 static void copy_obj_settings_list(const m_option_t* opt,void* dst, const void* src) {

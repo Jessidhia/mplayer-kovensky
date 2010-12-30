@@ -45,6 +45,7 @@
 #include "stream/network.h"
 #include "stream/freesdp/common.h"
 #include "stream/freesdp/parser.h"
+#include "libavutil/avstring.h"
 
 #define RTSP_DEFAULT_PORT 31336
 #define MAX_LENGTH 256
@@ -93,7 +94,7 @@ rtcp_send_rr (rtsp_t *s, struct rtp_rtsp_session_t *st)
   {
     char rtcp_content[RTCP_RR_SIZE];
     strcpy (rtcp_content, RTCP_RR);
-    send (st->rtcp_socket, rtcp_content, RTCP_RR_SIZE, 0);
+    send (st->rtcp_socket, rtcp_content, RTCP_RR_SIZE, DEFAULT_SEND_FLAGS);
 
     /* ping RTSP server to keep connection alive.
        we use OPTIONS instead of PING as not all servers support it */
@@ -130,8 +131,7 @@ rtp_session_free (struct rtp_rtsp_session_t *st)
   if (st->rtcp_socket != -1)
     close (st->rtcp_socket);
 
-  if (st->control_url)
-    free (st->control_url);
+  free (st->control_url);
   free (st);
 }
 
@@ -218,7 +218,7 @@ parse_destination (const char *line)
   len = strlen (parse1) - strlen (parse2)
     - strlen (RTSP_SETUP_DESTINATION) + 1;
   dest = (char *) malloc (len + 1);
-  snprintf (dest, len, parse1 + strlen (RTSP_SETUP_DESTINATION));
+  av_strlcpy (dest, parse1 + strlen (RTSP_SETUP_DESTINATION), len);
   free (line_copy);
 
   return dest;

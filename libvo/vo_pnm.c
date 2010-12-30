@@ -132,8 +132,8 @@ static int preinit(const char *arg)
     };
     const char *info_message = NULL;
 
-    mp_msg(MSGT_VO, MSGL_INFO, "%s: %s\n", info.short_name,
-           _("Parsing suboptions."));
+    mp_msg(MSGT_VO, MSGL_V, "%s: %s\n", info.short_name,
+           "Parsing suboptions.");
 
     pnm_maxfiles = 1000;
     pnm_outdir = strdup(".");
@@ -175,8 +175,8 @@ static int preinit(const char *arg)
     }
     mp_msg(MSGT_VO, MSGL_INFO, "%s: %s\n", info.short_name, info_message);
 
-    mp_msg(MSGT_VO, MSGL_INFO, "%s: %s\n", info.short_name,
-           _("Suboptions parsed OK."));
+    mp_msg(MSGT_VO, MSGL_V, "%s: %s\n", info.short_name,
+           "Suboptions parsed OK.");
     return 0;
 }
 
@@ -440,7 +440,7 @@ static void pnm_write_image(mp_image_t *mpi)
     FILE *outfile;
 
     if (!mpi) {
-        mp_msg(MSGT_VO, MSGL_ERR, "%s: No image data suplied to video output driver\n", info.short_name );
+        mp_msg(MSGT_VO, MSGL_ERR, "%s: No image data supplied to video output driver\n", info.short_name );
         exit_player_bad(_("Fatal error"));
     }
 
@@ -556,14 +556,10 @@ static int control(uint32_t request, void *data)
 
 static void uninit(void)
 {
-    if (pnm_subdirs) {
-        free(pnm_subdirs);
-        pnm_subdirs = NULL;
-    }
-    if (pnm_outdir) {
-        free(pnm_outdir);
-        pnm_outdir = NULL;
-    }
+    free(pnm_subdirs);
+    pnm_subdirs = NULL;
+    free(pnm_outdir);
+    pnm_outdir = NULL;
 }
 
 /* ------------------------------------------------------------------------- */

@@ -122,7 +122,7 @@ Configure ends with this text, and <application>MPlayer</application> won't comp
 <screen>Your gcc does not support even i386 for '-march' and '-mcpu'</screen>
 </para></question>
 <answer><para>
-Your gcc isn't installed correctly, check the <filename>configure.log</filename>
+Your gcc isn't installed correctly, check the <filename>config.log</filename>
 file for details.
 </para></answer>
 </qandaentry>
@@ -848,8 +848,7 @@ My DVD playback is sluggish!
 </para></question>
 <answer><para>
 Use the <option>-cache</option> option (described in the man page) and try
-enabling DMA for the DVD drive with the <command>hdparm</command> tool
-(described in the <link linkend="drives">CD chapter</link>).
+enabling DMA for the DVD drive with the <command>hdparm</command> tool.
 </para></answer>
 </qandaentry>
 

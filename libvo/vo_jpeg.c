@@ -308,14 +308,10 @@ static int query_format(uint32_t format)
 
 static void uninit(void)
 {
-    if (jpeg_subdirs) {
-        free(jpeg_subdirs);
-        jpeg_subdirs = NULL;
-    }
-    if (jpeg_outdir) {
-        free(jpeg_outdir);
-        jpeg_outdir = NULL;
-    }
+    free(jpeg_subdirs);
+    jpeg_subdirs = NULL;
+    free(jpeg_outdir);
+    jpeg_outdir = NULL;
 }
 
 /* ------------------------------------------------------------------------- */
@@ -354,8 +350,8 @@ static int preinit(const char *arg)
     };
     const char *info_message = NULL;
 
-    mp_msg(MSGT_VO, MSGL_INFO, "%s: %s\n", info.short_name,
-           _("Parsing suboptions."));
+    mp_msg(MSGT_VO, MSGL_V, "%s: %s\n", info.short_name,
+           "Parsing suboptions.");
 
     jpeg_progressive_mode = 0;
     jpeg_baseline = 1;
@@ -395,8 +391,8 @@ static int preinit(const char *arg)
                                                                 jpeg_maxfiles);
     }
 
-    mp_msg(MSGT_VO, MSGL_INFO, "%s: %s\n", info.short_name,
-           _("Suboptions parsed OK."));
+    mp_msg(MSGT_VO, MSGL_V, "%s: %s\n", info.short_name,
+           "Suboptions parsed OK.");
     return 0;
 }
 

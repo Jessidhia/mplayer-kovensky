@@ -57,9 +57,32 @@ URL_t *url_redirect(URL_t **url, const char *redir) {
   return res;
 }
 
+static int make_noauth_url(URL_t *url, char *dst, int dst_size)
+{
+    if (url->port)
+        return snprintf(dst, dst_size, "%s://%s:%d%s", url->protocol,
+                        url->hostname, url->port, url->file);
+    else
+        return snprintf(dst, dst_size, "%s://%s%s", url->protocol,
+                        url->hostname, url->file);
+}
+
+int make_http_proxy_url(URL_t *proxy, const char *host_url, char *dst,
+                        int dst_size)
+{
+    if (proxy->username)
+        return snprintf(dst, dst_size, "http_proxy://%s:%s@%s:%d/%s",
+                        proxy->username,
+                        proxy->password ? proxy->password : "",
+                        proxy->hostname, proxy->port, host_url);
+    else
+        return snprintf(dst, dst_size, "http_proxy://%s:%d/%s",
+                        proxy->hostname, proxy->port, host_url);
+}
+
 URL_t*
 url_new(const char* url) {
-	int pos1, pos2,v6addr = 0;
+	int pos1, pos2,v6addr = 0, noauth_len;
 	URL_t* Curl = NULL;
         char *escfilename=NULL;
 	char *ptr1=NULL, *ptr2=NULL, *ptr3=NULL, *ptr4=NULL;
@@ -152,7 +175,9 @@ url_new(const char* url) {
 			}
 			strncpy( Curl->password, ptr3+1, len2);
 			Curl->password[len2]='\0';
+			url_unescape_string(Curl->password, Curl->password);
 		}
+		url_unescape_string(Curl->username, Curl->username);
 		ptr1 = ptr2+1;
 		pos1 = ptr1-escfilename;
 	}
@@ -229,10 +254,21 @@ url_new(const char* url) {
 		strcpy(Curl->file, "/");
 	}
 
+	noauth_len = make_noauth_url(Curl, NULL, 0);
+	if (noauth_len > 0) {
+		noauth_len++;
+		Curl->noauth_url = malloc(noauth_len);
+		if (!Curl->noauth_url) {
+			mp_msg(MSGT_NETWORK, MSGL_FATAL, "Memory allocation failed.\n");
+			goto err_out;
+		}
+		make_noauth_url(Curl, Curl->noauth_url, noauth_len);
+	}
+
         free(escfilename);
 	return Curl;
 err_out:
-	if (escfilename) free(escfilename);
+	free(escfilename);
 	if (Curl) url_free(Curl);
 	return NULL;
 }
@@ -240,18 +276,19 @@ err_out:
 void
 url_free(URL_t* url) {
 	if(!url) return;
-	if(url->url) free(url->url);
-	if(url->protocol) free(url->protocol);
-	if(url->hostname) free(url->hostname);
-	if(url->file) free(url->file);
-	if(url->username) free(url->username);
-	if(url->password) free(url->password);
+	free(url->url);
+	free(url->protocol);
+	free(url->hostname);
+	free(url->file);
+	free(url->username);
+	free(url->password);
 	free(url);
 }
 
 
 /* Replace escape sequences in an URL (or a part of an URL) */
-/* works like strcpy(), but without return argument */
+/* works like strcpy(), but without return argument,
+   except that outbuf == inbuf is allowed */
 void
 url_unescape_string(char *outbuf, const char *inbuf)
 {
@@ -378,8 +415,8 @@ url_escape_string(char *outbuf, const char *inbuf) {
 		i += strlen(in);
 	}
 	*outbuf = '\0';
-	if(tmp) free(tmp);
-	if(unesc) free(unesc);
+	free(tmp);
+	free(unesc);
 }
 
 #ifdef URL_DEBUG

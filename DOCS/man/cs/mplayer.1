@@ -1091,7 +1091,7 @@ MPlayer vypíše dostupné jazyky pokud běží v upovídaném (\-v) režimu.
 .RSs
 .IPs "\-alang hu,en"
 .IPs "mplayer dvd://1 \-alang hu,en"
-Vybere zvukovou stopu v bulharštině, pokud není k dispozici, použije stopu v angličtině.
+Vybere zvukovou stopu v maďarštině, pokud není k dispozici, použije stopu v angličtině.
 .IPs "mplayer \-alang jpn example.mkv"
 Přehraje Matroska soubor v japonštině.
 .RE
@@ -1805,7 +1805,9 @@ Seznam dostupných TV norem je vypsán na konzoli.
 .IPs channel=<hodnota>
 Nastaví přijímač na kanál číslo <hodnota>.
 .IPs chanlist=<hodnota>
-Dostupné jsou: europe-east, europe-west, us-bcast, us-cable, atd.
+Dostupné jsou: argentina, australia, china-bcast, europe-east, europe-west,
+france, ireland, italy, japan-bcast, japan-cable, newzealand, russia,
+southafrica, us-bcast, us-cable, us-cable-hrc
 .IPs channels=<kanál>\-<jméno>,<kanál>\-<jméno>,...
 Nastaví jména kanálů.
 .I POZNÁMKA:
@@ -10508,7 +10510,7 @@ zvýšení hlasitosti nebo potlačení omezení.
 .PP
 .B Inverze šachovnice pomocí filtru geq:
 .nf
-mplayer \-vf geq='128+(p(X\,Y)\-128)*(0.5\-gt(mod(X/SW\,128)\,64))*(0.5\-gt(mod(Y/SH\,128)\,64))*4'
+mplayer \-vf geq='128+(p(X\\,Y)\-128)*(0.5\-gt(mod(X/SW\\,128)\\,64))*(0.5\-gt(mod(Y/SH\\,128)\\,64))*4'
 .fi
 .
 .

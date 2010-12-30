@@ -58,8 +58,6 @@ static int initialized=0;
 static int cc_mode=CC_ROLLON;
 static int cc_lines=4; ///< number of visible rows in CC roll-up mode, not used in CC roll-on mode
 
-static void display_buffer(subtitle * buf);
-
 static void build_char_table(void)
 {
   int i;
@@ -83,7 +81,10 @@ static void clear_buffer(subtitle *buf)
 {
 	int i;
 	buf->lines=0;
-	for(i=0;i<SUB_MAX_TEXT;i++) if(buf->text[i]) {free(buf->text[i]);buf->text[i]=NULL;}
+	for (i = 0; i < SUB_MAX_TEXT; i++) {
+		free(buf->text[i]);
+		buf->text[i] = NULL;
+	}
 }
 
 
@@ -97,15 +98,16 @@ static void scroll_buffer(subtitle* buf)
 
 	while(buf->lines > cc_lines)
 	{
-		if(buf->text[0]) free(buf->text[0]);
+		free(buf->text[0]);
 
-		for(i = 0; i < (buf->lines - 1); i++) buf->text[i] = buf->text[i+1];
+		for(i = 0; i < buf->lines - 1; i++) buf->text[i] = buf->text[i+1];
 
 		buf->text[buf->lines-1] = NULL;
 		buf->lines--;
 	}
 }
 
+static int channel;
 
 void subcc_init(void)
 {
@@ -116,17 +118,25 @@ void subcc_init(void)
 	buf1.lines=buf2.lines=0;
 	fb=&buf1;
 	bb=&buf2;
+	channel = -1;
 
 	initialized=1;
 }
+
+
+static void display_buffer(subtitle *buf)
+{
+	vo_sub = buf;
+	vo_osd_changed(OSDTYPE_SUBTITLE);
+}
+
 
 static void append_char(char c)
 {
 	if(!bb->lines) {bb->lines++; cursor_pos=0;}
 	if(bb->text[bb->lines - 1]==NULL)
 	{
-		bb->text[bb->lines - 1]=malloc(CC_MAX_LINE_LENGTH);
-		memset(bb->text[bb->lines - 1],0,CC_MAX_LINE_LENGTH);
+		bb->text[bb->lines - 1] = calloc(1, CC_MAX_LINE_LENGTH);
 		cursor_pos=0;
 	}
 
@@ -163,28 +173,30 @@ static void swap_buffers(void)
 	bb=foo;
 }
 
-static void display_buffer(subtitle * buf)
+static int selected_channel(void)
 {
-	vo_sub=buf;
-	vo_osd_changed(OSDTYPE_SUBTITLE);
+    return subcc_enabled - 1;
 }
-
 
 static void cc_decode_EIA608(unsigned short int data)
 {
 
   static unsigned short int lastcode=0x0000;
-  unsigned char c1 = data & 0x7f;
-  unsigned char c2 = (data >> 8) & 0x7f;
+  uint8_t c1 = data & 0x7f;
+  uint8_t c2 = (data >> 8) & 0x7f;
 
   if (c1 & 0x60) {		/* normal character, 0x20 <= c1 <= 0x7f */
+	   if (channel != (selected_channel() & 1))
+		   return;
 	   append_char(chartbl[c1]);
 	   if(c2 & 0x60)	/*c2 might not be a normal char even if c1 is*/
 		   append_char(chartbl[c2]);
   }
   else if (c1 & 0x10)		// control code / special char
   {
-//	  int channel= (c1 & 0x08) >> 3;
+	  channel = (c1 & 0x08) >> 3;
+	  if (channel != (selected_channel() & 1))
+		return;
 	  c1&=~0x08;
 	  if(data!=lastcode)
 	  {
@@ -242,7 +254,7 @@ static void cc_decode_EIA608(unsigned short int data)
   lastcode=data;
 }
 
-static void subcc_decode(unsigned char *inputbuffer, unsigned int inputlength)
+static void subcc_decode(const uint8_t *inputbuffer, unsigned int inputlength)
 {
   /* The first number may denote a channel number. I don't have the
    * EIA-708 standard, so it is hard to say.
@@ -251,8 +263,9 @@ static void subcc_decode(unsigned char *inputbuffer, unsigned int inputlength)
    * repeat
    *
    *   0xfe starts 2 byte sequence of unknown purpose. It might denote
-   *        field #2 in line 21 of the VBI. We'll ignore it for the
-   *        time being.
+   *        field #2 in line 21 of the VBI.
+   *        Treating it identical of 0xff fixes
+   *        http://samples.mplayerhq.hu/MPEG-VOB/ClosedCaptions/Starship_Troopers.vob
    *
    *   0xff starts 2 byte EIA-608 sequence, field #1 in line 21 of the VBI.
    *        Followed by a 3-code triplet that starts either with 0xff or
@@ -274,16 +287,14 @@ static void subcc_decode(unsigned char *inputbuffer, unsigned int inputlength)
    *
    * until end of packet
    */
-  unsigned char *current = inputbuffer;
+  const uint8_t *current = inputbuffer;
   unsigned int curbytes = 0;
-  unsigned char data1, data2;
-  unsigned char cc_code;
+  uint8_t data1, data2;
+  uint8_t cc_code;
   int odd_offset = 1;
 
   while (curbytes < inputlength) {
-    int skip = 2;
-
-    cc_code = *(current);
+    cc_code = current[0];
 
     if (inputlength - curbytes < 2) {
 #ifdef LOG_DEBUG
@@ -292,53 +303,42 @@ static void subcc_decode(unsigned char *inputbuffer, unsigned int inputlength)
       break;
     }
 
-    data1 = *(current+1);
-    data2 = *(current + 2);
-    current++; curbytes++;
+    data1 = current[1];
+    data2 = current[2];
+    current += 3; curbytes += 3;
 
     switch (cc_code) {
     case 0xfe:
-      /* expect 2 byte encoding (perhaps CC3, CC4?) */
-      /* ignore for time being */
-      skip = 2;
-      break;
-
     case 0xff:
+      odd_offset ^= 1;
+      if (odd_offset != selected_channel() >> 1)
+          break;
       /* expect EIA-608 CC1/CC2 encoding */
       // FIXME check parity!
       // Parity check omitted assuming we are reading from a DVD and therefore
       // we should encounter no "transmission errors".
       cc_decode_EIA608(data1 | (data2 << 8));
-      skip = 5;
       break;
 
     case 0x00:
       /* This seems to be just padding */
-      skip = 2;
       break;
 
     case 0x01:
-      odd_offset = data2 & 0x80;
-      if (odd_offset)
-	skip = 2;
-      else
-	skip = 5;
+      odd_offset = data2 >> 7;
       break;
 
     default:
 //#ifdef LOG_DEBUG
       fprintf(stderr, "Unknown CC encoding: %x\n", cc_code);
 //#endif
-      skip = 2;
       break;
     }
-    current += skip;
-    curbytes += skip;
   }
 }
 
 
-void subcc_process_data(unsigned char *inputdata,unsigned int len)
+void subcc_process_data(const uint8_t *inputdata, unsigned int len)
 {
 	if(!subcc_enabled) return;
 	if(!initialized) subcc_init();

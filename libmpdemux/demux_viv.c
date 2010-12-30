@@ -230,12 +230,9 @@ static void vivo_parse_text_header(demuxer_t *demux, int header_len)
 	token = strtok(NULL, (char *)&("\x0d\x0a"));
     }
 
-    if (buf)
-	free(buf);
-    if (opt)
-	free(opt);
-    if (param)
-	free(param);
+    free(buf);
+    free(opt);
+    free(param);
 }
 
 static int vivo_check_file(demuxer_t* demuxer){
@@ -322,7 +319,7 @@ static int demux_vivo_fill_buffer(demuxer_t *demux, demux_stream_t *dsds){
   if (c == 0x82)
   {
       /* ok, this works, but pts calculating from header is required! */
-#warning "Calculate PTS from picture header!"
+      /* FIXME: "Calculate PTS from picture header!" */
       prefix = 1;
       c = stream_read_char(demux->stream);
       mp_msg(MSGT_DEMUX, MSGL_V, "packet 0x82(pos=%u) chunk=%x\n",
@@ -613,8 +610,7 @@ static demuxer_t* demux_open_vivo(demuxer_t* demuxer){
 		    sh->disp_h = height;
 
 		// emulate BITMAPINFOHEADER:
-		sh->bih=malloc(sizeof(BITMAPINFOHEADER));
-		memset(sh->bih,0,sizeof(BITMAPINFOHEADER));
+		sh->bih=calloc(1, sizeof(*sh->bih));
 		sh->bih->biSize=40;
 		if (priv->width)
 		    sh->bih->biWidth = priv->width;
@@ -679,8 +675,7 @@ if (demuxer->audio->id >= -1){
 		}
 
 		// Emulate WAVEFORMATEX struct:
-		sh->wf=malloc(sizeof(WAVEFORMATEX));
-		memset(sh->wf,0,sizeof(WAVEFORMATEX));
+		sh->wf=calloc(1, sizeof(*sh->wf));
 		sh->wf->wFormatTag=sh->format;
 		sh->wf->nChannels=1; /* 1 channels for both Siren and G.723 */
 
@@ -747,14 +742,10 @@ static void demux_close_vivo(demuxer_t *demuxer)
     vivo_priv_t* priv=demuxer->priv;
 
     if (priv) {
-	if (priv->title)
-	    free(priv->title);
-        if (priv->author)
-	    free(priv->author);
-	if (priv->copyright)
-	    free(priv->copyright);
-	if (priv->producer)
-	   free(priv->producer);
+	free(priv->title);
+	free(priv->author);
+	free(priv->copyright);
+	free(priv->producer);
 	free(priv);
     }
     return;

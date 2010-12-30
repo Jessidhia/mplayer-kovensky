@@ -44,8 +44,6 @@
 int fakemono = 0;
 #endif
 
-/* used for ac3surround decoder - set using -channels option */
-int audio_output_channels = 2;
 af_cfg_t af_cfg = { 1, NULL };	// Configuration for audio filters
 
 void afm_help(void)
@@ -154,7 +152,7 @@ static int init_audio(sh_audio_t *sh_audio, char *codecname, char *afm,
     }
     sh_audio->codec = NULL;
     while (1) {
-	ad_functions_t *mpadec;
+	const ad_functions_t *mpadec;
 	int i;
 	sh_audio->ad_driver = 0;
 	// restore original fourcc:
@@ -330,8 +328,8 @@ int init_audio_filters(sh_audio_t *sh_audio, int in_samplerate,
 {
     af_stream_t *afs = sh_audio->afilter;
     if (!afs) {
-	afs = malloc(sizeof(af_stream_t));
-	memset(afs, 0, sizeof(af_stream_t));
+	afs = calloc(1, sizeof(struct af_stream));
+	afs->opts = sh_audio->opts;
     }
     // input format: same as codec's output format:
     afs->input.rate   = in_samplerate;
@@ -371,6 +369,16 @@ int init_audio_filters(sh_audio_t *sh_audio, int in_samplerate,
     return 1;
 }
 
+static void set_min_out_buffer_size(struct sh_audio *sh, int len)
+{
+    if (sh->a_out_buffer_size < len) {
+	mp_msg(MSGT_DECAUDIO, MSGL_V, "Increasing filtered audio buffer size "
+	       "from %d to %d\n", sh->a_out_buffer_size, len);
+	sh->a_out_buffer = realloc(sh->a_out_buffer, len);
+	sh->a_out_buffer_size = len;
+    }
+}
+
 static int filter_n_bytes(sh_audio_t *sh, int len)
 {
     assert(len-1 + sh->audio_out_minsize <= sh->a_buffer_size);
@@ -378,13 +386,20 @@ static int filter_n_bytes(sh_audio_t *sh, int len)
     int error = 0;
 
     // Decode more bytes if needed
+    int old_samplerate = sh->samplerate;
+    int old_channels = sh->channels;
+    int old_sample_format = sh->sample_format;
     while (sh->a_buffer_len < len) {
 	unsigned char *buf = sh->a_buffer + sh->a_buffer_len;
 	int minlen = len - sh->a_buffer_len;
 	int maxlen = sh->a_buffer_size - sh->a_buffer_len;
 	int ret = sh->ad_driver->decode_audio(sh, buf, minlen, maxlen);
-	if (ret <= 0) {
-	    error = -1;
+	int format_change = sh->samplerate != old_samplerate
+                            || sh->channels != old_channels
+                            || sh->sample_format != old_sample_format;
+	if (ret <= 0 || format_change) {
+	    error = format_change ? -2 : -1;
+            // samples from format-changing call get discarded too
 	    len = sh->a_buffer_len;
 	    break;
 	}
@@ -403,13 +418,7 @@ static int filter_n_bytes(sh_audio_t *sh, int len)
     af_data_t *filter_output = af_play(sh->afilter, &filter_input);
     if (!filter_output)
 	return -1;
-    if (sh->a_out_buffer_size < sh->a_out_buffer_len + filter_output->len) {
-	int newlen = sh->a_out_buffer_len + filter_output->len;
-	mp_msg(MSGT_DECAUDIO, MSGL_V, "Increasing filtered audio buffer size "
-	       "from %d to %d\n", sh->a_out_buffer_size, newlen);
-	sh->a_out_buffer = realloc(sh->a_out_buffer, newlen);
-	sh->a_out_buffer_size = newlen;
-    }
+    set_min_out_buffer_size(sh, sh->a_out_buffer_len + filter_output->len);
     memcpy(sh->a_out_buffer + sh->a_out_buffer_len, filter_output->audio,
 	   filter_output->len);
     sh->a_out_buffer_len += filter_output->len;
@@ -467,11 +476,21 @@ int decode_audio(sh_audio_t *sh_audio, int minlen)
 	    /* if this iteration does not fill buffer, we must have lots
 	     * of buffering in filters */
 	    huge_filter_buffer = 1;
-	if (filter_n_bytes(sh_audio, declen) < 0)
-	    return -1;
+	int res = filter_n_bytes(sh_audio, declen);
+	if (res < 0)
+	    return res;
     }
     return 0;
 }
+
+void decode_audio_prepend_bytes(struct sh_audio *sh, int count, int byte)
+{
+    set_min_out_buffer_size(sh, sh->a_out_buffer_len + count);
+    memmove(sh->a_out_buffer + count, sh->a_out_buffer, sh->a_out_buffer_len);
+    memset(sh->a_out_buffer, byte, count);
+    sh->a_out_buffer_len += count;
+}
+
 
 void resync_audio_stream(sh_audio_t *sh_audio)
 {

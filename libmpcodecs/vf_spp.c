@@ -44,6 +44,7 @@
 #include "img_format.h"
 #include "mp_image.h"
 #include "vf.h"
+#include "vd_ffmpeg.h"
 #include "libvo/fastmemcpy.h"
 
 #define XMIN(a,b) ((a) < (b) ? (a) : (b))
@@ -514,13 +515,13 @@ static int put_image(struct vf_instance *vf, mp_image_t *mpi, double pts){
 static void uninit(struct vf_instance *vf){
 	if(!vf->priv) return;
 
-	if(vf->priv->temp) free(vf->priv->temp);
+	free(vf->priv->temp);
 	vf->priv->temp= NULL;
-	if(vf->priv->src) free(vf->priv->src);
+	free(vf->priv->src);
 	vf->priv->src= NULL;
-        if(vf->priv->avctx) free(vf->priv->avctx);
+        free(vf->priv->avctx);
         vf->priv->avctx= NULL;
-        if(vf->priv->non_b_qp) free(vf->priv->non_b_qp);
+        free(vf->priv->non_b_qp);
         vf->priv->non_b_qp= NULL;
 
 	free(vf->priv);
@@ -570,7 +571,7 @@ static int vf_open(vf_instance_t *vf, char *args){
     vf->priv=malloc(sizeof(struct vf_priv_s));
     memset(vf->priv, 0, sizeof(struct vf_priv_s));
 
-    avcodec_init();
+    init_avcodec();
 
     vf->priv->avctx= avcodec_alloc_context();
     dsputil_init(&vf->priv->dsp, vf->priv->avctx);

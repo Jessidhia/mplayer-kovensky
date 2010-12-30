@@ -156,7 +156,7 @@ static void vo_hidecursor(Display * disp, Window win)
     colormap = DefaultColormap(disp, DefaultScreen(disp));
     if ( !XAllocNamedColor(disp, colormap, "black", &black, &dummy) )
     {
-      return; // color alloc failed, give up
+        return; // color alloc failed, give up
     }
     bm_no = XCreateBitmapFromData(disp, win, bm_no_data, 8, 8);
     no_ptr = XCreatePixmapCursor(disp, bm_no, bm_no, &black, &black, 0, 0);
@@ -214,7 +214,7 @@ void fstype_help(void)
     mp_msg(MSGT_VO, MSGL_INFO, "    %-15s %s\n", "below",
            "use _NETWM_STATE_BELOW hint if available");
     mp_msg(MSGT_VO, MSGL_INFO, "    %-15s %s\n", "fullscreen",
-           "use _NETWM_STATE_FULLSCREEN hint if availale");
+           "use _NETWM_STATE_FULLSCREEN hint if available");
     mp_msg(MSGT_VO, MSGL_INFO, "    %-15s %s\n", "stays_on_top",
            "use _NETWM_STATE_STAYS_ON_TOP hint if available");
     mp_msg(MSGT_VO, MSGL_INFO,
@@ -388,8 +388,8 @@ int vo_init(struct vo *vo)
     XWindowAttributes attribs;
     char *dispName;
 
-	if (vo_rootwin)
-		WinID = 0; // use root window
+    if (vo_rootwin)
+        WinID = 0; // use root window
 
     if (x11->depthonscreen)
     {
@@ -540,12 +540,12 @@ static const struct mp_keymap keysym_map[] = {
     {0, 0}
 };
 
-static void vo_x11_putkey_ext(struct vo *vo, int keysym)
+static void vo_x11_putkey_ext(struct vo *vo, int keysym, int modifiers)
 {
     struct mp_fifo *f = vo->key_fifo;
     int mpkey = lookup_keymap_table(keysym_map, keysym);
     if (mpkey)
-        mplayer_put_key(f, mpkey);
+        mplayer_put_key(f, mpkey + modifiers);
 }
 #endif
 
@@ -584,7 +584,7 @@ static const struct mp_keymap keymap[] = {
     {0, 0}
 };
 
-void vo_x11_putkey(struct vo *vo, int key)
+static void vo_x11_putkey(struct vo *vo, int key, int modifiers)
 {
     static const char *passthrough_keys = " -+*/<>`~!@#$%^&()_{}:;\"\',.?\\|=[]";
     int mpkey = 0;
@@ -598,7 +598,7 @@ void vo_x11_putkey(struct vo *vo, int key)
         mpkey = lookup_keymap_table(keymap, key);
 
     if (mpkey)
-        mplayer_put_key(vo->key_fifo, mpkey);
+        mplayer_put_key(vo->key_fifo, mpkey + modifiers);
 }
 
 
@@ -706,11 +706,12 @@ void vo_x11_decoration(struct vo *vo, int d)
 
 void vo_x11_classhint(struct vo *vo, Window window, const char *name)
 {
+    struct MPOpts *opts = vo->opts;
     struct vo_x11_state *x11 = vo->x11;
     XClassHint wmClass;
     pid_t pid = getpid();
 
-    wmClass.res_name = vo_winname ? vo_winname : name;
+    wmClass.res_name = opts->vo_winname ? opts->vo_winname : name;
     wmClass.res_class = "MPlayer";
     XSetClassHint(x11->display, window, &wmClass);
     XChangeProperty(x11->display, window, x11->XA_NET_WM_PID, XA_CARDINAL,
@@ -724,17 +725,17 @@ void vo_x11_uninit(struct vo *vo)
     if (x11->window != None)
         vo_showcursor(x11->display, x11->window);
 
-    if (x11->f_gc)
+    if (x11->f_gc != None)
     {
         XFreeGC(vo->x11->display, x11->f_gc);
-        x11->f_gc = NULL;
+        x11->f_gc = None;
     }
     {
-        if (x11->vo_gc)
+        if (x11->vo_gc != None)
         {
             XSetBackground(vo->x11->display, x11->vo_gc, 0);
             XFreeGC(vo->x11->display, x11->vo_gc);
-            x11->vo_gc = NULL;
+            x11->vo_gc = None;
         }
         if (x11->window != None)
         {
@@ -763,6 +764,19 @@ void vo_x11_uninit(struct vo *vo)
     }
 }
 
+static int check_resize(struct vo *vo)
+{
+    int old_w = vo->dwidth, old_h = vo->dheight;
+    int old_x = vo->dx, old_y = vo->dy;
+    int rc = 0;
+    vo_x11_update_geometry(vo);
+    if (vo->dwidth != old_w || vo->dheight != old_h)
+        rc |= VO_EVENT_RESIZE;
+    if (vo->dx     != old_x || vo->dy      != old_y)
+        rc |= VO_EVENT_MOVE;
+    return rc;
+}
+
 int vo_x11_check_events(struct vo *vo)
 {
     struct vo_x11_state *x11 = vo->x11;
@@ -772,14 +786,14 @@ int vo_x11_check_events(struct vo *vo)
     char buf[100];
     KeySym keySym;
 
-// unsigned long  vo_KeyTable[512];
-
-    if ((x11->vo_mouse_autohide) && x11->mouse_waiting_hide &&
+    if (x11->vo_mouse_autohide && x11->mouse_waiting_hide &&
                                  (GetTimerMS() - x11->mouse_timer >= 1000)) {
         vo_hidecursor(display, x11->window);
         x11->mouse_waiting_hide = 0;
     }
 
+    if (WinID > 0)
+        ret |= check_resize(vo);
     while (XPending(display))
     {
         XNextEvent(display, &Event);
@@ -792,12 +806,7 @@ int vo_x11_check_events(struct vo *vo)
             case ConfigureNotify:
                 if (x11->window == None)
                     break;
-                {
-                    int old_w = vo->dwidth, old_h = vo->dheight;
-                    vo_x11_update_geometry(vo);
-                    if (vo->dwidth != old_w || vo->dheight != old_h)
-                        ret |= VO_EVENT_RESIZE;
-                }
+                ret |= check_resize(vo);
                 break;
             case KeyPress:
                 {
@@ -805,13 +814,22 @@ int vo_x11_check_events(struct vo *vo)
 
                     XLookupString(&Event.xkey, buf, sizeof(buf), &keySym,
                                   &x11->compose_status);
+                    int modifiers = 0;
+                    if (Event.xkey.state & ShiftMask)
+                        modifiers |= KEY_MODIFIER_SHIFT;
+                    if (Event.xkey.state & ControlMask)
+                        modifiers |= KEY_MODIFIER_CTRL;
+                    if (Event.xkey.state & Mod1Mask)
+                        modifiers |= KEY_MODIFIER_ALT;
+                    if (Event.xkey.state & Mod4Mask)
+                        modifiers |= KEY_MODIFIER_META;
 #ifdef XF86XK_AudioPause
-                    vo_x11_putkey_ext(vo, keySym);
+                    vo_x11_putkey_ext(vo, keySym, modifiers);
 #endif
                     key =
                         ((keySym & 0xff00) !=
                          0 ? ((keySym & 0x00ff) + 256) : (keySym));
-                    vo_x11_putkey(vo, key);
+                    vo_x11_putkey(vo, key, modifiers);
                     ret |= VO_EVENT_KEYPRESS;
                 }
                 break;
@@ -901,13 +919,13 @@ static void vo_x11_nofs_sizepos(struct vo *vo, int x, int y,
   }
   else
   {
-   vo->dwidth = width;
-   vo->dheight = height;
-   if (vo->opts->force_window_position)
-       XMoveResizeWindow(vo->x11->display, vo->x11->window, x, y, width,
-                         height);
-   else
-       XResizeWindow(vo->x11->display, vo->x11->window, width, height);
+    vo->dwidth = width;
+    vo->dheight = height;
+    if (vo->opts->force_window_position)
+        XMoveResizeWindow(vo->x11->display, vo->x11->window, x, y, width,
+                          height);
+    else
+        XResizeWindow(vo->x11->display, vo->x11->window, width, height);
   }
 }
 
@@ -1002,7 +1020,7 @@ static Window vo_x11_create_smooth_window(struct vo_x11_state *x11, Window mRoot
         XCreateWindow(x11->display, x11->rootwin, x, y, width, height, 0, depth,
                       CopyFromParent, vis, xswamask, &xswa);
     XSetWMProtocols(x11->display, ret_win, &x11->XAWM_DELETE_WINDOW, 1);
-    if (!x11->f_gc)
+    if (x11->f_gc == None)
         x11->f_gc = XCreateGC(x11->display, ret_win, 0, 0);
     XSetForeground(x11->display, x11->f_gc, 0);
 
@@ -1044,10 +1062,18 @@ void vo_x11_create_vo_window(struct vo *vo, XVisualInfo *vis, int x, int y,
       XChangeWindowAttributes(mDisplay, x11->window, xswamask, &xswa);
       XInstallColormap(mDisplay, col_map);
     }
-    if (WinID) vo_x11_update_geometry(vo);
-    vo_x11_selectinput_witherr(mDisplay, x11->window,
+    if (WinID) {
+        // Expose events can only really be handled by us, so request them.
+        vo_x11_selectinput_witherr(mDisplay, x11->window, ExposureMask);
+    } else
+        // Do not capture events since it might break the parent application
+        // if it relies on events being forwarded to the parent of WinID.
+        // It also is consistent with the w32_common.c code.
+        vo_x11_selectinput_witherr(mDisplay, x11->window,
           StructureNotifyMask | KeyPressMask | PointerMotionMask |
           ButtonPressMask | ButtonReleaseMask | ExposureMask);
+
+    vo_x11_update_geometry(vo);
     goto final;
   }
   if (x11->window == None) {
@@ -1106,6 +1132,7 @@ final:
   x11->vo_gc = XCreateGC(mDisplay, x11->window, GCForeground, &xgcv);
   XSync(mDisplay, False);
   x11->vo_mouse_autohide = 1;
+  vo->event_fd = ConnectionNumber(x11->display);
 }
 
 void vo_x11_clearwindow_part(struct vo *vo, Window vo_window,
@@ -1116,7 +1143,7 @@ void vo_x11_clearwindow_part(struct vo *vo, Window vo_window,
     Display *mDisplay = vo->x11->display;
     int u_dheight, u_dwidth, left_ov, left_ov2;
 
-    if (!x11->f_gc)
+    if (x11->f_gc == None)
         return;
 
     u_dheight = use_fs ? opts->vo_screenheight : vo->dheight;
@@ -1146,7 +1173,7 @@ void vo_x11_clearwindow(struct vo *vo, Window vo_window)
 {
     struct vo_x11_state *x11 = vo->x11;
     struct MPOpts *opts = vo->opts;
-    if (!x11->f_gc)
+    if (x11->f_gc == None)
         return;
     XFillRectangle(x11->display, vo_window, x11->f_gc, 0, 0,
                    opts->vo_screenwidth, opts->vo_screenheight);
@@ -1292,6 +1319,7 @@ static int vo_x11_get_fs_type(int supported)
  */
 int vo_x11_update_geometry(struct vo *vo)
 {
+    struct MPOpts *opts = vo->opts;
     struct vo_x11_state *x11 = vo->x11;
     unsigned depth, w, h;
     int dummy_int;
@@ -1304,8 +1332,8 @@ int vo_x11_update_geometry(struct vo *vo)
     }
     XTranslateCoordinates(x11->display, x11->window, x11->rootwin, 0, 0,
                           &vo->dx, &vo->dy, &dummy_win);
-    if (vo_wintitle)
-        XStoreName(x11->display, x11->window, vo_wintitle);
+    if (opts->vo_wintitle)
+        XStoreName(x11->display, x11->window, opts->vo_wintitle);
 
     return depth <= INT_MAX ? depth : 0;
 }

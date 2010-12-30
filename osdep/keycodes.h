@@ -124,4 +124,10 @@
 #define CTRL_U      (0x21)
 #define CTRL_Y      (0x25)
 
+/* Modifiers added to individual keys */
+#define KEY_MODIFIER_SHIFT  0x2000
+#define KEY_MODIFIER_CTRL   0x4000
+#define KEY_MODIFIER_ALT    0x8000
+#define KEY_MODIFIER_META  0x10000
+
 #endif /* MPLAYER_KEYCODES_H */
