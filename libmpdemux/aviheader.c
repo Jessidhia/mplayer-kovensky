@@ -331,6 +331,8 @@ while(1){
 	    sh_audio->wf=realloc(sh_audio->wf, sizeof(*sh_audio->wf)+sh_audio->wf->cbSize);
 	}
 	sh_audio->format=sh_audio->wf->wFormatTag;
+	if (sh_audio->wf->wFormatTag == 0xfffe && sh_audio->wf->cbSize >= 22)
+	    sh_audio->format = le2me_16(((WAVEFORMATEXTENSIBLE *)sh_audio->wf)->SubFormat);
 	if (sh_audio->format == 1 &&
 	    last_fccHandler == mmioFOURCC('A', 'x', 'a', 'n'))
 	    sh_audio->format = last_fccHandler;
@@ -375,13 +377,15 @@ while(1){
     if(demuxer->movi_end>stream_tell(demuxer->stream))
 	demuxer->movi_end=stream_tell(demuxer->stream); // fixup movi-end
     if(index_mode && !priv->isodml){
+      int read;
       int i;
       priv->idx_size=size2>>4;
       mp_tmsg(MSGT_HEADER,MSGL_V,"Reading INDEX block, %d chunks for %d frames (fpos=%"PRId64").\n",
         priv->idx_size,avih.dwTotalFrames, (int64_t)stream_tell(demuxer->stream));
       priv->idx=malloc(priv->idx_size<<4);
 //      printf("\nindex to %p !!!!! (priv=%p)\n",priv->idx,priv);
-      stream_read(demuxer->stream,(char*)priv->idx,priv->idx_size<<4);
+      read = stream_read(demuxer->stream,(char*)priv->idx,priv->idx_size<<4);
+      priv->idx_size = FFMAX(read, 0) >> 4;
       for (i = 0; i < priv->idx_size; i++) {	// swap index to machine endian
 	AVIINDEXENTRY *entry=(AVIINDEXENTRY*)priv->idx + i;
 	le2me_AVIINDEXENTRY(entry);

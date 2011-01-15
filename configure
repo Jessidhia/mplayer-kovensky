@@ -3274,7 +3274,7 @@ fi
 if test "$_pthreads" = auto ; then
 cat > $TMPC << EOF
 #include <pthread.h>
-static void* func(void *arg) { return arg; }
+void* func(void *arg) { return arg; }
 int main(void) {
  pthread_t tid;
  int res = 0;

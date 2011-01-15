@@ -20,8 +20,6 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-//#define DUMP2FILE
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -114,13 +112,11 @@ const mime_struct_t mime_type_table[] = {
 
 streaming_ctrl_t *
 streaming_ctrl_new(void) {
-	streaming_ctrl_t *streaming_ctrl;
-	streaming_ctrl = malloc(sizeof(streaming_ctrl_t));
+	streaming_ctrl_t *streaming_ctrl = calloc(1, sizeof(*streaming_ctrl));
 	if( streaming_ctrl==NULL ) {
 		mp_tmsg(MSGT_NETWORK,MSGL_FATAL,"Memory allocation failed.\n");
 		return NULL;
 	}
-	memset( streaming_ctrl, 0, sizeof(streaming_ctrl_t) );
 	return streaming_ctrl;
 }
 
@@ -169,14 +165,14 @@ check4proxies( URL_t *url ) {
 #endif
 
 			mp_msg(MSGT_NETWORK,MSGL_V,"Using HTTP proxy: %s\n", proxy_url->url );
-			len = strlen( proxy_url->hostname ) + strlen( url->url ) + 20;	// 20 = http_proxy:// + port
-			new_url = malloc( len+1 );
+			len = make_http_proxy_url(proxy_url, url->url, NULL, 0) + 1;
+			new_url = malloc(len);
 			if( new_url==NULL ) {
 				mp_tmsg(MSGT_NETWORK,MSGL_FATAL,"Memory allocation failed.\n");
 				url_free(proxy_url);
 				return url_out;
 			}
-			sprintf(new_url, "http_proxy://%s:%d/%s", proxy_url->hostname, proxy_url->port, url->url );
+			make_http_proxy_url(proxy_url, url->url, new_url, len);
 			tmp_url = url_new( new_url );
 			if( tmp_url==NULL ) {
 				free( new_url );
@@ -210,7 +206,7 @@ http_send_request( URL_t *url, off_t pos ) {
 			mp_msg(MSGT_NETWORK, MSGL_ERR, "Invalid URL '%s' to proxify\n", url->file+1);
 			goto err_out;
 		}
-		http_set_uri( http_hdr, server_url->url );
+		http_set_uri( http_hdr, server_url->noauth_url );
 	} else {
 		server_url = url;
 		http_set_uri( http_hdr, server_url->file );
@@ -255,7 +251,9 @@ http_send_request( URL_t *url, off_t pos ) {
 	if (network_cookies_enabled) cookies_set( http_hdr, server_url->hostname, server_url->url );
 
 	http_set_field( http_hdr, "Connection: close");
-	http_add_basic_authentication( http_hdr, url->username, url->password );
+	if (proxy)
+		http_add_basic_proxy_authentication(http_hdr, url->username, url->password);
+	http_add_basic_authentication(http_hdr, server_url->username, server_url->password);
 	if( http_build_request( http_hdr )==NULL ) {
 		goto err_out;
 	}
@@ -473,10 +471,6 @@ nop_streaming_read( int fd, char *buffer, int size, streaming_ctrl_t *stream_ctr
 int
 nop_streaming_seek( int fd, off_t pos, streaming_ctrl_t *stream_ctrl ) {
 	return -1;
-	// To shut up gcc warning
-	fd++;
-	pos++;
-	stream_ctrl=NULL;
 }
 
 

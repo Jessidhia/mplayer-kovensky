@@ -414,8 +414,8 @@ static int demux_audio_open(demuxer_t* demuxer) {
       }
       stream_read(s,(char*)(w + 1),w->cbSize);
       l -= w->cbSize;
-      if (w->wFormatTag & 0xfffe && w->cbSize >= 22)
-          sh_audio->format = ((WAVEFORMATEXTENSIBLE *)w)->SubFormat;
+      if (w->wFormatTag == 0xfffe && w->cbSize >= 22)
+          sh_audio->format = le2me_16(((WAVEFORMATEXTENSIBLE *)w)->SubFormat);
     }
 
     if( mp_msg_test(MSGT_DEMUX,MSGL_V) ) print_wave_header(w, MSGL_V);
@@ -467,8 +467,10 @@ static int demux_audio_open(demuxer_t* demuxer) {
 		break;
 	    }
 	}
-	if (sh_audio->format == 0x2001)
+	if (sh_audio->format == 0x2001) {
+	    sh_audio->needs_parsing = 1;
 	    mp_msg(MSGT_DEMUX,MSGL_DBG2,"[demux_audio] DTS sync offset = %u\n", i);
+        }
 
     }
     stream_seek(s,demuxer->movi_start);
@@ -582,8 +584,7 @@ static int demux_audio_fill_buffer(demuxer_t *demux, demux_stream_t *ds) {
     l = 65535;
     dp = new_demux_packet(l);
     l = stream_read(s,dp->buffer,l);
-    /* FLAC is not a constant-bitrate codec. These values will be wrong. */
-    priv->next_pts += l/(double)sh_audio->i_bps;
+    priv->next_pts = MP_NOPTS_VALUE;
     break;
   }
   default:

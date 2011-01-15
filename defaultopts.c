@@ -53,7 +53,6 @@ void set_default_mplayer_options(struct MPOpts *opts)
             .workaround_bugs = 1, // autodetect
             .error_resilience = 2,
             .error_concealment = 3,
-            .threads = 0,
         },
         .input = {
              .config_file = "input.conf",

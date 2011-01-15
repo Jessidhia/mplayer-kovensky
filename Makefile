@@ -506,6 +506,7 @@ SRCS_COMMON = asxparser.c \
               libvo/osd.c \
               libvo/sub.c \
               osdep/findfiles.c \
+              osdep/numcores.c \
               osdep/$(GETCH) \
               osdep/$(TIMER) \
               stream/open.c \

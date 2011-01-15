@@ -476,7 +476,7 @@ int vo_w32_init(void) {
         return 1;
 
     hInstance = GetModuleHandle(NULL);
-    
+
     mplayerIcon = (HICON)LoadImage(hInstance, MAKEINTRESOURCE(IDI_APPICON), IMAGE_ICON, 0, 0, LR_DEFAULTSIZE | LR_SHARED);
     mplayerSmallIcon = (HICON)LoadImage(hInstance, MAKEINTRESOURCE(IDI_APPICON), IMAGE_ICON, 16, 16, LR_SHARED);
 

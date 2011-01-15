@@ -34,6 +34,7 @@
 #include "libvo/sub.h"
 #include "m_option.h"
 #include "m_property.h"
+#include "m_config.h"
 #include "metadata.h"
 #include "libmpcodecs/vf.h"
 #include "libmpcodecs/vd.h"
@@ -226,6 +227,39 @@ static void log_sub(struct MPContext *mpctx)
 /// \ingroup Properties
 ///@{
 
+static int mp_property_generic_option(struct m_option *prop, int action,
+                                      void *arg, MPContext *mpctx)
+{
+    char *optname = prop->priv;
+    const struct m_option *opt = m_config_get_option(mpctx->mconfig, optname);
+    void *valptr = m_option_get_ptr(opt, &mpctx->opts);
+
+    switch (action) {
+    case M_PROPERTY_GET_TYPE:
+        *(const struct m_option **)arg = opt;
+        return M_PROPERTY_OK;
+    case M_PROPERTY_GET:
+        m_option_copy(opt, arg, valptr);
+        return M_PROPERTY_OK;
+    case M_PROPERTY_SET:
+        m_option_copy(opt, valptr, arg);
+        return M_PROPERTY_OK;
+    case M_PROPERTY_STEP_UP:
+        if (opt->type == &m_option_type_choice) {
+            int v = *(int *) valptr;
+            int best = v;
+            struct m_opt_choice_alternatives *alt;
+            for (alt = opt->priv; alt->name; alt++)
+                if ((unsigned) alt->value - v - 1 < (unsigned) best - v - 1)
+                    best = alt->value;
+            *(int *) valptr = best;
+            return M_PROPERTY_OK;
+        }
+        break;
+    }
+    return M_PROPERTY_NOT_IMPLEMENTED;
+}
+
 /// OSD level (RW)
 static int mp_property_osdlevel(m_option_t *prop, int action, void *arg,
                                 MPContext *mpctx)
@@ -263,14 +297,14 @@ static int mp_property_playback_speed(m_option_t *prop, int action,
             return M_PROPERTY_ERROR;
         M_PROPERTY_CLAMP(prop, *(float *) arg);
         opts->playback_speed = *(float *) arg;
-        build_afilter_chain(mpctx, mpctx->sh_audio, &ao_data);
+        reinit_audio_chain(mpctx);
         return M_PROPERTY_OK;
     case M_PROPERTY_STEP_UP:
     case M_PROPERTY_STEP_DOWN:
         opts->playback_speed += (arg ? *(float *) arg : 0.1) *
             (action == M_PROPERTY_STEP_DOWN ? -1 : 1);
         M_PROPERTY_CLAMP(prop, opts->playback_speed);
-        build_afilter_chain(mpctx, mpctx->sh_audio, &ao_data);
+        reinit_audio_chain(mpctx);
         return M_PROPERTY_OK;
     }
     return m_property_float_range(prop, action, arg, &opts->playback_speed);
@@ -290,10 +324,8 @@ static int mp_property_filename(m_option_t *prop, int action, void *arg,
     char *f;
     if (!mpctx->filename)
         return M_PROPERTY_UNAVAILABLE;
-    if (((f = strrchr(mpctx->filename, '/'))
-         || (f = strrchr(mpctx->filename, '\\'))) && f[1])
-        f++;
-    else
+    f = (char *)mp_basename(mpctx->filename);
+    if (!*f)
         f = mpctx->filename;
     return m_property_string_ro(prop, action, arg, f);
 }
@@ -420,8 +452,7 @@ static int mp_property_percent_pos(m_option_t *prop, int action,
         return m_property_int_ro(prop, action, arg, get_percent_pos(mpctx));
     }
 
-    mpctx->abs_seek_pos = SEEK_ABSOLUTE | SEEK_FACTOR;
-    mpctx->rel_seek_secs = pos / 100.0;
+    queue_seek(mpctx, MPSEEK_FACTOR, pos / 100.0, 0);
     return M_PROPERTY_OK;
 }
 
@@ -435,13 +466,12 @@ static int mp_property_time_pos(m_option_t *prop, int action,
     case M_PROPERTY_SET:
         if(!arg) return M_PROPERTY_ERROR;
         M_PROPERTY_CLAMP(prop, *(double*)arg);
-        mpctx->abs_seek_pos = SEEK_ABSOLUTE;
-        mpctx->rel_seek_secs = *(double*)arg;
+        queue_seek(mpctx, MPSEEK_ABSOLUTE, *(double*)arg, 0);
         return M_PROPERTY_OK;
     case M_PROPERTY_STEP_UP:
     case M_PROPERTY_STEP_DOWN:
-        mpctx->rel_seek_secs += (arg ? *(double*)arg : 10.0) *
-            (action == M_PROPERTY_STEP_UP ? 1.0 : -1.0);
+        queue_seek(mpctx, MPSEEK_RELATIVE, (arg ? *(double*)arg : 10.0) *
+                   (action == M_PROPERTY_STEP_UP ? 1.0 : -1.0), 0);
         return M_PROPERTY_OK;
     }
     return m_property_time_ro(prop, action, arg, get_current_time(mpctx));
@@ -497,20 +527,16 @@ static int mp_property_chapter(m_option_t *prop, int action, void *arg,
     }
 
     double next_pts = 0;
+    queue_seek(mpctx, MPSEEK_NONE, 0, 0);
     chapter = seek_chapter(mpctx, chapter, &next_pts, &chapter_name);
-    mpctx->rel_seek_secs = 0;
-    mpctx->abs_seek_pos = 0;
     if (chapter >= 0) {
-        if (next_pts > -1.0) {
-            mpctx->abs_seek_pos = SEEK_ABSOLUTE;
-            mpctx->rel_seek_secs = next_pts;
-        }
+        if (next_pts > -1.0)
+            queue_seek(mpctx, MPSEEK_ABSOLUTE, next_pts, 0);
         if (chapter_name)
             set_osd_tmsg(OSD_MSG_TEXT, 1, opts->osd_duration,
                          "Chapter: (%d) %s", chapter + 1, chapter_name);
-    }
-    else if (step_all > 0)
-        mpctx->rel_seek_secs = 1000000000.;
+    } else if (step_all > 0)
+        queue_seek(mpctx, MPSEEK_RELATIVE, 1000000000, 0);
     else
         set_osd_tmsg(OSD_MSG_TEXT, 1, opts->osd_duration,
                      "Chapter: (%d) %s", 0, mp_gtext("unknown"));
@@ -1523,10 +1549,7 @@ static int mp_property_sub(m_option_t *prop, int action, void *arg,
             sub_name = ass_track->name;
 #endif
         if (sub_name) {
-            char *tmp, *tmp2;
-            tmp = sub_name;
-            if ((tmp2 = strrchr(tmp, '/')))
-                tmp = tmp2 + 1;
+            const char *tmp = mp_basename(sub_name);
 
             snprintf(*(char **) arg, 63, "(%d) %s%s",
                      mpctx->set_of_sub_pos + 1,
@@ -2189,6 +2212,10 @@ static const m_option_t mp_properties[] = {
      M_OPT_RANGE, 0, 1, NULL },
     { "capturing", mp_property_capture, CONF_TYPE_FLAG,
      M_OPT_RANGE, 0, 1, NULL },
+    { "pts_association_mode", mp_property_generic_option, &m_option_type_choice,
+     0, 0, 0, "pts-association-mode" },
+    { "hr_seek", mp_property_generic_option, &m_option_type_choice,
+     0, 0, 0, "hr-seek" },
 
     // Audio
     { "volume", mp_property_volume, CONF_TYPE_FLOAT,
@@ -2362,6 +2389,8 @@ static struct property_osd_display {
     { "loop", 0, -1, _("Loop: %s") },
     { "chapter", -1, -1, NULL },
     { "capturing", 0, -1, _("Capturing: %s") },
+    { "pts_association_mode", 0, -1, "PTS association mode: %s" },
+    { "hr_seek", 0, -1, "hr-seek: %s" },
     // audio
     { "volume", OSD_VOLUME, -1, _("Volume") },
     { "mute", 0, -1, _("Mute: %s") },
@@ -2468,8 +2497,8 @@ static int show_property_osd(MPContext *mpctx, const char *pname)
  *
  * Toggle commands take 0 or 1 parameters. With no parameter
  * or a value less than the property minimum it just steps the
- * property to its next value. Otherwise it sets it to the given
- * value.
+ * property to its next or previous value respectively.
+ * Otherwise it sets it to the given value.
  *
  *@{
  */
@@ -2556,6 +2585,8 @@ static int set_property_command(MPContext *mpctx, mp_cmd_t *cmd)
         // set to value
         if (cmd->nargs > 0 && cmd->args[0].v.i >= prop->min)
             r = mp_property_do(pname, M_PROPERTY_SET, &cmd->args[0].v.i, mpctx);
+        else if (cmd->nargs > 0)
+            r = mp_property_do(pname, M_PROPERTY_STEP_DOWN, NULL, mpctx);
         else
             r = mp_property_do(pname, M_PROPERTY_STEP_UP, NULL, mpctx);
     } else if (cmd->args[1].v.i)        //set
@@ -2682,24 +2713,19 @@ void run_command(MPContext *mpctx, mp_cmd_t *cmd)
     if (!set_property_command(mpctx, cmd))
         switch (cmd->id) {
         case MP_CMD_SEEK:{
-                float v;
-                int abs;
                 mpctx->add_osd_seek_info = true;
-                v = cmd->args[0].v.f;
-                abs = (cmd->nargs > 1) ? cmd->args[1].v.i : 0;
+                float v = cmd->args[0].v.f;
+                int abs = (cmd->nargs > 1) ? cmd->args[1].v.i : 0;
+                int exact = (cmd->nargs > 2) ? cmd->args[2].v.i : 0;
                 if (abs == 2) { /* Absolute seek to a specific timestamp in seconds */
-                    mpctx->abs_seek_pos = SEEK_ABSOLUTE;
-                    if (sh_video)
-                        mpctx->osd_function =
-                            (v > sh_video->pts) ? OSD_FFW : OSD_REW;
-                    mpctx->rel_seek_secs = v;
+                    queue_seek(mpctx, MPSEEK_ABSOLUTE, v, exact);
+                    mpctx->osd_function = v > get_current_time(mpctx) ?
+                        OSD_FFW : OSD_REW;
                 } else if (abs) {       /* Absolute seek by percentage */
-                    mpctx->abs_seek_pos = SEEK_ABSOLUTE | SEEK_FACTOR;
-                    if (sh_video)
-                        mpctx->osd_function = OSD_FFW;  // Direction isn't set correctly
-                    mpctx->rel_seek_secs = v / 100.0;
+                    queue_seek(mpctx, MPSEEK_FACTOR, v / 100.0, exact);
+                    mpctx->osd_function = OSD_FFW;  // Direction isn't set correctly
                 } else {
-                    mpctx->rel_seek_secs += v;
+                    queue_seek(mpctx, MPSEEK_RELATIVE, v, exact);
                     mpctx->osd_function = (v > 0) ? OSD_FFW : OSD_REW;
                 }
             }
@@ -2821,7 +2847,7 @@ void run_command(MPContext *mpctx, mp_cmd_t *cmd)
         case MP_CMD_SPEED_INCR:{
                 float v = cmd->args[0].v.f;
                 opts->playback_speed += v;
-                build_afilter_chain(mpctx, sh_audio, &ao_data);
+                reinit_audio_chain(mpctx);
                 set_osd_tmsg(OSD_MSG_SPEED, 1, osd_duration, "Speed: x %6.2f",
                              opts->playback_speed);
             } break;
@@ -2829,7 +2855,7 @@ void run_command(MPContext *mpctx, mp_cmd_t *cmd)
         case MP_CMD_SPEED_MULT:{
                 float v = cmd->args[0].v.f;
                 opts->playback_speed *= v;
-                build_afilter_chain(mpctx, sh_audio, &ao_data);
+                reinit_audio_chain(mpctx);
                 set_osd_tmsg(OSD_MSG_SPEED, 1, osd_duration, "Speed: x %6.2f",
                              opts->playback_speed);
             } break;
@@ -2837,7 +2863,7 @@ void run_command(MPContext *mpctx, mp_cmd_t *cmd)
         case MP_CMD_SPEED_SET:{
                 float v = cmd->args[0].v.f;
                 opts->playback_speed = v;
-                build_afilter_chain(mpctx, sh_audio, &ao_data);
+                reinit_audio_chain(mpctx);
                 set_osd_tmsg(OSD_MSG_SPEED, 1, osd_duration, "Speed: x %6.2f",
                              opts->playback_speed);
             } break;
@@ -2905,12 +2931,12 @@ void run_command(MPContext *mpctx, mp_cmd_t *cmd)
         case MP_CMD_SUB_STEP:
             if (sh_video) {
                 int movement = cmd->args[0].v.i;
-                step_sub(subdata, sh_video->pts, movement);
+                step_sub(subdata, mpctx->video_pts, movement);
 #ifdef CONFIG_ASS
                 if (ass_track)
                     sub_delay +=
                         ass_step_sub(ass_track,
-                                     (sh_video->pts +
+                                     (mpctx->video_pts +
                                       sub_delay) * 1000 + .5, movement) / 1000.;
 #endif
                 set_osd_tmsg(OSD_MSG_SUB_DELAY, 1, osd_duration,
@@ -3288,126 +3314,100 @@ void run_command(MPContext *mpctx, mp_cmd_t *cmd)
             break;
 
         case MP_CMD_GET_FILENAME:{
-                mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_FILENAME='%s'\n",
-                       get_metadata(mpctx, META_NAME));
+            char *inf = get_metadata(mpctx, META_NAME);
+            mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_FILENAME='%s'\n", inf);
+            talloc_free(inf);
             }
             break;
 
         case MP_CMD_GET_VIDEO_CODEC:{
-                char *inf = get_metadata(mpctx, META_VIDEO_CODEC);
-                if (!inf)
-                    inf = strdup("");
-                mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_VIDEO_CODEC='%s'\n", inf);
-                free(inf);
+            char *inf = get_metadata(mpctx, META_VIDEO_CODEC);
+            mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_VIDEO_CODEC='%s'\n", inf);
+            talloc_free(inf);
             }
             break;
 
         case MP_CMD_GET_VIDEO_BITRATE:{
-                char *inf = get_metadata(mpctx, META_VIDEO_BITRATE);
-                if (!inf)
-                    inf = strdup("");
-                mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_VIDEO_BITRATE='%s'\n", inf);
-                free(inf);
+            char *inf = get_metadata(mpctx, META_VIDEO_BITRATE);
+            mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_VIDEO_BITRATE='%s'\n", inf);
+            talloc_free(inf);
             }
             break;
 
         case MP_CMD_GET_VIDEO_RESOLUTION:{
-                char *inf = get_metadata(mpctx, META_VIDEO_RESOLUTION);
-                if (!inf)
-                    inf = strdup("");
-                mp_msg(MSGT_GLOBAL, MSGL_INFO,
-                       "ANS_VIDEO_RESOLUTION='%s'\n", inf);
-                free(inf);
+            char *inf = get_metadata(mpctx, META_VIDEO_RESOLUTION);
+            mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_VIDEO_RESOLUTION='%s'\n", inf);
+            talloc_free(inf);
             }
             break;
 
         case MP_CMD_GET_AUDIO_CODEC:{
-                char *inf = get_metadata(mpctx, META_AUDIO_CODEC);
-                if (!inf)
-                    inf = strdup("");
-                mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_AUDIO_CODEC='%s'\n", inf);
-                free(inf);
+            char *inf = get_metadata(mpctx, META_AUDIO_CODEC);
+            mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_AUDIO_CODEC='%s'\n", inf);
+            talloc_free(inf);
             }
             break;
 
         case MP_CMD_GET_AUDIO_BITRATE:{
-                char *inf = get_metadata(mpctx, META_AUDIO_BITRATE);
-                if (!inf)
-                    inf = strdup("");
-                mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_AUDIO_BITRATE='%s'\n", inf);
-                free(inf);
+            char *inf = get_metadata(mpctx, META_AUDIO_BITRATE);
+            mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_AUDIO_BITRATE='%s'\n", inf);
+            talloc_free(inf);
             }
             break;
 
         case MP_CMD_GET_AUDIO_SAMPLES:{
-                char *inf = get_metadata(mpctx, META_AUDIO_SAMPLES);
-                if (!inf)
-                    inf = strdup("");
-                mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_AUDIO_SAMPLES='%s'\n", inf);
-                free(inf);
+            char *inf = get_metadata(mpctx, META_AUDIO_SAMPLES);
+            mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_AUDIO_SAMPLES='%s'\n", inf);
+            talloc_free(inf);
             }
             break;
 
         case MP_CMD_GET_META_TITLE:{
-                char *inf = get_metadata(mpctx, META_INFO_TITLE);
-                if (!inf)
-                    inf = strdup("");
-                mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_META_TITLE='%s'\n", inf);
-                free(inf);
+            char *inf = get_metadata(mpctx, META_INFO_TITLE);
+            mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_META_TITLE='%s'\n", inf);
+            talloc_free(inf);
             }
             break;
 
         case MP_CMD_GET_META_ARTIST:{
-                char *inf = get_metadata(mpctx, META_INFO_ARTIST);
-                if (!inf)
-                    inf = strdup("");
-                mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_META_ARTIST='%s'\n", inf);
-                free(inf);
+            char *inf = get_metadata(mpctx, META_INFO_ARTIST);
+            mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_META_ARTIST='%s'\n", inf);
+            talloc_free(inf);
             }
             break;
 
         case MP_CMD_GET_META_ALBUM:{
-                char *inf = get_metadata(mpctx, META_INFO_ALBUM);
-                if (!inf)
-                    inf = strdup("");
-                mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_META_ALBUM='%s'\n", inf);
-                free(inf);
+            char *inf = get_metadata(mpctx, META_INFO_ALBUM);
+            mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_META_ALBUM='%s'\n", inf);
+            talloc_free(inf);
             }
             break;
 
         case MP_CMD_GET_META_YEAR:{
-                char *inf = get_metadata(mpctx, META_INFO_YEAR);
-                if (!inf)
-                    inf = strdup("");
-                mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_META_YEAR='%s'\n", inf);
-                free(inf);
+            char *inf = get_metadata(mpctx, META_INFO_YEAR);
+            mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_META_YEAR='%s'\n", inf);
+            talloc_free(inf);
             }
             break;
 
         case MP_CMD_GET_META_COMMENT:{
-                char *inf = get_metadata(mpctx, META_INFO_COMMENT);
-                if (!inf)
-                    inf = strdup("");
-                mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_META_COMMENT='%s'\n", inf);
-                free(inf);
+            char *inf = get_metadata(mpctx, META_INFO_COMMENT);
+            mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_META_COMMENT='%s'\n", inf);
+            talloc_free(inf);
             }
             break;
 
         case MP_CMD_GET_META_TRACK:{
-                char *inf = get_metadata(mpctx, META_INFO_TRACK);
-                if (!inf)
-                    inf = strdup("");
-                mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_META_TRACK='%s'\n", inf);
-                free(inf);
+            char *inf = get_metadata(mpctx, META_INFO_TRACK);
+            mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_META_TRACK='%s'\n", inf);
+            talloc_free(inf);
             }
             break;
 
         case MP_CMD_GET_META_GENRE:{
-                char *inf = get_metadata(mpctx, META_INFO_GENRE);
-                if (!inf)
-                    inf = strdup("");
-                mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_META_GENRE='%s'\n", inf);
-                free(inf);
+            char *inf = get_metadata(mpctx, META_INFO_GENRE);
+            mp_msg(MSGT_GLOBAL, MSGL_INFO, "ANS_META_GENRE='%s'\n", inf);
+            talloc_free(inf);
             }
             break;
 
@@ -3520,7 +3520,7 @@ void run_command(MPContext *mpctx, mp_cmd_t *cmd)
                 else
                     af_add(mpctx->mixer.afilter, af_command);
             }
-            build_afilter_chain(mpctx, sh_audio, &ao_data);
+            reinit_audio_chain(mpctx);
             free(af_args);
         }
         break;
@@ -3529,7 +3529,7 @@ void run_command(MPContext *mpctx, mp_cmd_t *cmd)
             break;
         af_uninit(mpctx->mixer.afilter);
         af_init(mpctx->mixer.afilter);
-        build_afilter_chain(mpctx, sh_audio, &ao_data);
+        reinit_audio_chain(mpctx);
         break;
     case MP_CMD_AF_CMDLINE:
         if (sh_audio) {
