@@ -69,11 +69,11 @@ typedef struct mp_osd_obj_s {
 struct osd_state {
     unsigned char osd_text[128];
     struct font_desc *sub_font;
+    struct ass_track *ass_track;
 };
 
 #include "subreader.h"
 
-extern sub_data* subdata; //currently used subtitles
 extern subtitle* vo_sub;
 
 extern void* vo_osd_teletext_page;

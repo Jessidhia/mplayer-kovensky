@@ -137,7 +137,7 @@ typedef struct sh_sub {
   char type;                    // t = text, v = VobSub, a = SSA/ASS
   unsigned char* extradata; // extra header data passed from demuxer
   int extradata_len;
-  struct ass_track *ass_track;  // for SSA/ASS streams (type == 'a')
+  const struct sd_functions *sd_driver;
 } sh_sub_t;
 
 // demuxer.c:

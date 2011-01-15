@@ -16,6 +16,26 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-#include "version.h"
+#include <stdlib.h>
 
-const char *mplayer_version  = "MPlayer " VERSION;
+#include "libmpdemux/stheader.h"
+#include "sd.h"
+#include "dec_sub.h"
+#include "options.h"
+
+extern const struct sd_functions sd_ass;
+
+void sub_init(struct sh_sub *sh, struct osd_state *osd)
+{
+    struct MPOpts *opts = sh->opts;
+    if (opts->ass_enabled)
+        sh->sd_driver = &sd_ass;
+    if (sh->sd_driver)
+        sh->sd_driver->init(sh, osd);
+}
+
+void sub_decode(struct sh_sub *sh, struct osd_state *osd, void *data,
+                int data_len, double pts, double duration)
+{
+    sh->sd_driver->decode(sh, osd, data, data_len, pts, duration);
+}
