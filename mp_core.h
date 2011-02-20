@@ -23,7 +23,7 @@
 
 #include "options.h"
 #include "mixer.h"
-#include "subreader.h"
+#include "sub/subreader.h"
 
 // definitions used internally by the core player code
 
@@ -37,6 +37,7 @@
 #define INITIALIZED_DEMUXER 512
 #define INITIALIZED_ACODEC  1024
 #define INITIALIZED_VCODEC  2048
+#define INITIALIZED_SUB     4096
 #define INITIALIZED_ALL     0xFFFF
 
 
@@ -197,6 +198,7 @@ typedef struct MPContext {
     // parsed by libass or NULL if format unsupported
     struct ass_track *set_of_ass_tracks[MAX_SUBTITLE_FILES];
     sub_data* set_of_subtitles[MAX_SUBTITLE_FILES];
+    bool track_was_native_ass[MAX_SUBTITLE_FILES];
 
     int file_format;
 

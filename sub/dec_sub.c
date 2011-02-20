@@ -17,7 +17,10 @@
  */
 
 #include <stdlib.h>
+#include <stdbool.h>
+#include <assert.h>
 
+#include "config.h"
 #include "libmpdemux/stheader.h"
 #include "sd.h"
 #include "dec_sub.h"
@@ -28,14 +31,42 @@ extern const struct sd_functions sd_ass;
 void sub_init(struct sh_sub *sh, struct osd_state *osd)
 {
     struct MPOpts *opts = sh->opts;
-    if (opts->ass_enabled)
+
+#ifdef CONFIG_ASS
+    if (opts->ass_enabled && is_text_sub(sh->type))
         sh->sd_driver = &sd_ass;
-    if (sh->sd_driver)
+#endif
+    if (sh->sd_driver) {
         sh->sd_driver->init(sh, osd);
+        sh->initialized = true;
+        sh->active = true;
+    }
 }
 
 void sub_decode(struct sh_sub *sh, struct osd_state *osd, void *data,
                 int data_len, double pts, double duration)
 {
-    sh->sd_driver->decode(sh, osd, data, data_len, pts, duration);
+    if (sh->active && sh->sd_driver->decode)
+        sh->sd_driver->decode(sh, osd, data, data_len, pts, duration);
+}
+
+void sub_reset(struct sh_sub *sh, struct osd_state *osd)
+{
+    if (sh->active && sh->sd_driver->reset)
+        sh->sd_driver->reset(sh, osd);
+}
+
+void sub_switchoff(struct sh_sub *sh, struct osd_state *osd)
+{
+    if (sh->active && sh->sd_driver->switch_off)
+        sh->sd_driver->switch_off(sh, osd);
+    sh->active = false;
+}
+
+void sub_uninit(struct sh_sub *sh)
+{
+    assert (!sh->active);
+    if (sh->initialized && sh->sd_driver->uninit)
+        sh->sd_driver->uninit(sh);
+    sh->initialized = false;
 }

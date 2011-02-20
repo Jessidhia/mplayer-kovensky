@@ -21,7 +21,6 @@ BuildRequires:  cdparanoia-devel
 BuildRequires:  desktop-file-utils
 BuildRequires:  em8300-devel
 BuildRequires:  enca-devel
-BuildRequires:  faac-devel
 BuildRequires:  faad2-devel
 BuildRequires:  fontconfig-devel
 BuildRequires:  freetype-devel >= 2.0.9
@@ -48,8 +47,6 @@ BuildRequires:  lirc-devel
 BuildRequires:  live-devel
 BuildRequires:  lzo-devel >= 2
 BuildRequires:  speex-devel >= 1.1
-BuildRequires:  twolame-devel
-BuildRequires:  x264-devel
 BuildRequires:  xvidcore-devel >= 0.9.2
 %{?_with_arts:BuildRequires: arts-devel}
 %{?_with_amr:BuildRequires: amrnb-devel amrwb-devel}
@@ -95,14 +92,6 @@ Requires:       mplayer = %{version}-%{release}
 %description    gui
 This package contains a GUI for MPlayer and a default skin for it.
 
-%package     -n mencoder
-Summary:        MPlayer movie encoder
-Group:          Applications/Multimedia
-Requires:       mplayer = %{version}-%{release}
-
-%description -n mencoder
-This package contains the MPlayer movie encoder.
-
 %package        doc
 Summary:        MPlayer documentation in various languages
 Group:          Documentation
@@ -134,10 +123,6 @@ mv DOCS/man/zh DOCS/man/zh_CN
     --libdir=%{_libdir} \
     --codecsdir=%{codecsdir} \
     \
-    --disable-encoder=FAAC \
-    --disable-encoder=MP3LAME \
-    --disable-encoder=X264 \
-    \
     --enable-gui \
     --enable-largefiles \
     --disable-termcap \
@@ -149,8 +134,6 @@ mv DOCS/man/zh DOCS/man/zh_CN
     --disable-libdvdcss-internal \
     --enable-menu \
     \
-    --disable-faad-internal \
-    --disable-tremor-internal \
     %{!?_with_amr:--disable-libamr_nb --disable-libamr_wb} \
     %{!?_with_libmad:--disable-mad} \
     %{?_with_xmms:--enable-xmms} \
@@ -184,10 +167,6 @@ mv -f mplayer gmplayer
     --libdir=%{_libdir} \
     --codecsdir=%{codecsdir} \
     \
-    --disable-encoder=FAAC \
-    --disable-encoder=MP3LAME \
-    --disable-encoder=X264 \
-    \
     --enable-largefiles \
     --disable-termcap \
     --disable-bitmap-font \
@@ -198,8 +177,6 @@ mv -f mplayer gmplayer
     --disable-libdvdcss-internal \
     --enable-menu \
     \
-    --disable-faad-internal \
-    --disable-tremor-internal \
     %{!?_with_amr:--disable-libamr_nb --disable-libamr_wb} \
     %{!?_with_libmad:--disable-mad} \
     %{?_with_xmms:--enable-xmms} \
@@ -312,20 +289,6 @@ rm -rf $RPM_BUILD_ROOT
 %{_datadir}/applications/*mplayer.desktop
 %{_datadir}/icons/hicolor/32x32/apps/mplayer.xpm
 %{_datadir}/mplayer/skins/
-
-%files -n mencoder
-%defattr(-, root, root, -)
-%{_bindir}/mencoder
-%{_mandir}/man1/mencoder.1*
-%lang(cs) %{_mandir}/cs/man1/mencoder.1*
-%lang(de) %{_mandir}/de/man1/mencoder.1*
-%lang(es) %{_mandir}/es/man1/mencoder.1*
-%lang(fr) %{_mandir}/fr/man1/mencoder.1*
-%lang(hu) %{_mandir}/hu/man1/mencoder.1*
-%lang(it) %{_mandir}/it/man1/mencoder.1*
-%lang(pl) %{_mandir}/pl/man1/mencoder.1*
-%lang(ru) %{_mandir}/ru/man1/mencoder.1*
-%lang(zh_CN) %{_mandir}/zh_CN/man1/mencoder.1*
 
 %files doc
 %defattr(-, root, root, -)

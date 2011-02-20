@@ -12,21 +12,12 @@ General Public License, version 2, see the LICENSE file for details.
 MPlayer includes code from several external sources. General information and
 license details are listed below:
 
-Name:       FFmpeg
-Version:    Subversion HEAD
+Name:       a couple of files copied from FFmpeg
+Version:    updated to different versions
 URL:        http://www.ffmpeg.org
-Directory:  libavcodec, libavformat, libavutil, libpostproc
+Directory:  ffmpeg_files
 Copyright:  Many, see individual files for copyright notices.
-License:    GNU Lesser General Public License, some parts GNU General Public
-            License, GNU General Public License when combined
-
-
-Name:       FAAD2
-Version:    2.1 beta (20040915 CVS snapshot) + fixes and portability patches
-URL:        http://www.audiocoding.com
-Directory:  libfaad2
-Copyright:  2003-2004 M. Bakker, Ahead Software AG, http://www.nero.com
-License:    GNU General Public License
+License:    GNU Lesser General Public License
 
 
 Name:       libdvdcss
@@ -34,42 +25,6 @@ Version:    Subversion r237 + local changes
 URL:        http://developers.videolan.org/libdvdcss/
 Directory:  libdvdcss
 Copyright:  1998-2008 VideoLAN
-License:    GNU General Public License
-
-
-Name:       libdvdread
-Version:    Subversion HEAD
-URL:        svn://svn.mplayerhq.hu/dvdnav/trunk/libdvdread/src
-Directory:  libdvdread4
-Copyright:  1998, 1999 Eric Smith <eric@brouhaha.com>
-            1999 Christian Wolff for convergence integrated media
-            2000-2004 Billy Biggs <vektor@dumbterm.net>,
-            2001-2002 Samuel Hocevar <sam@zoy.org>,
-            2000-2004 Björn Englund <d4bjorn@dtek.chalmers.se>,
-            2000-2004 Håkan Hjort <d95hjort@dtek.chalmers.se>
-License:    GNU General Public License
-
-
-Name:       libdvdnav
-Version:    Subversion HEAD from
-URL:        svn://svn.mplayerhq.hu/dvdnav/trunk/libdvdnav/src
-Directory:  libdvdnav
-Copyright:  2000, 2001 Martin Norbäck, Håkan Hjort
-            2000-2004 Rich Wareham <richwareham@users.sourceforge.net>
-            2001-2004 the dvdnav project
-License:    GNU General Public License
-
-
-Name:       libmpeg2
-Version:    0.5.1 + patches
-URL:        http://libmpeg2.sourceforge.net/
-Directory:  libmpeg2
-Copyright:  1999-2000 Aaron Holtzman <aholtzma@ess.engr.uvic.ca>
-            2000-2004 Michel Lespinasse <walken@zoy.org>
-            2002-2003 Falk Hueffner <falk@debian.org>
-            2003 David S. Miller <davem@redhat.com>
-            2003 Regis Duchesne <hpreg@zoy.org>
-            2003 Peter Gubanov <peter@elecard.net.ru>
 License:    GNU General Public License
 
 
@@ -81,14 +36,6 @@ Copyright:  1995-1999 by Michael Hipp
             2004 Romain Dolbeau <romain@dolbeau.org>
             2006 Zuxy Meng <zuxy.meng@gmail.com
 License:    GNU General Public License
-
-
-Name:       Tremor
-Version:    1.0 + parts CVS from December 2004 + patches
-URL:        http://xiph.org/
-Directory:  tremor
-Copyright:  1994-2002, Xiph.org Foundation http://www.xiph.org/
-License:    BSD-like, see tremor/COPYING
 
 
 Name:       avifile DLL loader
@@ -159,22 +106,4 @@ URL:        http://mjpeg.sourceforge.net/
 Directory:  libmpdemux/yuv4mpeg*
 Copyright:  2001 Matthew J. Marjanovic <maddog@mir.com>
             2001 Andrew Stevens <andrew.stevens@philips.com>
-License:    GNU General Public License
-
-
-Name:       NuppelVideo / RTJPEG
-Version:    0.52a + patches
-URL:        http://web.archive.org/web/20060219034716/http://frost.htu.tuwien.ac.at/~roman/nuppelvideo/
-Directory:  libmpcodecs/native/rtjpegn.[ch]
-Copyright:  1998 Justin Schoeman (justin@suntiger.ee.up.ac.za)
-            1998, 1999 Joerg Walter <trouble@moes.pmnet.uni-oldenburg.de>
-            1999 Wim Taymans <wim.taymans@tvd.be>
-License:    GNU General Public License
-
-
-Name:       ReactOS
-Version:    r25937
-URL:        http://www.reactos.org/
-Directory:  vidix/dhahelperwin/ntverp.h vidix/dhahelperwin/common.ver
-Copyright:  Alex Ionescu (alex.ionescu@reactos.org)
 License:    GNU General Public License

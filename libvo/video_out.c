@@ -97,8 +97,6 @@ extern struct vo_driver video_out_tdfxfb;
 extern struct vo_driver video_out_s3fb;
 extern struct vo_driver video_out_wii;
 extern struct vo_driver video_out_null;
-extern struct vo_driver video_out_zr;
-extern struct vo_driver video_out_zr2;
 extern struct vo_driver video_out_bl;
 extern struct vo_driver video_out_fbdev;
 extern struct vo_driver video_out_fbdev2;
@@ -112,7 +110,6 @@ extern struct vo_driver video_out_yuv4mpeg;
 extern struct vo_driver video_out_direct3d;
 extern struct vo_driver video_out_directx;
 extern struct vo_driver video_out_kva;
-extern struct vo_driver video_out_dxr2;
 extern struct vo_driver video_out_dxr3;
 extern struct vo_driver video_out_ivtv;
 extern struct vo_driver video_out_v4l2;
@@ -121,9 +118,6 @@ extern struct vo_driver video_out_gif89a;
 extern struct vo_driver video_out_vesa;
 extern struct vo_driver video_out_directfb;
 extern struct vo_driver video_out_dfbmga;
-extern struct vo_driver video_out_xvidix;
-extern struct vo_driver video_out_winvidix;
-extern struct vo_driver video_out_cvidix;
 extern struct vo_driver video_out_tdfx_vid;
 extern struct vo_driver video_out_xvr100;
 extern struct vo_driver video_out_tga;
@@ -215,9 +209,6 @@ const struct vo_driver *video_out_drivers[] =
 #ifdef CONFIG_CACA
         &video_out_caca,
 #endif
-#ifdef CONFIG_DXR2
-        &video_out_dxr2,
-#endif
 #ifdef CONFIG_DXR3
         &video_out_dxr3,
 #endif
@@ -227,10 +218,6 @@ const struct vo_driver *video_out_drivers[] =
 #ifdef CONFIG_V4L2_DECODER
         &video_out_v4l2,
 #endif
-#ifdef CONFIG_ZR
-        &video_out_zr,
-        &video_out_zr2,
-#endif
 #ifdef CONFIG_BL
         &video_out_bl,
 #endif
@@ -239,15 +226,6 @@ const struct vo_driver *video_out_drivers[] =
 #endif
 #ifdef CONFIG_DIRECTFB
         &video_out_dfbmga,
-#endif
-#ifdef CONFIG_VIDIX
-#ifdef CONFIG_X11
-        &video_out_xvidix,
-#endif
-#if defined(__MINGW32__) || defined(__CYGWIN__)
-        &video_out_winvidix,
-#endif
-        &video_out_cvidix,
 #endif
         &video_out_null,
         // should not be auto-selected

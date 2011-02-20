@@ -127,7 +127,7 @@ enum timestamp_type {
 typedef struct demux_packet {
   int len;
   double pts;
-  double endpts;
+  double duration;
   double stream_pts;
   off_t pos;  // position in index (AVI) or file (MPG)
   unsigned char* buffer;

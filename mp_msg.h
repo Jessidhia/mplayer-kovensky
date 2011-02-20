@@ -21,7 +21,7 @@
 
 #include <stdarg.h>
 
-// defined in mplayer.c and mencoder.c
+// defined in mplayer.c
 extern int verbose;
 
 /* No-op macro to mark translated strings in the sources */
@@ -78,8 +78,6 @@ extern int verbose;
 
 #define MSGT_STREAM 20  // stream.c
 #define MSGT_CACHE 21 	// cache2.c
-
-#define MSGT_MENCODER 22
 
 #define MSGT_XACODEC 23	// XAnim codecs
 

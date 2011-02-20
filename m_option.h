@@ -63,7 +63,6 @@ extern const m_option_type_t m_option_type_imgfmt;
 extern const m_option_type_t m_option_type_afmt;
 
 // Func-based types
-extern const m_option_type_t m_option_type_func_full;
 extern const m_option_type_t m_option_type_func_param;
 extern const m_option_type_t m_option_type_func;
 
@@ -188,7 +187,6 @@ struct m_opt_choice_alternatives {
 #define CONF_TYPE_PRINT		(&m_option_type_print)
 #define CONF_TYPE_PRINT_INDIRECT (&m_option_type_print_indirect)
 #define CONF_TYPE_PRINT_FUNC	(&m_option_type_print_func)
-#define CONF_TYPE_FUNC_FULL	(&m_option_type_func_full)
 #define CONF_TYPE_SUBCONFIG	(&m_option_type_subconfig)
 #define CONF_TYPE_STRING_LIST	(&m_option_type_string_list)
 #define CONF_TYPE_POSITION	(&m_option_type_position)
@@ -349,12 +347,8 @@ struct m_option {
  */
 #define M_OPT_NOSAVE		(1<<5)
 
-/// \brief The \ref Config will emulate the old behavior by pushing the
-/// option only if it was set by the user.
-#define M_OPT_OLD		(1<<6)
-
 /// The option should be set during command line pre-parsing
-#define M_OPT_PRE_PARSE		(1<<7)
+#define M_OPT_PRE_PARSE		(1<<6)
 
 /// \defgroup OldOptionFlags Backward compatibility
 ///
@@ -367,7 +361,6 @@ struct m_option {
 #define CONF_NOCMD		M_OPT_NOCMD
 #define CONF_GLOBAL		M_OPT_GLOBAL
 #define CONF_NOSAVE		M_OPT_NOSAVE
-#define CONF_OLD		M_OPT_OLD
 #define CONF_PRE_PARSE		M_OPT_PRE_PARSE
 ///@}
 

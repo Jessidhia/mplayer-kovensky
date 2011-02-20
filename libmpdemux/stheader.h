@@ -19,6 +19,8 @@
 #ifndef MPLAYER_STHEADER_H
 #define MPLAYER_STHEADER_H
 
+#include <stdbool.h>
+
 #include "aviheader.h"
 #include "ms_hdr.h"
 struct MPOpts;
@@ -135,6 +137,7 @@ typedef struct sh_sub {
   SH_COMMON
   int sid;
   char type;                    // t = text, v = VobSub, a = SSA/ASS
+  bool active;  // after track switch decoder may stay initialized, not active
   unsigned char* extradata; // extra header data passed from demuxer
   int extradata_len;
   const struct sd_functions *sd_driver;

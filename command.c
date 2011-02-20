@@ -31,7 +31,7 @@
 #include "libmpdemux/stheader.h"
 #include "codec-cfg.h"
 #include "mplayer.h"
-#include "libvo/sub.h"
+#include "sub/sub.h"
 #include "sub/dec_sub.h"
 #include "m_option.h"
 #include "m_property.h"
@@ -41,7 +41,7 @@
 #include "libmpcodecs/vd.h"
 #include "mp_osd.h"
 #include "libvo/video_out.h"
-#include "libvo/font_load.h"
+#include "sub/font_load.h"
 #include "playtree.h"
 #include "libao2/audio_out.h"
 #include "mpcommon.h"
@@ -49,10 +49,10 @@
 #include "libmpcodecs/dec_video.h"
 #include "libmpcodecs/dec_audio.h"
 #include "libmpcodecs/dec_teletext.h"
-#include "vobsub.h"
-#include "spudec.h"
+#include "sub/vobsub.h"
+#include "sub/spudec.h"
 #include "path.h"
-#include "ass_mp.h"
+#include "sub/ass_mp.h"
 #include "stream/tv.h"
 #include "stream/stream_radio.h"
 #include "stream/pvr.h"
@@ -69,8 +69,6 @@
 #include "mp_core.h"
 #include "mp_fifo.h"
 #include "libavutil/avstring.h"
-
-#define ROUND(x) ((int)((x)<0 ? (x)-0.5 : (x)+0.5))
 
 extern int use_menu;
 
@@ -1656,18 +1654,22 @@ static int mp_property_sub(m_option_t *prop, int action, void *arg,
             reset_spu = 1;
         d_sub->id = -2;
     }
-#ifdef CONFIG_ASS
     mpctx->osd->ass_track = NULL;
-#endif
+    uninit_player(mpctx, INITIALIZED_SUB);
 
     if (source == SUB_SOURCE_VOBSUB) {
         vobsub_id = vobsub_get_id_by_index(vo_vobsub, source_pos);
     } else if (source == SUB_SOURCE_SUBS) {
         mpctx->set_of_sub_pos = source_pos;
 #ifdef CONFIG_ASS
-        if (opts->ass_enabled && mpctx->set_of_ass_tracks[mpctx->set_of_sub_pos])
-            mpctx->osd->ass_track = mpctx->set_of_ass_tracks[mpctx->set_of_sub_pos];
-        else
+        if (opts->ass_enabled
+            && mpctx->set_of_ass_tracks[mpctx->set_of_sub_pos]) {
+            mpctx->osd->ass_track =
+                mpctx->set_of_ass_tracks[mpctx->set_of_sub_pos];
+            mpctx->osd->ass_track_changed = true;
+            mpctx->osd->vsfilter_aspect =
+                mpctx->track_was_native_ass[mpctx->set_of_sub_pos];
+        } else
 #endif
         {
             mpctx->subdata = mpctx->set_of_subtitles[mpctx->set_of_sub_pos];
@@ -1693,8 +1695,10 @@ static int mp_property_sub(m_option_t *prop, int action, void *arg,
                 sh_sub_t *sh = d_sub->sh;
                 if (sh->type == 'v')
                     init_vo_spudec(mpctx);
-                else
+                else {
                     sub_init(sh, mpctx->osd);
+                    mpctx->initialized_flags |= INITIALIZED_SUB;
+                }
             } else {
               d_sub->id = -2;
               d_sub->sh = NULL;
@@ -2392,6 +2396,7 @@ static struct property_osd_display {
     { "capturing", 0, -1, _("Capturing: %s") },
     { "pts_association_mode", 0, -1, "PTS association mode: %s" },
     { "hr_seek", 0, -1, "hr-seek: %s" },
+    { "speed", 0, -1, _("Speed: x %6s") },
     // audio
     { "volume", OSD_VOLUME, -1, _("Volume") },
     { "mute", 0, -1, _("Mute: %s") },
@@ -2694,9 +2699,7 @@ static void remove_subtitle_range(MPContext *mpctx, int start, int count)
     if (mpctx->set_of_sub_pos >= start && mpctx->set_of_sub_pos < end) {
         mpctx->global_sub_pos = -2;
         mpctx->subdata = NULL;
-#ifdef CONFIG_ASS
         mpctx->osd->ass_track = NULL;
-#endif
         mp_input_queue_cmd(mpctx->input, mp_input_parse_cmd("sub_select"));
     } else if (mpctx->set_of_sub_pos >= end) {
         mpctx->set_of_sub_pos -= count;
@@ -2846,28 +2849,23 @@ void run_command(MPContext *mpctx, mp_cmd_t *cmd)
             break;
 
         case MP_CMD_SPEED_INCR:{
-                float v = cmd->args[0].v.f;
-                opts->playback_speed += v;
-                reinit_audio_chain(mpctx);
-                set_osd_tmsg(OSD_MSG_SPEED, 1, osd_duration, "Speed: x %6.2f",
-                             opts->playback_speed);
-            } break;
+            float v = cmd->args[0].v.f;
+            mp_property_do("speed", M_PROPERTY_STEP_UP, &v, mpctx);
+            show_property_osd(mpctx, "speed");
+            break;
+        }
 
-        case MP_CMD_SPEED_MULT:{
-                float v = cmd->args[0].v.f;
-                opts->playback_speed *= v;
-                reinit_audio_chain(mpctx);
-                set_osd_tmsg(OSD_MSG_SPEED, 1, osd_duration, "Speed: x %6.2f",
-                             opts->playback_speed);
-            } break;
+        case MP_CMD_SPEED_MULT:
+            case_fallthrough_hack = true;
 
         case MP_CMD_SPEED_SET:{
-                float v = cmd->args[0].v.f;
-                opts->playback_speed = v;
-                reinit_audio_chain(mpctx);
-                set_osd_tmsg(OSD_MSG_SPEED, 1, osd_duration, "Speed: x %6.2f",
-                             opts->playback_speed);
-            } break;
+            float v = cmd->args[0].v.f;
+            if (case_fallthrough_hack)
+                v *= mpctx->opts.playback_speed;
+            mp_property_do("speed", M_PROPERTY_SET, &v, mpctx);
+            show_property_osd(mpctx, "speed");
+            break;
+        }
 
         case MP_CMD_FRAME_STEP:
             add_step_frame(mpctx);

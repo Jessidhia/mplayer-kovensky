@@ -44,7 +44,7 @@
 #include "demux_ty_osd.h"
 #include "parse_es.h"
 #include "stheader.h"
-#include "sub_cc.h"
+#include "sub/sub_cc.h"
 #include "libavutil/avstring.h"
 #include "ffmpeg_files/intreadwrite.h"
 
@@ -851,6 +851,7 @@ static void demux_close_ty( demuxer_t *demux )
 
 static int ty_check_file(demuxer_t* demuxer)
 {
+  demuxer->filepos = 0;
   TiVoInfo *tivo = calloc(1, sizeof(TiVoInfo));
   demuxer->priv = tivo;
   return ds_fill_buffer(demuxer->video) ? DEMUXER_TYPE_MPEG_TY : 0;

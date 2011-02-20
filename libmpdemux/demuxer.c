@@ -186,7 +186,7 @@ struct demux_packet *new_demux_packet(size_t len)
     dp->len = len;
     dp->next = NULL;
     dp->pts = MP_NOPTS_VALUE;
-    dp->endpts = MP_NOPTS_VALUE;
+    dp->duration = -1;
     dp->stream_pts = MP_NOPTS_VALUE;
     dp->pos = 0;
     dp->flags = 0;
@@ -348,10 +348,6 @@ sh_sub_t *new_sh_sub_sid(demuxer_t *demuxer, int id, int sid)
         sh->sid = sid;
         sh->opts = demuxer->opts;
         mp_msg(MSGT_IDENTIFY, MSGL_INFO, "ID_SUBTITLE_ID=%d\n", sid);
-    }
-    if (sid == demuxer->opts->sub_id) {
-        demuxer->sub->id = id;
-        demuxer->sub->sh = demuxer->s_streams[id];
     }
     return demuxer->s_streams[id];
 }
@@ -1398,9 +1394,9 @@ int demuxer_add_chapter(demuxer_t *demuxer, struct bstr name,
         talloc_strdup(demuxer->chapters, mp_gtext("unknown"));
 
     mp_msg(MSGT_IDENTIFY, MSGL_INFO, "ID_CHAPTER_ID=%d\n", demuxer->num_chapters);
-    mp_msg(MSGT_IDENTIFY, MSGL_INFO, "ID_CHAPTER_%d_START=%"PRIu64"\n", demuxer->num_chapters, start);
+    mp_msg(MSGT_IDENTIFY, MSGL_INFO, "ID_CHAPTER_%d_START=%"PRIu64"\n", demuxer->num_chapters, start / 1000000);
     if (end)
-        mp_msg(MSGT_IDENTIFY, MSGL_INFO, "ID_CHAPTER_%d_END=%"PRIu64"\n", demuxer->num_chapters, end);
+        mp_msg(MSGT_IDENTIFY, MSGL_INFO, "ID_CHAPTER_%d_END=%"PRIu64"\n", demuxer->num_chapters, end / 1000000);
     if (name.start)
         mp_msg(MSGT_IDENTIFY, MSGL_INFO, "ID_CHAPTER_%d_NAME=%.*s\n", demuxer->num_chapters, BSTR_P(name));
 
@@ -1453,7 +1449,7 @@ int demuxer_seek_chapter(demuxer_t *demuxer, int chapter, double *seek_pts,
         if (chapter < 0)
             chapter = 0;
 
-        *seek_pts = demuxer->chapters[chapter].start / 1000.0;
+        *seek_pts = demuxer->chapters[chapter].start / 1e9;
 
         if (chapter_name)
             *chapter_name = talloc_strdup(NULL, demuxer->chapters[chapter].name);
@@ -1470,7 +1466,7 @@ int demuxer_get_current_chapter(demuxer_t *demuxer, double time_now)
                            &chapter) == STREAM_UNSUPPORTED)
             chapter = -2;
     } else {
-        uint64_t now = time_now * 1000 + 0.5;
+        uint64_t now = time_now * 1e9 + 0.5;
         for (chapter = demuxer->num_chapters - 1; chapter >= 0; --chapter) {
             if (demuxer->chapters[chapter].start <= now)
                 break;
@@ -1513,8 +1509,8 @@ float demuxer_chapter_time(demuxer_t *demuxer, int chapter, float *end)
     if (demuxer->num_chapters && demuxer->chapters && chapter >= 0
         && chapter < demuxer->num_chapters) {
         if (end)
-            *end = demuxer->chapters[chapter].end / 1000.0;
-        return demuxer->chapters[chapter].start / 1000.0;
+            *end = demuxer->chapters[chapter].end / 1e9;
+        return demuxer->chapters[chapter].start / 1e9;
     }
     return -1.0;
 }

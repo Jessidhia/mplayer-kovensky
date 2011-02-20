@@ -147,7 +147,7 @@ It works with X11, Xv, DGA, OpenGL, SVGAlib, fbdev, AAlib, libcaca, DirectFB,
 Quartz, Mac OS X CoreVideo, but you can also use GGI, SDL (and all their drivers),
 VESA (on every VESA-compatible card, even without X11), some low-level
 card-specific drivers (for Matrox, 3dfx and ATI) and some hardware MPEG decoder
-boards, such as the Siemens DVB, Hauppauge PVR (IVTV), DXR2 and DXR3/\:Hollywood+.
+boards, such as the Siemens DVB, Hauppauge PVR (IVTV) and DXR3/\:Hollywood+.
 Most of them support software or hardware scaling, so you can enjoy movies in
 fullscreen mode.
 .PP
@@ -157,10 +157,6 @@ European/\:ISO8859-1,2 (Hungarian, English, Czech, etc), Cyrillic and Korean
 fonts are supported along with 12 subtitle formats (MicroDVD, SubRip, OGM,
 SubViewer, Sami, VPlayer, RT, SSA, AQTitle, JACOsub, PJS and our own: MPsub) and
 DVD subtitles (SPU streams, VOBsub and Closed Captions).
-.PP
-.B gmplayer
-is MPlayer with a graphical user interface.
-It has the same options as MPlayer.
 .PP
 Usage examples to get you started quickly can be found at the end
 of this man page.
@@ -211,7 +207,7 @@ Pause (pressing again unpauses).
 .IPs ".\ \ \ \ "
 Step forward.
 Pressing once will pause movie, every consecutive press will play one frame
-and then go into pause mode again (any other key unpauses).
+and then go into pause mode again.
 .IPs "q / ESC"
 Stop playing and quit.
 .IPs "U\ \ \ \ "
@@ -281,8 +277,8 @@ Change YUV colorspace.
 .PD 1
 .PP
 .RS
-(The following keys are valid only when using a hardware accelerated video
-output (xv, (x)vidix, (x)mga, etc), the software equalizer
+(The following keys are valid only when using a video output that supports
+the corresponding adjustment, the software equalizer
 (\-vf eq or \-vf eq2) or hue filter (\-vf hue).)
 .RE
 .PP
@@ -751,22 +747,23 @@ chapter change instead of doing a seek.
 .B \-colorkey <number>
 Changes the colorkey to an RGB value of your choice.
 0x000000 is black and 0xffffff is white.
-Only supported by the cvidix, fbdev, svga, vesa, winvidix, xmga, xvidix,
+Only supported by the fbdev, svga, vesa, xmga,
 xover, xv (see \-vo xv:ck), xvmc (see \-vo xv:ck) and directx video output
 drivers.
 .
 .TP
 .B \-nocolorkey
 Disables colorkeying.
-Only supported by the cvidix, fbdev, svga, vesa, winvidix, xmga, xvidix,
+Only supported by the fbdev, svga, vesa, xmga,
 xover, xv (see \-vo xv:ck), xvmc (see \-vo xv:ck) and directx video output
 drivers.
 .
 .TP
-.B \-correct\-pts
+.B \-correct\-pts, \-nocorrect\-pts
 Switches MPlayer to a mode where timestamps for video frames
 are calculated differently and video filters which add new frames or
 modify timestamps of existing ones are supported.
+Now enabled automatically for most common file formats.
 The more accurate timestamps can be visible for example when playing
 subtitles timed to scene changes with the \-ass option.
 Without \-correct\-pts the subtitle timing will typically be off by some frames.
@@ -797,14 +794,13 @@ later.
 See http://www.mplayerhq.hu/\:DOCS/\:HTML/\:en/\:edl.html for details.
 .
 .TP
-.B \-nofixed\-vo
+.B \-fixed\-vo, \-nofixed\-vo
 \-fixed\-vo enforces a fixed video system for multiple files (one
 (un)initialization for all files).
 Therefore only one window will be opened for all files.
 Now enabled by default, use \-nofixed\-vo to disable and create a new window
 whenever the video stream changes.
-Currently the following drivers are fixed-vo compliant: gl, gl2, mga, svga, x11,
-xmga, xv, xvidix and dfbmga.
+Some of the older drivers may not be fixed-vo compliant.
 .
 .TP
 .B \-framedrop (also see \-hardframedrop, experimental without \-nocorrect\-pts)
@@ -1076,6 +1072,15 @@ Expand TEXT only if the property NAME is not available.
 .B \-playlist <filename>
 Play files according to a playlist file (ASX, Winamp, SMIL, or
 one-file-per-line format).
+.br
+.I WARNING:
+The way MPlayer parses and uses playlist files is not safe against
+maliciously constructed files.
+Such files may trigger harmful actions.
+This has been the case for all MPlayer versions, but unfortunately this
+fact was not well documented earlier, and some people have even misguidedly
+recommended use of -playlist with untrusted sources.
+Do NOT use -playlist with random internet sources or files you don't trust!
 .br
 .I NOTE:
 This option is considered an entry so options found after it will apply
@@ -2079,14 +2084,17 @@ FIXME: Document this.
 Also see \-vf expand.
 .
 .TP
-.B \-ass (FreeType only)
-Turn on SSA/ASS subtitle rendering.
-With this option, libass will be used for SSA/ASS
-external subtitles and Matroska tracks.
+.B \-ass, \-noass (FreeType only)
+Use libass to render all text subtitles.
+This enables support for the native styling of SSA/ASS subtitles,
+and also support for some styling features in other subtitle formats by
+conversion to ASS markup.
+Enabled by default if the player was compiled with libass support.
 .br
 .I NOTE:
-Unlike normal OSD, libass uses fontconfig by default. To disable it, use
-\-nofontconfig.
+Some of the other subtitle options were written for the old non-libass
+subtitle rendering system and may not work the same way or at all with
+libass rendering enabled.
 .
 .TP
 .B \-ass\-border\-color <value>
@@ -2263,13 +2271,8 @@ With Fontconfig, this option determines the Fontconfig font pattern.
 .PD 1
 .
 .TP
-.B \-fontconfig (fontconfig only)
-Enables the usage of fontconfig managed fonts.
-.br
-.I NOTE:
-By default fontconfig is used for libass-rendered subtitles and not used for
-OSD. With \-fontconfig it is used for both libass and OSD, with \-nofontconfig
-it is not used at all.
+.B \-fontconfig, \-nofontconfig (fontconfig only)
+Enables the use of fontconfig managed fonts. Enabled by default.
 .
 .TP
 .B \-forcedsubsonly
@@ -2883,10 +2886,6 @@ Set buffer size to <size> in samples (default: 2048).
 .PD 1
 .
 .TP
-.B dxr2 (also see \-dxr2) (DXR2 only)
-Creative DXR2 specific output driver
-.
-.TP
 .B ivtv (IVTV only)
 IVTV specific MPEG audio output driver.
 Works with \-ac hwmpa only.
@@ -2989,88 +2988,6 @@ Turns on direct rendering (not supported by all codecs and video outputs)
 May cause OSD/SUB corruption!
 .
 .TP
-.B \-dxr2 <option1:option2:...>
-This option is used to control the dxr2 video output driver.
-.RSs
-.IPs ar-mode=<value>
-aspect ratio mode (0 = normal, 1 = pan-and-scan, 2 = letterbox (default))
-.IPs iec958-encoded
-Set iec958 output mode to encoded.
-.IPs iec958-decoded
-Set iec958 output mode to decoded (default).
-.IPs macrovision=<value>
-macrovision mode (0 = off (default), 1 = agc, 2 = agc 2 colorstripe,
-3 = agc 4 colorstripe)
-.IPs "mute\ "
-mute sound output
-.IPs unmute
-unmute sound output
-.IPs ucode=<value>
-path to the microcode
-.RE
-.RS
-.sp 1
-.I TV output
-.RE
-.RSs
-.IPs 75ire
-enable 7.5 IRE output mode
-.IPs no75ire
-disable 7.5 IRE output mode (default)
-.IPs "bw\ \ \ "
-b/w TV output
-.IPs color
-color TV output (default)
-.IPs interlaced
-interlaced TV output (default)
-.IPs nointerlaced
-disable interlaced TV output
-.IPs norm=<value>
-TV norm (ntsc (default), pal, pal60, palm, paln, palnc)
-.IPs square-pixel
-set pixel mode to square
-.IPs ccir601-pixel
-set pixel mode to ccir601
-.RE
-.RS
-.sp 1
-.I overlay
-.RE
-.RSs
-.IPs cr-left=<0\-500>
-Set the left cropping value (default: 50).
-.IPs cr-right=<0\-500>
-Set the right cropping value (default: 300).
-.IPs cr-top=<0\-500>
-Set the top cropping value (default: 0).
-.IPs cr-bottom=<0\-500>
-Set the bottom cropping value (default: 0).
-.IPs ck-[r|g|b]=<0\-255>
-Set the r(ed), g(reen) or b(lue) gain of the overlay color-key.
-.IPs ck-[r|g|b]min=<0\-255>
-minimum value for the respective color key
-.IPs ck-[r|g|b]max=<0\-255>
-maximum value for the respective color key
-.IPs ignore-cache
-Ignore cached overlay settings.
-.IPs update-cache
-Update cached overlay settings.
-.IPs ol-osd
-Enable overlay onscreen display.
-.IPs nool-osd
-Disable overlay onscreen display (default).
-.IPs ol[h|w|x|y]-cor=<\-20\-20>
-Adjust the overlay size (h,w) and position (x,y) in case it does not
-match the window perfectly (default: 0).
-.IPs overlay
-Activate overlay (default).
-.IPs nooverlay
-Activate TV-out.
-.IPs overlay-ratio=<1\-2500>
-Tune the overlay (default: 1000).
-.RE
-.
-.TP
 .B \-fbmode <modename> (\-vo fbdev only)
 Change video mode to the one that is labeled as <modename> in
 /etc/\:fb.modes.
@@ -3162,8 +3079,7 @@ the video output drivers that fully support \-xineramascreen (direct3d, gl, gl2,
 vdpau, x11, xv, xvmc, corevideo).
 .br
 .I NOTE:
-This option is only supported by the x11, xmga, xv, xvmc, xvidix,
-gl, gl2, directx, fbdev, tdfxfb and corevideo video output drivers.
+May not be supported by some of the older VO drivers.
 .sp 1
 .I EXAMPLE:
 .PD 0
@@ -3255,8 +3171,7 @@ as well as directx, corevideo, quartz, ggi and gl2.
 Enables pan-and-scan functionality (cropping the sides of e.g.\& a 16:9
 movie to make it fit a 4:3 display without black bands).
 The range controls how much of the image is cropped.
-Only works with the xv, xmga, mga, gl, gl2, quartz, corevideo and xvidix
-video output drivers.
+May not work with all video output drivers.
 .br
 .I NOTE:
 Values between \-1 and 0 are allowed as well, but highly experimental
@@ -3281,7 +3196,7 @@ Currently only supported by \-vo directx combined with the \-vm option.
 .B \-rootwin
 Play movie in the root window (desktop background).
 Desktop background images may cover the movie window, though.
-Only works with the x11, xv, xmga, xvidix, quartz, corevideo and directx video output drivers.
+May not work with all video output drivers.
 .
 .TP
 .B \-saturation <\-100\-100>
@@ -3356,68 +3271,6 @@ it will always display on the given screen in fullscreen mode),
 currently.
 Supported by at least the direct3d, gl, gl2, x11, xv and corevideo video output
 drivers.
-.
-.TP
-.B \-zrbw (\-vo zr only)
-Display in black and white.
-For optimal performance, this can be combined with '\-lavdopts gray'.
-.
-.TP
-.B \-zrcrop <[width]x[height]+[x offset]+[y offset]> (\-vo zr only)
-Select a part of the input image to display, multiple occurrences
-of this option switch on cinerama mode.
-In cinerama mode the movie is distributed over more than one TV
-(or beamer) to create a larger image.
-Options appearing after the n-th \-zrcrop apply to the n-th MJPEG card, each
-card should at least have a \-zrdev in addition to the \-zrcrop.
-For examples, see the output of \-zrhelp and the Zr section of the
-documentation.
-.
-.TP
-.B \-zrdev <device> (\-vo zr only)
-Specify the device special file that belongs to your MJPEG card, by default
-the zr video output driver takes the first v4l device it can find.
-.
-.TP
-.B \-zrfd (\-vo zr only)
-Force decimation: Decimation, as specified by \-zrhdec and \-zrvdec, only
-happens if the hardware scaler can stretch the image to its original size.
-Use this option to force decimation.
-.
-.TP
-.B \-zrhdec <1|2|4> (\-vo zr only)
-Horizontal decimation: Ask the driver to send only every 2nd or 4th
-line/\:pixel of the input image to the MJPEG card and use the scaler
-of the MJPEG card to stretch the image to its original size.
-.
-.TP
-.B \-zrhelp (\-vo zr only)
-Display a list of all \-zr* options, their default values and a
-cinerama mode example.
-.
-.TP
-.B \-zrnorm <norm> (\-vo zr only)
-Specify the TV norm as PAL or NTSC (default: no change).
-.
-.TP
-.B \-zrquality <1\-20> (\-vo zr only)
-A number from 1 (best) to 20 (worst) representing the JPEG encoding quality.
-.
-.TP
-.B \-zrvdec <1|2|4> (\-vo zr only)
-Vertical decimation: Ask the driver to send only every 2nd or 4th
-line/\:pixel of the input image to the MJPEG card and use the scaler
-of the MJPEG card to stretch the image to its original size.
-.
-.TP
-.B \-zrxdoff <x display offset> (\-vo zr only)
-If the movie is smaller than the TV screen, this option specifies the x
-offset from the upper-left corner of the TV screen (default: centered).
-.
-.TP
-.B \-zrydoff <y display offset> (\-vo zr only)
-If the movie is smaller than the TV screen, this option specifies the y
-offset from the upper-left corner of the TV screen (default: centered).
 .
 .
 .
@@ -3672,52 +3525,6 @@ Use hardware accelerated scaler (default: hwaccel).
 .PD 1
 .
 .TP
-.B "vidix\ \ "
-VIDIX (VIDeo Interface for *niX) is an interface to the
-video acceleration features of different graphics cards.
-Very fast video output driver on cards that support it.
-.PD 0
-.RSs
-.IPs <subdevice>
-Explicitly choose the VIDIX subdevice driver to use.
-Available subdevice drivers are cyberblade, ivtv, mach64,
-mga_crtc2, mga, nvidia, pm2, pm3, radeon, rage128, s3, sh_veu,
-sis_vid and unichrome.
-.RE
-.PD 1
-.
-.TP
-.B xvidix (X11 only)
-X11 frontend for VIDIX
-.PD 0
-.RSs
-.IPs <subdevice>
-same as vidix
-.RE
-.PD 1
-.
-.TP
-.B "cvidix\ "
-Generic and platform independent VIDIX frontend, can even run in a
-text console with nVidia cards.
-.PD 0
-.RSs
-.IPs <subdevice>
-same as vidix
-.RE
-.PD 1
-.
-.TP
-.B winvidix (Windows only)
-Windows frontend for VIDIX
-.PD 0
-.RSs
-.IPs <subdevice>
-same as vidix
-.RE
-.PD 1
-.
-.TP
 .B direct3d (Windows only) (BETA CODE!)
 Video output driver that uses the Direct3D interface (useful for Vista).
 .
@@ -3787,9 +3594,7 @@ Uses the kernel framebuffer to play video.
 .PD 0
 .RSs
 .IPs <device>
-Explicitly choose the fbdev device name to use (e.g.\& /dev/\:fb0) or the
-name of the VIDIX subdevice if the device name starts with 'vidix'
-(e.g.\& 'vidixsis_vid' for the sis driver).
+Explicitly choose the fbdev device name to use (e.g.\& /dev/\:fb0).
 .RE
 .PD 1
 .
@@ -3816,8 +3621,6 @@ Turns DGA mode on or off (default: on).
 Activate the NeoMagic TV out and set it to PAL norm.
 .IPs neotv_ntsc
 Activate the NeoMagic TV out and set it to NTSC norm.
-.IPs vidix
-Use the VIDIX driver.
 .IPs "lvo:\ \ \ "
 Activate the Linux Video Overlay on top of VESA mode.
 .RE
@@ -3843,8 +3646,6 @@ Usable only with \-double.
 It has the same effect as the \-vsync option.
 .IPs "sq\ \ \ "
 Try to select a video mode with square pixels.
-.IPs vidix
-Use svga with VIDIX.
 .RE
 .PD 1
 .
@@ -4282,16 +4083,6 @@ Explicitly choose the device name to use (default: /dev/\:tdfx_vid).
 .PD 1
 .
 .TP
-.B dxr2 (also see \-dxr2) (DXR2 only)
-Creative DXR2 specific video output driver.
-.PD 0
-.RSs
-.IPs <vo_driver>
-Output video subdriver to use as overlay (x11, xv).
-.RE
-.PD 1
-.
-.TP
 .B dxr3 (DXR3 only)
 Sigma Designs em8300 MPEG decoder chip (Creative DXR3, Sigma Designs
 Hollywood Plus) specific video output driver.
@@ -4364,25 +4155,6 @@ Specifies the device number to use if you have more than one DVB output card
 If not specified MPlayer will search the first usable card.
 .IPs <filename>
 output filename (default: ./grab.mpg)
-.RE
-.PD 1
-.
-.TP
-.B zr (also see \-zr* and \-zrhelp)
-Video output driver for a number of MJPEG capture/\:playback cards.
-.
-.TP
-.B zr2 (also see the zrmjpeg video filter)
-Video output driver for a number of MJPEG capture/\:playback cards,
-second generation.
-.PD 0
-.RSs
-.IPs dev=<device>
-Specifies the video device to use.
-.IPs norm=<PAL|NTSC|SECAM|auto>
-Specifies the video norm to use (default: auto).
-.IPs (no)prebuf
-(De)Activate prebuffering, not yet supported.
 .RE
 .PD 1
 .
@@ -7417,35 +7189,6 @@ algorithm to remove the logo.
 .RE
 .
 .TP
-.B zrmjpeg[=options]
-Software YV12 to MJPEG encoder for use with the zr2 video
-output device.
-.RSs
-.IPs maxheight=<h>|maxwidth=<w>
-These options set the maximum width and height the zr card
-can handle (the MPlayer filter layer currently cannot query those).
-.IPs {dc10+,dc10,buz,lml33}-{PAL|NTSC}
-Use these options to set maxwidth and maxheight automatically to the
-values known for card/\:mode combo.
-For example, valid options are: dc10-PAL and buz-NTSC (default: dc10+PAL)
-.IPs color|bw
-Select color or black and white encoding.
-Black and white encoding is faster.
-Color is the default.
-.IPs hdec={1,2,4}
-Horizontal decimation 1, 2 or 4.
-.IPs vdec={1,2,4}
-Vertical decimation 1, 2 or 4.
-.IPs quality=1\-20
-Set JPEG compression quality [BEST] 1 \- 20 [VERY BAD].
-.IPs fd|nofd
-By default, decimation is only performed if the Zoran hardware
-can upscale the resulting MJPEG images to the original size.
-The option fd instructs the filter to always perform the requested
-decimation (ugly).
-.RE
-.
-.TP
 .B screenshot
 Allows acquiring screenshots of the movie using slave mode
 commands that can be bound to keypresses.
@@ -7804,18 +7547,6 @@ Connect to NAS server instance 0 on localhost using unix domain sockets.
 .B DISPLAY
 FIXME: Document this.
 .
-.SS vidix:
-.
-.TP
-.B VIDIX_CRT
-FIXME: Document this.
-.
-.TP
-.B VIDIXIVTVALPHA
-Set this to 'disable' in order to stop the VIDIX driver from controlling
-alphablending settings.
-You can then manipulate it yourself with 'ivtvfbctl'.
-.
 .SS osdep:
 .
 .TP
@@ -8035,18 +7766,6 @@ mplayer tv:// \-tv driver=v4l:width=640:height=480:outfmt=i420 \-vc rawi420 \-vo
 .fi
 .
 .PP
-.B Playback on Zoran cards (old style, deprecated):
-.nf
-mplayer \-vo zr \-vf scale=352:288 file.avi
-.fi
-.
-.PP
-.B Playback on Zoran cards (new style):
-.nf
-mplayer \-vo zr2 \-vf scale=352:288,zrmjpeg file.avi
-.fi
-.
-.PP
 .B Play DTS-CD with passthrough:
 .nf
 mplayer \-ac hwdts \-rawaudio format=0x2001 \-cdrom\-device /dev/cdrom cdda://
@@ -8077,26 +7796,11 @@ mplayer \-vf geq='128+(p(X\\,Y)\-128)*(0.5\-gt(mod(X/SW\\,128)\\,64))*(0.5\-gt(m
 .\" Bugs, authors, standard disclaimer
 .\" --------------------------------------------------------------------------
 .
-.SH BUGS
-Don't panic.
-If you find one, report it to us, but please make sure you have read all
-of the documentation first.
-Also look out for smileys. :)
-Many bugs are the result of incorrect setup or parameter usage.
-The bug reporting section of the documentation
-(http://www.mplayerhq.hu/\:DOCS/\:HTML/\:en/\:bugreports.html)
-explains how to create useful bug reports.
-.
-.
-.
 .SH AUTHORS
 MPlayer was initially written by Arpad Gereoffy.
 See the AUTHORS file for a list of some of the many other contributors.
 .PP
-MPlayer is (C) 2000\-2009 The MPlayer Team
+MPlayer is (C) 2000\-2011 The MPlayer Team
 .PP
 This man page was written mainly by Gabucino, Jonas Jermann and Diego Biurrun.
-It is maintained by Diego Biurrun.
-Please send mails about it to the MPlayer-DOCS mailing list.
-Translation specific mails belong on the MPlayer-translations mailing list.
 .\" end of file

@@ -26,7 +26,6 @@
 #include <stddef.h>
 
 #include "cfg-common.h"
-#include "libvo/vo_zr.h"
 #include "options.h"
 
 extern char *fb_mode_cfgfile;
@@ -48,8 +47,6 @@ extern int menu_fribidi_flip_commas;
 
 extern char *unrar_executable;
 
-extern const m_option_t dxr2_opts[];
-
 const m_option_t vd_conf[]={
     {"help", "Use MPlayer with an appropriate video file instead of live partners to avoid vd.\n", CONF_TYPE_PRINT, CONF_NOCFG|CONF_GLOBAL, 0, 0, NULL},
     {NULL, NULL, 0, 0, 0, 0, NULL}
@@ -63,18 +60,6 @@ const m_option_t tvscan_conf[]={
     {NULL, NULL, 0, 0, 0, 0, NULL}
 };
 #endif
-/*
- * CONF_TYPE_FUNC_FULL :
- * allows own implementations for passing the params
- *
- * the function receives parameter name and argument (if it does not start with - )
- * useful with a conf.name like 'aa*' to parse several parameters to a function
- * return 0 =ok, but we didn't need the param (could be the filename)
- * return 1 =ok, we accepted the param
- * negative values: see cfgparser.h, ERR_XXX
- *
- * by Folke
- */
 
 const m_option_t mplayer_opts[]={
     /* name, pointer, type, flags, min, max */
@@ -152,8 +137,8 @@ const m_option_t mplayer_opts[]={
     OPT_INTRANGE("x", screen_size_x, 0, 0, 4096),
     OPT_INTRANGE("y", screen_size_y, 0, 0, 4096),
     // set screen dimensions (when not detectable or virtual!=visible)
-    OPT_INTRANGE("screenw", vo_screenwidth, CONF_OLD, 0, 4096),
-    OPT_INTRANGE("screenh", vo_screenheight, CONF_OLD, 0, 4096),
+    OPT_INTRANGE("screenw", vo_screenwidth, CONF_NOSAVE, 0, 4096),
+    OPT_INTRANGE("screenh", vo_screenheight, CONF_NOSAVE, 0, 4096),
     // Geometry string
     {"geometry", &vo_geometry, CONF_TYPE_STRING, 0, 0, 0, NULL},
     OPT_MAKE_FLAGS("force-window-position", force_window_position, 0),
@@ -166,7 +151,7 @@ const m_option_t mplayer_opts[]={
     // video mode switching: (x11,xv,dga)
     OPT_MAKE_FLAGS("vm", vidmode, 0),
     // start in fullscreen mode:
-    OPT_MAKE_FLAGS("fs", fullscreen, 0),
+    OPT_MAKE_FLAGS("fs", fullscreen, CONF_NOSAVE),
     // set fullscreen switch method (workaround for buggy WMs)
     {"fsmode", "-fsmode is obsolete, avoid it and use -fstype instead.\nIf you really want it, try -fsmode-dontuse, but don't report bugs!\n", CONF_TYPE_PRINT, CONF_RANGE, 0, 31, NULL},
     {"fsmode-dontuse", &vo_fsmode, CONF_TYPE_INT, CONF_RANGE, 0, 31, NULL},
@@ -189,7 +174,6 @@ const m_option_t mplayer_opts[]={
     {"refreshrate",&vo_refresh_rate,CONF_TYPE_INT,CONF_RANGE, 0,100, NULL},
     {"wid", &WinID, CONF_TYPE_INT64, 0, 0, 0, NULL},
 #ifdef CONFIG_X11
-    // x11,xv,xmga,xvidix
     {"icelayer", "-icelayer has been removed. Use -fstype layer:<number> instead.\n", CONF_TYPE_PRINT, 0, 0, 0, NULL},
     {"stop-xscreensaver", &stop_xscreensaver, CONF_TYPE_FLAG, 0, 0, 1, NULL},
     {"nostop-xscreensaver", &stop_xscreensaver, CONF_TYPE_FLAG, 0, 1, 0, NULL},
@@ -224,15 +208,6 @@ const m_option_t mplayer_opts[]={
     {"aa*", "-aa* has been removed. Use -vo aa:suboption instead.\n", CONF_TYPE_PRINT, 0, 0, 0, NULL},
 #endif
 
-#ifdef CONFIG_ZR
-    // -vo zr
-    {"zr*", vo_zr_parseoption, CONF_TYPE_FUNC_FULL, 0, 0, 0, &vo_zr_revertoption },
-#endif
-
-#ifdef CONFIG_DXR2
-    {"dxr2", &dxr2_opts, CONF_TYPE_SUBCONFIG, 0, 0, 0, NULL},
-#endif
-
 
 //---------------------- mplayer-only options ------------------------
 
@@ -265,7 +240,6 @@ const m_option_t mplayer_opts[]={
     {"menu", "OSD menu support was not compiled in.\n", CONF_TYPE_PRINT,0, 0, 0, NULL},
 #endif /* CONFIG_MENU */
 
-    // these should be moved to -common, and supported in MEncoder
     {"vobsub", &vobsub_name, CONF_TYPE_STRING, 0, 0, 0, NULL},
     {"vobsubid", &vobsub_id, CONF_TYPE_INT, CONF_RANGE, 0, 31, NULL},
 #ifdef CONFIG_UNRAR_EXEC
@@ -283,7 +257,6 @@ const m_option_t mplayer_opts[]={
     OPT_FLAG_ON("benchmark", benchmark, 0),
 
     // dump some stream out instead of playing the file
-    // this really should be in MEncoder instead of MPlayer... -> TODO
     OPT_STRING("dumpfile", stream_dump_name, 0),
     {"dumpaudio", &stream_dump_type, CONF_TYPE_FLAG, 0, 0, 1, NULL},
     {"dumpvideo", &stream_dump_type, CONF_TYPE_FLAG, 0, 0, 2, NULL},
@@ -301,6 +274,7 @@ const m_option_t mplayer_opts[]={
     {"lircconf", &lirc_configfile, CONF_TYPE_STRING, CONF_GLOBAL, 0, 0, NULL},
 #endif
 
+    {"leak-report", "", CONF_TYPE_PRINT, 0, 0, 0, (void*)1},
     // these should be removed when gmplayer is forgotten
     {"gui", "Internal GUI was removed. Use some other frontend instead.\n", CONF_TYPE_PRINT, 0, 0, 0, NULL},
     {"nogui", "Internal GUI was removed, -nogui is no longer valid.\n", CONF_TYPE_PRINT, 0, 0, 0, NULL},

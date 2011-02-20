@@ -1,5 +1,5 @@
 /*
- * - XviD 1.x decoder module for mplayer/mencoder -
+ * - XviD 1.x decoder module for mplayer -
  *
  * Copyright(C) 2003      Marco Belli <elcabesa@inwind.it>
  *              2003-2004 Edouard Gomez <ed.gomez@free.fr>
@@ -149,9 +149,9 @@ static int init(sh_video_t *sh)
 
 	/* Gather some information about the host library */
 	if(xvid_global(NULL, XVID_GBL_INFO, &xvid_gbl_info, NULL) < 0) {
-		mp_msg(MSGT_MENCODER,MSGL_INFO, "xvid: could not get information about the library\n");
+		mp_msg(MSGT_DECVIDEO,MSGL_INFO, "xvid: could not get information about the library\n");
 	} else {
-		mp_msg(MSGT_MENCODER,MSGL_INFO, "xvid: using library version %d.%d.%d (build %s)\n",
+		mp_msg(MSGT_DECVIDEO,MSGL_INFO, "xvid: using library version %d.%d.%d (build %s)\n",
 		       XVID_VERSION_MAJOR(xvid_gbl_info.actual_version),
 		       XVID_VERSION_MINOR(xvid_gbl_info.actual_version),
 		       XVID_VERSION_PATCH(xvid_gbl_info.actual_version),

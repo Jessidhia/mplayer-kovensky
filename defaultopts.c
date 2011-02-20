@@ -49,6 +49,7 @@ void set_default_mplayer_options(struct MPOpts *opts)
 #ifdef CONFIG_ASS
         .ass_enabled = 1,
 #endif
+
         .lavc_param = {
             .workaround_bugs = 1, // autodetect
             .error_resilience = 2,
@@ -63,16 +64,8 @@ void set_default_mplayer_options(struct MPOpts *opts)
              .use_lircc = 1,
 #ifdef CONFIG_APPLE_REMOTE
              .use_ar = 1,
-#else
-             .use_ar = 0,
 #endif
              .default_bindings = 1,
          }
     };
-}
-
-void set_default_mencoder_options(struct MPOpts *opts)
-{
-    set_default_mplayer_options(opts);
-    opts->user_correct_pts = 0;
 }
