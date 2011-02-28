@@ -634,8 +634,11 @@ config.mak: configure
 	@echo "####### Please run ./configure again - it's changed! #######"
 	@echo "############################################################"
 
-version.h: version.sh
-	./$< `$(CC) -dumpversion`
+version.h .version: version.sh
+	./$<
+
+# Force version.sh to run to potentially regenerate version.h
+-include .version
 
 %$(EXESUF): %.c
 	$(CC) $(CFLAGS) -o $@ $^
@@ -857,7 +860,7 @@ driversclean:
 -include $(DEP_FILES)
 
 .PHONY: all doxygen locales *install* *tools drivers
-.PHONY: checkheaders *clean tests
+.PHONY: checkheaders *clean tests .version
 
 # Disable suffix rules.  Most of the builtin rules are suffix rules,
 # so this saves some time on slow systems.
