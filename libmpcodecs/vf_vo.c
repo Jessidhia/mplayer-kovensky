@@ -78,6 +78,22 @@ static int config(struct vf_instance *vf,
     vf->default_caps=query_format(vf,outfmt);
     vf->draw_slice = (vf->default_caps & VOCAP_NOSLICES) ? NULL : draw_slice;
 
+#if defined(_WIN32) && !defined(CONFIG_GUI)
+    extern char *filename;
+    if (filename) {
+        char message[MAX_PATH + 1];
+        char *s = strrchr(filename, '\\');
+        if (!s) s = strrchr(filename, '/');
+        if (s) s++; else s = filename;
+        message[0] = 0;
+        snprintf(message, MAX_PATH, "MPlayer: playing %s", filename_recode(s));
+        message[MAX_PATH] = 0;
+        if(vo_config(video_out, width, height, d_width,d _height, flags, message, outfmt))
+            return 0;
+    }
+    else
+#endif
+
     if (vo_config(video_out, width, height, d_width, d_height, flags, "MPlayer", outfmt))
 	return 0;
 
