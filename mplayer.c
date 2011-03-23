@@ -1598,6 +1598,25 @@ void set_osd_subtitle(struct MPContext *mpctx, subtitle *subs)
     }
 }
 
+#ifdef _WIN32
+#include <io.h>
+static void term_osd_eraseline(void)
+{
+    DWORD wr;
+    COORD pos;
+    HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+    CONSOLE_SCREEN_BUFFER_INFO cinfo;
+    GetConsoleScreenBufferInfo(hOut, &cinfo);
+    pos.X = 0;
+    pos.Y = cinfo.dwCursorPosition.Y - 1;
+    FillConsoleOutputCharacter(hOut, ' ', cinfo.dwSize.X, pos, &wr);
+    FillConsoleOutputAttribute(hOut, cinfo.wAttributes, cinfo.dwSize.X, pos, &wr);
+    SetConsoleCursorPosition(hOut, pos);
+}
+#else
+#define term_osd_eraseline() printf("%s", opts->term_osd_esc)
+#endif
+
 /**
  * \brief Update the OSD message line.
  *
@@ -1627,9 +1646,10 @@ static void update_osd_msg(struct MPContext *mpctx)
         if (strcmp(osd->osd_text, msg->msg)) {
             strncpy(osd->osd_text, msg->msg, 127);
             if(mpctx->sh_video) vo_osd_changed(OSDTYPE_OSD); else
-            if(opts->term_osd)
-                mp_msg(MSGT_CPLAYER,MSGL_STATUS, "%s%s\n", opts->term_osd_esc,
-                       msg->msg);
+            if(opts->term_osd) {
+                term_osd_eraseline();
+                mp_msg(MSGT_CPLAYER, MSGL_STATUS, "%s\n", msg->msg);
+            }
         }
         return;
     }
