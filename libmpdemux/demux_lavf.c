@@ -289,7 +289,7 @@ static void handle_stream(demuxer_t *demuxer, AVFormatContext *avfc, int i) {
         codec->codec_tag = override_tag;
 
     switch(codec->codec_type){
-        case CODEC_TYPE_AUDIO:{
+        case AVMEDIA_TYPE_AUDIO:{
             WAVEFORMATEX *wf;
             sh_audio_t* sh_audio;
             sh_audio = new_sh_audio_aid(demuxer, i, priv->audio_streams);
@@ -357,16 +357,11 @@ static void handle_stream(demuxer_t *demuxer, AVFormatContext *avfc, int i) {
             if (st->disposition & AV_DISPOSITION_DEFAULT)
               sh_audio->default_track = 1;
             if(mp_msg_test(MSGT_HEADER,MSGL_V) ) print_wave_header(sh_audio->wf, MSGL_V);
-            // select the first audio stream
-            if (!demuxer->audio->sh) {
-                demuxer->audio->id = i;
-                demuxer->audio->sh= demuxer->a_streams[i];
-            } else
-                st->discard= AVDISCARD_ALL;
+            st->discard= AVDISCARD_ALL;
             stream_id = priv->audio_streams++;
             break;
         }
-        case CODEC_TYPE_VIDEO:{
+        case AVMEDIA_TYPE_VIDEO:{
             sh_video_t* sh_video;
             BITMAPINFOHEADER *bih;
             sh_video=new_sh_video_vid(demuxer, i, priv->video_streams);
@@ -428,7 +423,8 @@ static void handle_stream(demuxer_t *demuxer, AVFormatContext *avfc, int i) {
                 int biClrUsed;
                 int biClrImportant;
             */
-            if(demuxer->video->id != i && demuxer->video->id != -1)
+            if(demuxer->video->id != priv->video_streams
+               && demuxer->video->id != -1)
                 st->discard= AVDISCARD_ALL;
             else{
                 demuxer->video->id = i;
@@ -437,7 +433,7 @@ static void handle_stream(demuxer_t *demuxer, AVFormatContext *avfc, int i) {
             stream_id = priv->video_streams++;
             break;
         }
-        case CODEC_TYPE_SUBTITLE:{
+        case AVMEDIA_TYPE_SUBTITLE:{
             sh_sub_t* sh_sub;
             char type;
             /* only support text subtitles for now */
@@ -480,9 +476,12 @@ static void handle_stream(demuxer_t *demuxer, AVFormatContext *avfc, int i) {
             stream_id = priv->sub_streams++;
             break;
         }
-        case CODEC_TYPE_ATTACHMENT:{
+        case AVMEDIA_TYPE_ATTACHMENT:{
+            AVMetadataTag *ftag = av_metadata_get(st->metadata, "filename",
+                                                   NULL, 0);
+            char *filename = ftag ? ftag->value : NULL;
             if (st->codec->codec_id == CODEC_ID_TTF)
-                demuxer_add_attachment(demuxer, BSTR(st->filename),
+                demuxer_add_attachment(demuxer, BSTR(filename),
                                        BSTR("application/x-truetype-font"),
                                        (struct bstr){codec->extradata,
                                                      codec->extradata_size});
@@ -610,8 +609,7 @@ static demuxer_t* demux_open_lavf(demuxer_t *demuxer){
 
     mp_msg(MSGT_HEADER,MSGL_V,"LAVF: %d audio and %d video streams found\n",priv->audio_streams,priv->video_streams);
     mp_msg(MSGT_HEADER,MSGL_V,"LAVF: build %d\n", LIBAVFORMAT_BUILD);
-    if(!priv->audio_streams) demuxer->audio->id=-2;  // nosound
-//    else if(best_audio > 0 && demuxer->audio->id == -1) demuxer->audio->id=best_audio;
+    demuxer->audio->id = -2;  // wait for higher-level code to select track
     if(!priv->video_streams){
         if(!priv->audio_streams){
 	    mp_msg(MSGT_HEADER,MSGL_ERR,"LAVF: no audio or video headers found - broken file?\n");
@@ -620,6 +618,9 @@ static demuxer_t* demux_open_lavf(demuxer_t *demuxer){
         demuxer->video->id=-2; // audio-only
     } //else if (best_video > 0 && demuxer->video->id == -1) demuxer->video->id = best_video;
 
+    // disabled because unreliable per-stream bitrate values returned
+    // by libavformat trigger this heuristic incorrectly and break things
+#if 0
     /* libavformat sets bitrate for mpeg based on pts at start and end
      * of file, which fails for files with pts resets. So calculate our
      * own bitrate estimate. */
@@ -635,6 +636,7 @@ static demuxer_t* demux_open_lavf(demuxer_t *demuxer){
         if (!priv->bitrate)
             priv->bitrate = 1440000;
     }
+#endif
     demuxer->accurate_seek = !priv->seek_by_bytes;
 
     return demuxer;
@@ -756,14 +758,14 @@ static int demux_lavf_fill_buffer(demuxer_t *demux, demux_stream_t *dsds){
     if(ts != AV_NOPTS_VALUE){
         dp->pts = ts * av_q2d(priv->avfc->streams[id]->time_base);
         priv->last_pts= dp->pts * AV_TIME_BASE;
-        // always set duration for subtitles, even if PKT_FLAG_KEY is not set,
+        // always set duration for subtitles, even if AV_PKT_FLAG_KEY isn't set,
         // otherwise they will stay on screen to long if e.g. ASS is demuxed from mkv
-        if((ds == demux->sub || (pkt.flags & PKT_FLAG_KEY)) &&
+        if ((ds == demux->sub || (pkt.flags & AV_PKT_FLAG_KEY)) &&
            pkt.convergence_duration > 0)
             dp->duration = pkt.convergence_duration * av_q2d(priv->avfc->streams[id]->time_base);
     }
     dp->pos=demux->filepos;
-    dp->flags= !!(pkt.flags&PKT_FLAG_KEY);
+    dp->flags = !!(pkt.flags & AV_PKT_FLAG_KEY);
     // append packet to DS stream:
     ds_add_packet(ds,dp);
     return 1;
@@ -865,22 +867,18 @@ static int demux_lavf_control(demuxer_t *demuxer, int cmd, void *arg)
 	        }
 	    }
 
-            if(id == -2) { // no sound
-                i = -1;
-            } else if(id == -1) { // next track
+            if (id == -1) {   // next track
                 i = (curridx + 2) % (nstreams + 1) - 1;
                 if (i >= 0)
                     newid = pstreams[i];
-	    }
-	    else // select track by id
-	    {
-	        if (id >= 0 && id < nstreams) {
-	            i = id;
-	            newid = pstreams[i];
-	        }
-	    }
+	    } else if (id >= 0 && id < nstreams) {   // select track by id
+                i = id;
+                newid = pstreams[i];
+	    } else   // no sound
+                i = -1;
+
 	    if (i == curridx) {
-                *(int *) arg = curridx;
+                *(int *) arg = curridx < 0 ? -2 : curridx;
                 return DEMUXER_CTRL_OK;
             } else {
 	        ds_free_packs(ds);
@@ -927,15 +925,15 @@ redo:
             {
                 switch(priv->avfc->streams[program->stream_index[i]]->codec->codec_type)
                 {
-                    case CODEC_TYPE_VIDEO:
+                    case AVMEDIA_TYPE_VIDEO:
                         if(prog->vid == -2)
                             prog->vid = program->stream_index[i];
                         break;
-                    case CODEC_TYPE_AUDIO:
+                    case AVMEDIA_TYPE_AUDIO:
                         if(prog->aid == -2)
                             prog->aid = program->stream_index[i];
                         break;
-                    case CODEC_TYPE_SUBTITLE:
+                    case AVMEDIA_TYPE_SUBTITLE:
                         if(prog->sid == -2 && priv->avfc->streams[program->stream_index[i]]->codec->codec_id == CODEC_ID_TEXT)
                             prog->sid = program->stream_index[i];
                         break;

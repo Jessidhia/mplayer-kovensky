@@ -28,6 +28,9 @@
 #endif
 #include <fcntl.h>
 #include <strings.h>
+#include <assert.h>
+
+#include "talloc.h"
 
 #include "config.h"
 
@@ -277,6 +280,7 @@ void stream_capture_do(stream_t *s)
 
 int stream_read_internal(stream_t *s, void *buf, int len)
 {
+  int orig_len = len;
   // we will retry even if we already reached EOF previously.
   switch(s->type){
   case STREAMTYPE_STREAM:
@@ -298,7 +302,26 @@ int stream_read_internal(stream_t *s, void *buf, int len)
   default:
     len= s->fill_buffer ? s->fill_buffer(s, buf, len) : 0;
   }
-  if(len<=0){ s->eof=1; return 0; }
+  if(len<=0){
+    // dvdnav has some horrible hacks to "suspend" reads,
+    // we need to skip this code or seeks will hang.
+    if (!s->eof && s->type != STREAMTYPE_DVDNAV) {
+      // just in case this is an error e.g. due to network
+      // timeout reset and retry
+      // Seeking is used as a hack to make network streams
+      // reopen the connection, ideally they would implement
+      // e.g. a STREAM_CTRL_RECONNECT to do this
+      off_t pos = s->pos;
+      s->eof=1;
+      stream_reset(s);
+      stream_seek_internal(s, pos);
+      // make sure EOF is set to ensure no endless loops
+      s->eof=1;
+      return stream_read_internal(s, buf, orig_len);
+    }
+    s->eof=1;
+    return 0;
+  }
   // When reading succeeded we are obviously not at eof.
   // This e.g. avoids issues with eof getting stuck when lavf seeks in MPEG-TS
   s->eof=0;
@@ -326,6 +349,7 @@ int stream_write_buffer(stream_t *s, unsigned char *buf, int len) {
   if(rd < 0)
     return -1;
   s->pos += rd;
+  assert(rd == len && "stream_write_buffer(): unexpected short write");
   return rd;
 }
 
@@ -657,4 +681,36 @@ unsigned char* stream_read_line(stream_t *s,unsigned char* mem, int max, int utf
   ptr[0] = 0;
   if(s->eof && ptr == mem) return NULL;
   return mem;
+}
+
+struct bstr stream_read_complete(struct stream *s, void *talloc_ctx,
+                                 int max_size, int padding_bytes)
+{
+    if (max_size > 1000000000)
+        abort();
+
+    int bufsize;
+    int total_read = 0;
+    int padding = FFMAX(padding_bytes, 1);
+    char *buf = NULL;
+    if (s->end_pos > max_size)
+        return (struct bstr){NULL, 0};
+    if (s->end_pos > 0)
+        bufsize = s->end_pos + padding;
+    else
+        bufsize = 1000;
+    while (1) {
+        buf = talloc_realloc_size(talloc_ctx, buf, bufsize);
+        int readsize = stream_read(s, buf + total_read, bufsize - total_read);
+        total_read += readsize;
+        if (total_read < bufsize)
+            break;
+        if (bufsize > max_size) {
+            talloc_free(buf);
+            return (struct bstr){NULL, 0};
+        }
+        bufsize = FFMIN(bufsize + (bufsize >> 1), max_size + padding);
+    }
+    buf = talloc_realloc_size(talloc_ctx, buf, total_read + padding);
+    return (struct bstr){buf, total_read};
 }

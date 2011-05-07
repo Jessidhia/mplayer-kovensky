@@ -182,13 +182,9 @@ typedef enum {
 #define MP_INPUT_NOTHING -3
 //! Input will be available if you try again
 #define MP_INPUT_RETRY -4
+// Key FIFO was full - release events may be lost, zero button-down status
+#define MP_INPUT_RELEASE_ALL -5
 
-// For the key's drivers, if possible you can send key up and key down
-// events. Key up is the default, to send a key down you must use the
-// OR operator between the key code and MP_KEY_DOWN.
-#define MP_KEY_DOWN (1<<29)
-// Use this when the key shouldn't be auto-repeated (like mouse buttons)
-#define MP_NO_REPEAT_KEY (1<<28)
 
 #ifndef MP_MAX_KEY_DOWN
 #define MP_MAX_KEY_DOWN 32

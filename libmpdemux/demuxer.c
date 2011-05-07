@@ -53,6 +53,7 @@
 static void clear_parser(sh_common_t *sh);
 
 // Demuxer list
+extern const struct demuxer_desc demuxer_desc_edl;
 extern const demuxer_desc_t demuxer_desc_rawaudio;
 extern const demuxer_desc_t demuxer_desc_rawvideo;
 extern const demuxer_desc_t demuxer_desc_tv;
@@ -101,6 +102,7 @@ extern const demuxer_desc_t demuxer_desc_mng;
  * libraries and demuxers requiring binary support. */
 
 const demuxer_desc_t *const demuxer_list[] = {
+    &demuxer_desc_edl,
     &demuxer_desc_rawaudio,
     &demuxer_desc_rawvideo,
 #ifdef CONFIG_TV
@@ -253,13 +255,13 @@ void free_demux_packet(struct demux_packet *dp)
     free(dp);
 }
 
-void free_demuxer_stream(demux_stream_t *ds)
+static void free_demuxer_stream(struct demux_stream *ds)
 {
     ds_free_packs(ds);
     free(ds);
 }
 
-demux_stream_t *new_demuxer_stream(struct demuxer *demuxer, int id)
+static struct demux_stream *new_demuxer_stream(struct demuxer *demuxer, int id)
 {
     demux_stream_t *ds = malloc(sizeof(demux_stream_t));
     *ds = (demux_stream_t){
@@ -514,9 +516,12 @@ static void allocate_parser(AVCodecContext **avctx, AVCodecParserContext **parse
     case 0x332D6361:
     case 0x332D4341:
     case 0x20736D:
-    case MKTAG('d', 'n', 'e', 't'):
     case MKTAG('s', 'a', 'c', '3'):
         codec_id = CODEC_ID_AC3;
+        break;
+    case MKTAG('d', 'n', 'e', 't'):
+        // DNET/byte-swapped AC-3 - there is no parser for that yet
+        //codec_id = CODEC_ID_DNET;
         break;
     case MKTAG('E', 'A', 'C', '3'):
         codec_id = CODEC_ID_EAC3;
@@ -881,19 +886,18 @@ void demuxer_help(void)
     int i;
 
     mp_msg(MSGT_DEMUXER, MSGL_INFO, "Available demuxers:\n");
-    mp_msg(MSGT_DEMUXER, MSGL_INFO, " demuxer:  type  info:  (comment)\n");
+    mp_msg(MSGT_DEMUXER, MSGL_INFO, " demuxer:   info:  (comment)\n");
     mp_msg(MSGT_IDENTIFY, MSGL_INFO, "ID_DEMUXERS\n");
     for (i = 0; demuxer_list[i]; i++) {
-        if (demuxer_list[i]->type > DEMUXER_TYPE_MAX)   // Don't display special demuxers
+        if (demuxer_list[i]->type >= DEMUXER_TYPE_END)  // internal type
             continue;
         if (demuxer_list[i]->comment && strlen(demuxer_list[i]->comment))
-            mp_msg(MSGT_DEMUXER, MSGL_INFO, "%10s  %2d   %s (%s)\n",
-                   demuxer_list[i]->name, demuxer_list[i]->type,
-                   demuxer_list[i]->info, demuxer_list[i]->comment);
+            mp_msg(MSGT_DEMUXER, MSGL_INFO, "%10s  %s (%s)\n",
+                   demuxer_list[i]->name, demuxer_list[i]->info,
+                   demuxer_list[i]->comment);
         else
-            mp_msg(MSGT_DEMUXER, MSGL_INFO, "%10s  %2d   %s\n",
-                   demuxer_list[i]->name, demuxer_list[i]->type,
-                   demuxer_list[i]->info);
+            mp_msg(MSGT_DEMUXER, MSGL_INFO, "%10s  %s\n",
+                   demuxer_list[i]->name, demuxer_list[i]->info);
     }
 }
 
@@ -906,31 +910,21 @@ void demuxer_help(void)
  *                        May be NULL.
  * @return                DEMUXER_TYPE_xxx, -1 if error or not found
  */
-int get_demuxer_type_from_name(char *demuxer_name, int *force)
+static int get_demuxer_type_from_name(char *demuxer_name, int *force)
 {
-    int i;
-    long type_int;
-    char *endptr;
-
     if (!demuxer_name || !demuxer_name[0])
         return DEMUXER_TYPE_UNKNOWN;
     if (force)
         *force = demuxer_name[0] == '+';
     if (demuxer_name[0] == '+')
         demuxer_name = &demuxer_name[1];
-    for (i = 0; demuxer_list[i]; i++) {
-        if (demuxer_list[i]->type > DEMUXER_TYPE_MAX)   // Can't select special demuxers from commandline
+    for (int i = 0; demuxer_list[i]; i++) {
+        if (demuxer_list[i]->type >= DEMUXER_TYPE_END)
+            // Can't select special demuxers from commandline
             continue;
         if (strcmp(demuxer_name, demuxer_list[i]->name) == 0)
             return demuxer_list[i]->type;
     }
-
-    // No match found, try to parse name as an integer (demuxer number)
-    type_int = strtol(demuxer_name, &endptr, 0);
-    if (*endptr)  // Conversion failed
-        return -1;
-    if ((type_int > 0) && (type_int <= DEMUXER_TYPE_MAX))
-        return (int) type_int;
 
     return -1;
 }
@@ -1351,11 +1345,15 @@ int demuxer_switch_audio(demuxer_t *demuxer, int index)
 int demuxer_switch_video(demuxer_t *demuxer, int index)
 {
     int res = demux_control(demuxer, DEMUXER_CTRL_SWITCH_VIDEO, &index);
-    if (res == DEMUXER_CTRL_NOTIMPL)
-        index = demuxer->video->id;
-    if (demuxer->video->id >= 0)
-        demuxer->video->sh = demuxer->v_streams[demuxer->video->id];
-    else
+    if (res == DEMUXER_CTRL_NOTIMPL) {
+        struct sh_video *sh_video = demuxer->video->sh;
+        return sh_video ? sh_video->vid : -2;
+    }
+    if (demuxer->video->id >= 0) {
+        struct sh_video *sh_video = demuxer->v_streams[demuxer->video->id];
+        demuxer->video->sh = sh_video;
+        index = sh_video->vid; // internal MPEG demuxers don't set it right
+    } else
         demuxer->video->sh = NULL;
     return index;
 }
@@ -1566,18 +1564,15 @@ int demuxer_set_angle(demuxer_t *demuxer, int angle)
     return angle;
 }
 
-int demuxer_audio_track_by_lang_and_default(struct demuxer *d, char *lang)
+int demuxer_audio_track_by_lang_and_default(struct demuxer *d, char **langt)
 {
-    if (!lang)
-        lang = "";
+    int n = 0;
     while (1) {
-        lang += strspn(lang, ",");
-        int len = strcspn(lang, ",");
+        char *lang = langt ? langt[n++] : NULL;
         int id = -1;
         for (int i = 0; i < MAX_A_STREAMS; i++) {
             struct sh_audio *sh = d->a_streams[i];
-            if (sh && (!len || sh->lang && strlen(sh->lang) == len &&
-                       !memcmp(lang, sh->lang, len))) {
+            if (sh && (!lang || sh->lang && !strcmp(lang, sh->lang))) {
                 if (sh->default_track)
                     return sh->aid;
                 if (id < 0)
@@ -1586,34 +1581,29 @@ int demuxer_audio_track_by_lang_and_default(struct demuxer *d, char *lang)
         }
         if (id >= 0)
             return id;
-        if (!len)
+        if (!lang)
             return -1;
-        lang += len;
     }
 }
 
-int demuxer_sub_track_by_lang_and_default(struct demuxer *d, char *lang)
+int demuxer_sub_track_by_lang_and_default(struct demuxer *d, char **langt)
 {
-    if (!lang)
-        lang = "";
+    int n = 0;
     while (1) {
-        lang += strspn(lang, ",");
-        int len = strcspn(lang, ",");
+        char *lang = langt ? langt[n++] : NULL;
         int id = -1;
         for (int i = 0; i < MAX_S_STREAMS; i++) {
             struct sh_sub *sh = d->s_streams[i];
-            if (sh && (!len || sh->lang && strlen(sh->lang) == len &&
-                       !memcmp(lang, sh->lang, len))) {
+            if (sh && (!lang || sh->lang && !strcmp(lang, sh->lang))) {
                 if (sh->default_track)
                     return sh->sid;
                 if (id < 0)
                     id = sh->sid;
             }
         }
-        if (!len)
+        if (!lang)
             return -1;
         if (id >= 0)
             return id;
-        lang += len;
     }
 }

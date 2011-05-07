@@ -16,20 +16,14 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-#ifndef MPLAYER_CFG_MPLAYER_DEF_H
-#define MPLAYER_CFG_MPLAYER_DEF_H
+#ifndef MPLAYER_FIND_SUBFILES_H
+#define MPLAYER_FIND_SUBFILES_H
 
-static char* default_config=
-"# Default options for Kovensky's MPlayer (http://kovensky.project357.com)\n"
-"# Manual available at http://www.mplayerhq.hu/DOCS/man/en/mplayer.1.html\n"
-"font=Arial\n\n"
+#define MAX_SUBTITLE_FILES 128
 
-"# vo=xv is the default on X11-based systems\n"
-"# vo=directx is the default for pre-Vista OSes\n"
-"# vo=gl:yuv=2 is the default for Vista+\n\n"
+struct MPOpts;
 
-"# Allows taking screenshots with 's'\n"
-"vf=screenshot\n\n"
-;
+char **find_text_subtitles(struct MPOpts *opts, const char *fname);
+char **find_vob_subtitles(struct MPOpts *opts, const char *fname);
 
-#endif /* MPLAYER_CFG_MPLAYER_DEF_H */
+#endif /* MPLAYER_FINDFILES_H */

@@ -23,10 +23,9 @@
 
 // To get "#define vo_ontop global_vo->opts->vo_ontop" etc
 #include "old_vo_defines.h"
-#include "osdep/keycodes.h"
 #include "osdep/resource.h"
+#include "input/keycodes.h"
 #include "input/input.h"
-#include "input/mouse.h"
 #include "mp_msg.h"
 #include "video_out.h"
 #include "aspect.h"

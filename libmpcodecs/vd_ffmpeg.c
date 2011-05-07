@@ -222,7 +222,7 @@ static int init(sh_video_t *sh){
     ctx->avctx = avcodec_alloc_context();
     avctx = ctx->avctx;
     avctx->opaque = sh;
-    avctx->codec_type = CODEC_TYPE_VIDEO;
+    avctx->codec_type = AVMEDIA_TYPE_VIDEO;
     avctx->codec_id = lavc_codec->id;
 
     if (lavc_codec->capabilities & CODEC_CAP_HWACCEL   // XvMC
@@ -398,11 +398,11 @@ static int init(sh_video_t *sh){
 
     mp_msg(MSGT_DECVIDEO, MSGL_INFO, "Using %d decoding thread%s.\n",
                     lavc_param->threads, lavc_param->threads == 1 ? "" : "s");
-
     if(lavc_param->threads > 1) {
+        avctx->thread_count = lavc_param->threads;
         avcodec_thread_init(avctx, lavc_param->threads);
-	    mp_msg(MSGT_DECVIDEO, MSGL_WARN, "WARNING: Multithreading is experimental and may break in weird ways.\n");
-	}
+    }
+
     /* open it */
     if (avcodec_open(avctx, lavc_codec) < 0) {
         mp_tmsg(MSGT_DECVIDEO, MSGL_ERR, "Could not open codec.\n");
@@ -541,10 +541,13 @@ static int get_buffer(AVCodecContext *avctx, AVFrame *pic){
     sh_video_t *sh = avctx->opaque;
     vd_ffmpeg_ctx *ctx = sh->context;
     mp_image_t *mpi=NULL;
-    int flags= MP_IMGFLAG_ACCEPT_STRIDE | MP_IMGFLAG_PREFER_ALIGNED_STRIDE;
+    int flags= MP_IMGFLAG_ACCEPT_ALIGNED_STRIDE | MP_IMGFLAG_PREFER_ALIGNED_STRIDE;
     int type= MP_IMGTYPE_IPB;
     int width= avctx->width;
     int height= avctx->height;
+    // special case to handle reget_buffer without buffer hints
+    if (pic->opaque && pic->data[0] && !pic->buffer_hints)
+        return 0;
     avcodec_align_dimensions(avctx, &width, &height);
 //printf("get_buffer %d %d %d\n", pic->reference, ctx->ip_count, ctx->b_count);
 
@@ -561,14 +564,12 @@ static int get_buffer(AVCodecContext *avctx, AVFrame *pic){
             type = MP_IMGTYPE_STATIC;
             flags |= MP_IMGFLAG_PRESERVE;
         }
-        flags|=(!avctx->hurry_up && ctx->do_slices) ?
-                 MP_IMGFLAG_DRAW_CALLBACK:0;
+        flags |= ctx->do_slices ? MP_IMGFLAG_DRAW_CALLBACK : 0;
         mp_msg(MSGT_DECVIDEO, MSGL_DBG2, type == MP_IMGTYPE_STATIC ? "using STATIC\n" : "using TEMP\n");
     } else {
         if(!pic->reference){
             ctx->b_count++;
-            flags|=(!avctx->hurry_up && ctx->do_slices) ?
-                     MP_IMGFLAG_DRAW_CALLBACK:0;
+            flags |= ctx->do_slices ? MP_IMGFLAG_DRAW_CALLBACK:0;
         }else{
             ctx->ip_count++;
             flags|= MP_IMGFLAG_PRESERVE|MP_IMGFLAG_READABLE
@@ -579,6 +580,9 @@ static int get_buffer(AVCodecContext *avctx, AVFrame *pic){
     if(init_vo(sh, avctx->pix_fmt) < 0){
         avctx->release_buffer= avcodec_default_release_buffer;
         avctx->get_buffer= avcodec_default_get_buffer;
+        avctx->reget_buffer= avcodec_default_reget_buffer;
+        if (pic->data[0])
+            release_buffer(avctx, pic);
         return avctx->get_buffer(avctx, pic);
     }
 
@@ -591,6 +595,9 @@ static int get_buffer(AVCodecContext *avctx, AVFrame *pic){
 
             ctx->do_dr1=0; //FIXME
             avctx->get_buffer= avcodec_default_get_buffer;
+            avctx->reget_buffer= avcodec_default_reget_buffer;
+            if (pic->data[0])
+                release_buffer(avctx, pic);
             return avctx->get_buffer(avctx, pic);
         }
 
@@ -807,7 +814,7 @@ static struct mp_image *decode(struct sh_video *sh, void *data, int len,
     pkt.data = data;
     pkt.size = len;
     // HACK: make PNGs decode normally instead of as CorePNG delta frames
-    pkt.flags = PKT_FLAG_KEY;
+    pkt.flags = AV_PKT_FLAG_KEY;
     // The avcodec opaque field stupidly supports only int64_t type
     *(double *)&avctx->reordered_opaque = *reordered_pts;
     ret = avcodec_decode_video2(avctx, pic, &got_picture, &pkt);

@@ -23,6 +23,7 @@
 #include <stdlib.h>
 #include <stdbool.h>
 
+#include "av_log.h"
 #include "config.h"
 #include "mp_msg.h"
 #include <libavutil/log.h>
@@ -56,10 +57,10 @@ static int extract_msg_type_from_ctx(void *ptr)
     if (!strcmp(avc->class_name, "AVCodecContext")) {
         AVCodecContext *s = ptr;
         if (s->codec) {
-            if (s->codec->type == CODEC_TYPE_AUDIO) {
+            if (s->codec->type == AVMEDIA_TYPE_AUDIO) {
                 if (s->codec->decode)
                     return MSGT_DECAUDIO;
-            } else if (s->codec->type == CODEC_TYPE_VIDEO) {
+            } else if (s->codec->type == AVMEDIA_TYPE_VIDEO) {
                 if (s->codec->decode)
                     return MSGT_DECVIDEO;
             }

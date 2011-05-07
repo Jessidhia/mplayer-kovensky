@@ -98,8 +98,6 @@ static int setup_format(sh_audio_t *sh_audio, const AVCodecContext *lavc_context
 static int init(sh_audio_t *sh_audio)
 {
     struct MPOpts *opts = sh_audio->opts;
-    int tries = 0;
-    int x;
     AVCodecContext *lavc_context;
     AVCodec *lavc_codec;
 
@@ -127,7 +125,7 @@ static int init(sh_audio_t *sh_audio)
     }
     lavc_context->request_channels = opts->audio_output_channels;
     lavc_context->codec_tag = sh_audio->format; //FOURCC
-    lavc_context->codec_type = CODEC_TYPE_AUDIO;
+    lavc_context->codec_type = AVMEDIA_TYPE_AUDIO;
     lavc_context->codec_id = lavc_codec->id; // not sure if required, imho not --A'rpi
 
     /* alloc extra data */
@@ -168,10 +166,19 @@ static int init(sh_audio_t *sh_audio)
    }
 
    // Decode at least 1 byte:  (to get header filled)
-   do {
-       x=decode_audio(sh_audio,sh_audio->a_buffer,1,sh_audio->a_buffer_size);
-   } while (x <= 0 && tries++ < 5);
-   if(x>0) sh_audio->a_buffer_len=x;
+   for (int tries = 0;;) {
+       int x = decode_audio(sh_audio, sh_audio->a_buffer, 1,
+                            sh_audio->a_buffer_size);
+       if (x > 0) {
+           sh_audio->a_buffer_len = x;
+           break;
+       }
+       if (++tries >= 5) {
+           mp_msg(MSGT_DECAUDIO, MSGL_ERR,
+                  "ad_ffmpeg: initial decode failed\n");
+           return 0;
+       }
+   }
 
   sh_audio->i_bps=lavc_context->bit_rate/8;
   if (sh_audio->wf && sh_audio->wf->nAvgBytesPerSec)

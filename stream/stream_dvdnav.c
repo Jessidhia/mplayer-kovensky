@@ -134,7 +134,7 @@ static dvdnav_priv_t * new_dvdnav_stream(char * filename) {
     mp_msg(MSGT_OPEN,MSGL_ERR,"stream_dvdnav, failed to set PGC positioning\n");
   /* report the title?! */
   if (dvdnav_get_title_string(priv->dvdnav,&title_str)==DVDNAV_STATUS_OK) {
-    mp_msg(MSGT_IDENTIFY, MSGL_INFO,"Title: '%s'\n",title_str);
+    mp_msg(MSGT_IDENTIFY, MSGL_INFO, "ID_DVD_VOLUME_ID=%s\n", title_str);
   }
 
   //dvdnav_event_clear(priv);
@@ -509,7 +509,9 @@ static void identify_chapters(dvdnav_t *nav, uint32_t title)
   if(parts) {
     t = duration / 90;
     mp_msg(MSGT_IDENTIFY, MSGL_V, "ID_DVD_TITLE_%d_LENGTH=%d.%03d\n", title, t / 1000, t % 1000);
+    mp_msg(MSGT_IDENTIFY, MSGL_INFO, "ID_DVD_TITLE_%d_CHAPTERS=%d\n", title, n);
     mp_msg(MSGT_IDENTIFY, MSGL_INFO, "TITLE %u, CHAPTERS: ", title);
+
     for(i=0; i<n; i++) {
       t = parts[i] /  90000;
       mp_msg(MSGT_IDENTIFY, MSGL_INFO, "%02d:%02d:%02d,", t/3600, (t/60)%60, t%60);
@@ -524,7 +526,7 @@ static void identify(dvdnav_priv_t *priv, struct stream_priv_s *p)
   uint32_t titles=0, i;
   if(p->track <= 0) {
     dvdnav_get_number_of_titles(priv->dvdnav, &titles);
-    for(i=0; i<titles; i++)
+    for(i=1; i<=titles; i++)
       identify_chapters(priv->dvdnav, i);
   }
   else
@@ -600,6 +602,7 @@ static int open_s(stream_t *stream,int mode, void* opts, int* file_format) {
       mp_msg(MSGT_OPEN,MSGL_FATAL,"dvdnav_stream, couldn't select title %d, error '%s'\n", p->track, dvdnav_err_to_string(priv->dvdnav));
       return STREAM_UNSUPPORTED;
     }
+    mp_msg(MSGT_IDENTIFY, MSGL_INFO, "ID_DVD_CURRENT_TITLE=%d\n", p->track);
   } else if (p->track == 0) {
     if(dvdnav_menu_call(priv->dvdnav, DVD_MENU_Root) != DVDNAV_STATUS_OK)
       dvdnav_menu_call(priv->dvdnav, DVD_MENU_Title);
@@ -733,14 +736,14 @@ static int mp_dvdnav_get_aid_from_format (stream_t *stream, int index, uint8_t l
  * \param lang: 2-characters language code[s], eventually separated by spaces of commas
  * \return -1 on error, current subtitle id if successful
  */
-int mp_dvdnav_aid_from_lang(stream_t *stream, const unsigned char *language) {
+int mp_dvdnav_aid_from_lang(stream_t *stream, char **language) {
   dvdnav_priv_t * priv = stream->priv;
   int k;
   uint8_t lg;
   uint16_t lang, lcode;
 
-  while(language && strlen(language)>=2) {
-    lcode = (language[0] << 8) | (language[1]);
+  for (int i = 0; language[i]; i++) {
+    lcode = (language[i][0] << 8) | (language[i][1]);
     for(k=0; k<32; k++) {
       lg = dvdnav_get_audio_logical_stream(priv->dvdnav, k);
       if(lg == 0xff) continue;
@@ -748,8 +751,6 @@ int mp_dvdnav_aid_from_lang(stream_t *stream, const unsigned char *language) {
       if(lang != 0xFFFF && lang == lcode)
         return mp_dvdnav_get_aid_from_format (stream, k, lg);
     }
-    language += 2;
-    while(language[0]==',' || language[0]==' ') ++language;
   }
   return -1;
 }
@@ -785,13 +786,13 @@ int mp_dvdnav_lang_from_aid(stream_t *stream, int aid, unsigned char *buf) {
  * \param lang: 2-characters language code[s], eventually separated by spaces of commas
  * \return -1 on error, current subtitle id if successful
  */
-int mp_dvdnav_sid_from_lang(stream_t *stream, const unsigned char *language) {
+int mp_dvdnav_sid_from_lang(stream_t *stream, char **language) {
   dvdnav_priv_t * priv = stream->priv;
   uint8_t lg, k;
   uint16_t lang, lcode;
 
-  while(language && strlen(language)>=2) {
-    lcode = (language[0] << 8) | (language[1]);
+  for (int i = 0; language[i]; i++) {
+    lcode = (language[i][0] << 8) | (language[i][1]);
     for(k=0; k<32; k++) {
       lg = dvdnav_get_spu_logical_stream(priv->dvdnav, k);
       if(lg == 0xff) continue;
@@ -800,8 +801,6 @@ int mp_dvdnav_sid_from_lang(stream_t *stream, const unsigned char *language) {
         return lg;
       }
     }
-    language += 2;
-    while(language[0]==',' || language[0]==' ') ++language;
   }
   return -1;
 }

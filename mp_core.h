@@ -24,6 +24,7 @@
 #include "options.h"
 #include "mixer.h"
 #include "sub/subreader.h"
+#include "sub/find_subfiles.h"
 
 // definitions used internally by the core player code
 
@@ -99,7 +100,6 @@ typedef struct MPContext {
     unsigned int osd_visible;
 
     int osd_function;
-    const ao_functions_t *audio_out;
     struct play_tree *playtree;
     struct play_tree_iter *playtree_iter;
     char *filename; // currently playing file
@@ -124,6 +124,7 @@ typedef struct MPContext {
     struct demux_stream *d_video;
     struct demux_stream *d_sub;
     mixer_t mixer;
+    struct ao *ao;
     struct vo *video_out;
 
     /* We're starting playback from scratch or after a seek. Show first
@@ -228,7 +229,6 @@ extern int file_filter;
 // These appear in options list
 extern int forced_subs_only;
 
-struct ao_data;
 void uninit_player(struct MPContext *mpctx, unsigned int mask);
 void reinit_audio_chain(struct MPContext *mpctx);
 void init_vo_spudec(struct MPContext *mpctx);
@@ -250,5 +250,11 @@ int get_current_chapter(struct MPContext *mpctx);
 char *chapter_display_name(struct MPContext *mpctx, int chapter);
 void update_subtitles(struct MPContext *mpctx, double refpts,
                       double sub_offset, bool reset);
+
+
+// timeline/tl_matroska.c
+void build_ordered_chapter_timeline(struct MPContext *mpctx);
+// timeline/tl_edl.c
+void build_edl_timeline(struct MPContext *mpctx);
 
 #endif /* MPLAYER_MP_CORE_H */

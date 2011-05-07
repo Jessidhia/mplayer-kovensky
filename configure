@@ -296,7 +296,6 @@ Installation directories:
 
 Optional features:
   --disable-mplayer      disable MPlayer compilation [enable]
-  --disable-largefiles   disable support for files > 2GB [enable]
   --enable-termcap       use termcap database for key codes [autodetect]
   --enable-termios       use termios database for key codes [autodetect]
   --disable-iconv        disable iconv for encoding conversion [autodetect]
@@ -376,7 +375,6 @@ Codecs:
   --disable-mad             disable libmad (MPEG audio) support [autodetect]
   --enable-xmms             enable XMMS input plugin support [disabled]
   --enable-libdca           enable libdca support [autodetect]
-  --disable-mp3lib          disable builtin mp3lib [autodetect]
   --disable-liba52          disable liba52 [autodetect]
   --enable-musepack         enable libmpcdec support (deprecated, libavcodec
                             Musepack decoder is preferred) [disabled]
@@ -508,8 +506,6 @@ Use these options if autodetection fails:
   --with-xvmclib=NAME         adapter-specific library name (e.g. XvMCNVIDIA)
 
   --with-freetype-config=PATH path to freetype-config
-  --with-glib-config=PATH     path to glib*-config
-  --with-gtk-config=PATH      path to gtk*-config
   --with-sdl-config=PATH      path to sdl*-config
   --with-dvdnav-config=PATH   path to dvdnav-config
   --with-dvdread-config=PATH  path to dvdread-config
@@ -610,7 +606,6 @@ _libvorbis=auto
 _speex=auto
 _theora=auto
 _mpg123=auto
-_mp3lib=auto
 _liba52=auto
 _libdca=auto
 _faad=auto
@@ -663,8 +658,6 @@ _lirc=auto
 _lircc=auto
 _apple_remote=auto
 _apple_ir=auto
-_gui=no
-_gtk1=no
 _termcap=auto
 _termios=auto
 _3dfx=no
@@ -676,7 +669,6 @@ _xvr100=auto
 _tga=yes
 _directfb=auto
 _bl=no
-_largefiles=yes
 #language=en
 _shm=auto
 _translation=no
@@ -762,12 +754,6 @@ for ac_option do
     ;;
   --with-freetype-config=*)
     _freetypeconfig=$(echo $ac_option | cut -d '=' -f 2)
-    ;;
-  --with-gtk-config=*)
-    _gtkconfig=$(echo $ac_option | cut -d '=' -f 2)
-    ;;
-  --with-glib-config=*)
-    _glibconfig=$(echo $ac_option | cut -d '=' -f 2)
     ;;
   --with-dvdnav-config=*)
     _dvdnavconfig=$(echo $ac_option | cut -d '=' -f 2)
@@ -965,8 +951,6 @@ for ac_option do
   --disable-theora)     _theora=no      ;;
   --enable-mpg123)      _mpg123=yes     ;;
   --disable-mpg123)     _mpg123=no      ;;
-  --enable-mp3lib)      _mp3lib=yes     ;;
-  --disable-mp3lib)     _mp3lib=no      ;;
   --enable-liba52)      _liba52=yes     ;;
   --disable-liba52)     _liba52=no      ;;
   --enable-libdca)      _libdca=yes     ;;
@@ -1066,10 +1050,6 @@ for ac_option do
   --disable-apple-remote) _apple_remote=no  ;;
   --enable-apple-ir)    _apple_ir=yes   ;;
   --disable-apple-ir)   _apple_ir=no    ;;
-  --enable-gui)         _gui=yes        ;;
-  --disable-gui)        _gui=no         ;;
-  --enable-gtk1)        _gtk1=yes       ;;
-  --disable-gtk1)       _gtk1=no        ;;
   --enable-termcap)     _termcap=yes    ;;
   --disable-termcap)    _termcap=no     ;;
   --enable-termios)     _termios=yes    ;;
@@ -1094,8 +1074,6 @@ for ac_option do
   --disable-bl)         _bl=no          ;;
   --enable-mtrr)        _mtrr=yes       ;;
   --disable-mtrr)       _mtrr=no        ;;
-  --enable-largefiles)  _largefiles=yes ;;
-  --disable-largefiles) _largefiles=no  ;;
   --enable-shm)         _shm=yes        ;;
   --disable-shm)        _shm=no         ;;
   --enable-select)      _select=yes     ;;
@@ -1214,11 +1192,6 @@ for ac_option do
 
   esac
 done
-
-if test "$_gui" = yes ; then
-    die "Internal GUI was removed from MPlayer. Please use one of many available\n frontends\
- (http://www.mplayerhq.hu/design7/projects.html#mplayer_frontends)."
-fi
 
 # Atmos: moved this here, to be correct, if --prefix is specified
 test -z "$_bindir"  && _bindir="$_prefix/bin"
@@ -2642,7 +2615,7 @@ if arm ; then
     _armv6t2=no
     inline_asm_check '"movt r0, #0"' && _armv6t2=yes
   fi
-  echores "$_armv6"
+  echores "$_armv6t2"
 
   echocheck "ARM VFP"
   if test $_armvfp = "auto" ; then
@@ -3189,16 +3162,14 @@ fi
 if test "$_pthreads" = auto ; then
 cat > $TMPC << EOF
 #include <pthread.h>
-void* func(void *arg) { return arg; }
+static void *func(void *arg) { return arg; }
 int main(void) {
  pthread_t tid;
- int res = 0;
 #ifdef PTW32_STATIC_LIB
  pthread_win32_process_attach_np();
  pthread_win32_thread_attach_np();
 #endif
- res = pthread_create (&tid, 0, func, 0) == 0 ? 0 : 1;
- return res;
+ return pthread_create (&tid, 0, func, 0) != 0;
 }
 EOF
 _pthreads=no
@@ -3296,6 +3267,9 @@ EOF
     cc_check $_ld_lm $_ld_tmp && extra_ldflags="$extra_ldflags $_ld_tmp" &&
       _iconv=yes && break
   done
+  if test "$_iconv" != yes ; then
+    die "Unable to find iconv which should be part of standard compilation environment. Aborting. If you really mean to compile without iconv support use --disable-iconv."
+  fi
 fi
 if test "$_iconv" = yes ; then
   def_iconv='#define CONFIG_ICONV 1'
@@ -4077,11 +4051,11 @@ echores "$_xf86keysym"
 echocheck "DGA"
 if test "$_dga2" = auto && test "$_x11" = yes ; then
   _dga2=no
-  statement_check_broken X11/Xlib.h X11/extensions/xf86dga.h 'XDGASetViewport(0, 0, 0, 0, 0)' -lXxf86dga && _dga2=yes
+  statement_check_broken X11/Xlib.h X11/extensions/Xxf86dga.h 'XDGASetViewport(0, 0, 0, 0, 0)' -lXxf86dga && _dga2=yes
 fi
 if test "$_dga1" = auto && test "$_dga2" = no && test "$_vm" = yes ; then
   _dga1=no
-  statement_check_broken X11/Xlib.h X11/extensions/xf86dga.h 'XF86DGASetViewPort(0, 0, 0, 0)' -lXxf86dga -lXxf86vm && _dga1=yes
+  statement_check_broken X11/Xlib.h X11/extensions/Xxf86dga.h 'XF86DGASetViewPort(0, 0, 0, 0)' -lXxf86dga -lXxf86vm && _dga1=yes
 fi
 
 _dga=no
@@ -4112,6 +4086,7 @@ if test "$_3dfx" = yes && test "$_dga" = yes ; then
   def_3dfx='#define CONFIG_3DFX 1'
   vomodules="3dfx $vomodules"
 else
+  _3dfx=no
   def_3dfx='#undef CONFIG_3DFX'
   novomodules="3dfx $novomodules"
 fi
@@ -5320,11 +5295,9 @@ fi
 if test "$_dvdread_internal" = yes; then
   def_dvdread='#define CONFIG_DVDREAD 1'
   inputmodules="dvdread(internal) $inputmodules"
-  _largefiles=yes
   res_comment="internal"
 elif test "$_dvdread" = yes; then
   def_dvdread='#define CONFIG_DVDREAD 1'
-  _largefiles=yes
   extra_ldflags="$extra_ldflags -ldvdread"
   inputmodules="dvdread(external) $inputmodules"
   res_comment="external"
@@ -5360,7 +5333,6 @@ if test "$_libdvdcss_internal" = yes ; then
   cflags_libdvdcss_dvdread="-Ilibdvdcss"
   def_dvdcss="#define HAVE_DVDCSS_DVDCSS_H 1"
   inputmodules="libdvdcss(internal) $inputmodules"
-  _largefiles=yes
 else
   noinputmodules="libdvdcss(internal) $noinputmodules"
 fi
@@ -5487,6 +5459,9 @@ EOF
     else
         _freetype=no
     fi
+    if test "$_freetype" != yes ; then
+      die "Unable to find development files for libfreetype. Aborting. If you really mean to compile without FreeType support use --disable-freetype."
+    fi
 fi
 if test "$_freetype" = yes ; then
     def_freetype='#define CONFIG_FREETYPE 1'
@@ -5535,6 +5510,9 @@ EOF
     cc_check $_inc_tmp $_ld_tmp && _fontconfig=yes &&
       extra_ldflags="$extra_ldflags $_ld_tmp" && extra_cflags="$extra_cflags $_inc_tmp"
   fi
+  if test "$_fontconfig" != yes ; then
+    die "Unable to find development files for libfontconfig. Aborting. If you really mean to compile without fontconfig support use --disable-fontconfig."
+  fi
 fi
 if test "$_fontconfig" = yes ; then
     def_fontconfig='#define CONFIG_FONTCONFIG 1'
@@ -5555,8 +5533,7 @@ if test "$_ass" = auto -o "$_ass" = yes ; then
                 extra_ldflags="$extra_ldflags $($_pkg_config --libs libass)"
                 extra_cflags="$extra_cflags $($_pkg_config --cflags libass)"
         else
-                _ass=no
-                def_ass='#undef CONFIG_ASS'
+            die "Unable to find development files for libass. Aborting. If you really mean to compile without libass support use --disable-ass."
         fi
 else
     def_ass='#undef CONFIG_ASS'
@@ -5770,19 +5747,6 @@ else
   nocodecmodules="libtheora $nocodecmodules"
 fi
 echores "$_theora"
-
-echocheck "mp3lib support"
-if test "$_mp3lib" = auto ; then
-  test "$cc_vendor" = intel && test "$_cc_major" -le 10 -o "$_cc_major" -eq 11 -a "$_cc_minor" -eq 0 && _mp3lib=no || _mp3lib=yes
-fi
-if test "$_mp3lib" = yes ; then
-  def_mp3lib='#define CONFIG_MP3LIB 1'
-  codecmodules="mp3lib(internal) $codecmodules"
-else
-  def_mp3lib='#undef CONFIG_MP3LIB'
-  nocodecmodules="mp3lib(internal) $nocodecmodules"
-fi
-echores "$_mp3lib"
 
 # Any version of libmpg123 shall be fine.
 echocheck "mpg123 support"
@@ -6656,14 +6620,8 @@ if os2 ; then
 fi
 
 #############################################################################
-# 64 bit file offsets?
-if test "$_largefiles" = yes || freebsd ; then
-  CFLAGS="$CFLAGS -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64"
-  if test "$_dvdread" = yes || test "$_libdvdcss_internal" = yes ; then
-    # dvdread support requires this (for off64_t)
-    CFLAGS="$CFLAGS -D_LARGEFILE64_SOURCE"
-  fi
-fi
+
+CFLAGS="$CFLAGS -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64 -D_LARGEFILE64_SOURCE"
 
 CXXFLAGS=" $CFLAGS -D__STDC_CONSTANT_MACROS -D__STDC_LIMIT_MACROS"
 
@@ -6693,7 +6651,6 @@ if test "$_dvdnav" = auto ; then
   statement_check_broken stdint.h dvdnav/dvdnav.h 'dvdnav_t *dvd = 0' $_dvdnavdir $_dvdnavlibs $_ld_dl $_ld_pthread && _dvdnav=yes
 fi
 if test "$_dvdnav" = yes ; then
-  _largefiles=yes
   def_dvdnav='#define CONFIG_DVDNAV 1'
   if test "$dvdnav_internal" = yes ; then
     cflags_libdvdnav="-Ilibdvdnav"
@@ -6863,7 +6820,6 @@ MACOSX_FINDER = $_macosx_finder
 MD5SUM = $_md5sum
 MGA = $_mga
 MNG = $_mng
-MP3LIB = $_mp3lib
 MPG123 = $_mpg123
 MUSEPACK = $_musepack
 NAS = $_nas
@@ -7124,7 +7080,6 @@ $def_liba52
 $def_libdca
 $def_libdv
 $def_mad
-$def_mp3lib
 $def_mpg123
 $def_musepack
 $def_speex

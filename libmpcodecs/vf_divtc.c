@@ -45,6 +45,7 @@ struct vf_priv_s
    char *bdata;
    unsigned int *csdata;
    int *history;
+   struct vf_detc_pts_buf ptsbuf;
    };
 
 /*
@@ -155,7 +156,7 @@ static unsigned int checksum_plane(unsigned char *p, unsigned char *z,
 
    for(sum=0; h; h--, p+=s-w)
       {
-      for(shift=0, e=p+w; (int)p&(sizeof(wsum_t)-1) && p<e;)
+      for(shift=0, e=p+w; (size_t)p&(sizeof(wsum_t)-1) && p<e;)
 	 sum^=*p++<<(shift=(shift-8)&31);
 
       for(wsum=0, e2=e-sizeof(wsum_t)+1; p<e2; p+=sizeof(wsum_t))
@@ -358,6 +359,7 @@ static int put_image(struct vf_instance *vf, mp_image_t *mpi, double pts)
       {
       case 0:
 	 imgop(copyop, dmpi, mpi, 0);
+         vf_detc_adjust_pts(&p->ptsbuf, pts, 0, 1);
 	 return 0;
 
       case 4:
@@ -372,12 +374,12 @@ static int put_image(struct vf_instance *vf, mp_image_t *mpi, double pts)
 	    imgop(copyop, tmpi, mpi, 0);
 	    imgop(deghost_plane, tmpi, dmpi, p->deghost);
 	    imgop(copyop, dmpi, mpi, 0);
-	    return vf_next_put_image(vf, tmpi, MP_NOPTS_VALUE);
+	    return vf_next_put_image(vf, tmpi, vf_detc_adjust_pts(&p->ptsbuf, pts, 0, 0));
 	    }
       }
 
    imgop(copyop, dmpi, mpi, 0);
-   return vf_next_put_image(vf, dmpi, MP_NOPTS_VALUE);
+   return vf_next_put_image(vf, dmpi, vf_detc_adjust_pts(&p->ptsbuf, pts, 0, 0));
    }
 
 static int analyze(struct vf_priv_s *p)
@@ -706,6 +708,7 @@ static int vf_open(vf_instance_t *vf, char *args)
 #endif
 
    free(args);
+   vf_detc_init_pts_buf(&p->ptsbuf);
    return 1;
    }
 

@@ -459,7 +459,7 @@ static int mp_property_percent_pos(m_option_t *prop, int action,
 /// Current position in seconds (RW)
 static int mp_property_time_pos(m_option_t *prop, int action,
                                 void *arg, MPContext *mpctx) {
-    if (!(mpctx->sh_video || (mpctx->sh_audio && mpctx->audio_out)))
+    if (!(mpctx->sh_video || mpctx->sh_audio))
         return M_PROPERTY_UNAVAILABLE;
 
     switch(action) {
@@ -605,6 +605,8 @@ static int mp_property_angle(m_option_t *prop, int action, void *arg,
         angle += step;
         if (angle < 1) //cycle
             angle = angles;
+        else if (angle > angles)
+            angle = 1;
         break;
     }
     default:
@@ -991,8 +993,8 @@ static int mp_property_audio(m_option_t *prop, int action, void *arg,
             uninit_player(mpctx, INITIALIZED_AO | INITIALIZED_ACODEC);
         if (new_id != current_id && new_id >= 0) {
             sh_audio_t *sh2;
-            sh2 = mpctx->d_audio->demuxer->a_streams[mpctx->demuxer->audio->id];
-            sh2->ds = mpctx->demuxer->audio;
+            sh2 = mpctx->d_audio->demuxer->a_streams[mpctx->d_audio->id];
+            sh2->ds = mpctx->d_audio;
             mpctx->sh_audio = sh2;
             reinit_audio_chain(mpctx);
         }
@@ -1012,7 +1014,7 @@ static int mp_property_video(m_option_t *prop, int action, void *arg,
     int current_id, tmp;
     if (!mpctx->demuxer || !mpctx->d_video)
         return M_PROPERTY_UNAVAILABLE;
-    current_id = mpctx->d_video->id;
+    current_id = mpctx->sh_video ? mpctx->sh_video->vid : -2;
 
     switch (action) {
     case M_PROPERTY_GET:
@@ -1040,22 +1042,18 @@ static int mp_property_video(m_option_t *prop, int action, void *arg,
             tmp = *((int *) arg);
         else
             tmp = -1;
-        opts->video_id = demuxer_switch_video(mpctx->d_video->demuxer, tmp);
-        if (opts->video_id == -2
-            || (opts->video_id > -1 && mpctx->d_video->id != current_id
-                && current_id != -2))
+        int new_id = demuxer_switch_video(mpctx->d_video->demuxer, tmp);
+        if (new_id != current_id)
             uninit_player(mpctx, INITIALIZED_VCODEC |
-                          (mpctx->opts.fixed_vo && opts->video_id != -2 ? 0 : INITIALIZED_VO));
-        if (opts->video_id > -1 && mpctx->d_video->id != current_id) {
+                          (opts->fixed_vo && new_id >= 0 ? 0 : INITIALIZED_VO));
+        if (new_id != current_id && new_id >= 0) {
             sh_video_t *sh2;
             sh2 = mpctx->d_video->demuxer->v_streams[mpctx->d_video->id];
-            if (sh2) {
-                sh2->ds = mpctx->d_video;
-                mpctx->sh_video = sh2;
-                reinit_video_chain(mpctx);
-            }
+            sh2->ds = mpctx->d_video;
+            mpctx->sh_video = sh2;
+            reinit_video_chain(mpctx);
         }
-        mp_msg(MSGT_IDENTIFY, MSGL_INFO, "ID_VIDEO_TRACK=%d\n", opts->video_id);
+        mp_msg(MSGT_IDENTIFY, MSGL_INFO, "ID_VIDEO_TRACK=%d\n", new_id);
         return M_PROPERTY_OK;
 
     default:
@@ -2672,9 +2670,16 @@ static void remove_subtitle_range(MPContext *mpctx, int start, int count)
     }
     for (idx = start; idx < end; idx++) {
         sub_data *subd = subs[idx];
+        char *filename = "";
+        if (subd)
+            filename = subd->filename;
+#ifdef CONFIG_ASS
+        if (!subd)
+            filename = ass_tracks[idx]->name;
+#endif
         mp_msg(MSGT_CPLAYER, MSGL_STATUS,
                "SUB: Removed subtitle file (%d): %s\n", idx + 1,
-               filename_recode(subd->filename));
+               filename_recode(filename));
         sub_free(subd);
         subs[idx] = NULL;
 #ifdef CONFIG_ASS

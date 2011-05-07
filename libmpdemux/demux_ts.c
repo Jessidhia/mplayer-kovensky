@@ -901,7 +901,7 @@ static off_t ts_detect_streams(demuxer_t *demuxer, tsdemux_init_t *param)
 		audio_found = 0;
 		param->atype = UNKNOWN;
 		//WE DIDN'T MATCH ANY AUDIO STREAM, SO WE FORCE THE DEMUXER TO IGNORE AUDIO
-		mp_msg(MSGT_DEMUXER, MSGL_INFO, "NO AUDIO! ");
+		mp_msg(MSGT_DEMUXER, MSGL_INFO, "NO AUDIO! (try increasing -tsprobe)");
 	}
 
 	if(IS_SUB(param->stype))
@@ -1029,7 +1029,7 @@ static demuxer_t *demux_open_ts(demuxer_t * demuxer)
 
 	if(demuxer->opts->audio_lang != NULL)
 	{
-		strncpy(params.alang, demuxer->opts->audio_lang, 3);
+		strncpy(params.alang, demuxer->opts->audio_lang[0], 3);
 		params.alang[3] = 0;
 	}
 	else

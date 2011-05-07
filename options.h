@@ -31,6 +31,8 @@ typedef struct MPOpts {
 
     int osd_level;
     int osd_duration;
+    int osd_fractions;
+    char *vobsub_name;
     int auto_quality;
     int benchmark;
     char *stream_dump_name;
@@ -64,8 +66,8 @@ typedef struct MPOpts {
     int audio_id;
     int video_id;
     int sub_id;
-    char *audio_lang;
-    char *sub_lang;
+    char **audio_lang;
+    char **sub_lang;
     int hr_mp3_seek;
 
     char *audio_stream;
@@ -86,6 +88,9 @@ typedef struct MPOpts {
     float screen_size_xy;
     int flip;
     int vd_use_slices;
+    char **sub_name;
+    char **sub_paths;
+    int sub_auto;
     int ass_enabled;
     struct lavc_param {
         int workaround_bugs;

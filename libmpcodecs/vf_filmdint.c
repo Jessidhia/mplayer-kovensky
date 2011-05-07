@@ -91,8 +91,7 @@ struct vf_priv_s {
     struct metrics thres;
     char chflag;
     double diff_time, merge_time, decode_time, vo_time, filter_time;
-    double prev_pts, prev_out_pts, drop_pts, undrop_pts, prev_diff;
-    int vfr_mode, drop_countdown;
+    struct vf_detc_pts_buf ptsbuf;
 };
 
 #define PPZ { 2000, 2000, 0, 2000 }
@@ -851,7 +850,6 @@ static const char *parse_args(struct vf_priv_s *p, const char *args)
 	    sscanf(args, "mmx2=%lu",       &p->mmx2       ) == 1 ||
 	    sscanf(args, "luma_only=%u",   &p->luma_only  ) == 1 ||
 	    sscanf(args, "verbose=%u",     &p->verbose    ) == 1 ||
-	    sscanf(args, "vfr=%u",	   &p->vfr_mode   ) == 1 ||
 	    sscanf(args, "crop=%lu:%lu:%lu:%lu", &p->w,
 		   &p->h, &p->crop_x, &p->crop_y) == 4))
 	args = strchr(args, '/');
@@ -1154,15 +1152,8 @@ static int put_image(struct vf_instance *vf, mp_image_t *mpi, double pts)
     double start_time, diff_time;
     char prev_chflag = p->chflag;
     int keep_rate;
-    double diff, fps, my_pts;
 
     if (!p->planes[0][0]) init(p, mpi);
-
-    diff = pts - p->prev_pts;
-    if (diff > 0)
-	p->prev_diff = diff;
-    p->prev_pts = pts;
-    fps = (diff > 0 && p->prev_pts != MP_NOPTS_VALUE && pts != MP_NOPTS_VALUE) ? 1/diff : -1;
 
     old_planes = p->old_planes;
 
@@ -1208,12 +1199,6 @@ static int put_image(struct vf_instance *vf, mp_image_t *mpi, double pts)
     p->inframes++;
     keep_rate = 4*p->in_inc == p->out_dec;
 
-    if (0 && p->vfr_mode && fps > 31.0)
-	breaks = 2;
-    if (p->vfr_mode && fps < 0.0 || fps > 31.0 || breaks > 1) {
-	p->notout = 0;
-	p->iosync = p->in_inc;
-    }
     switch (breaks) {
       case 0:
       case 8:
@@ -1347,34 +1332,8 @@ static int put_image(struct vf_instance *vf, mp_image_t *mpi, double pts)
 	       "" : " @@@@@@@@@@@@@@@@@");
 
     p->merge_time += get_time() - diff_time;
-    if (show_fields) {
-	if (! p->vfr_mode)
-	    return vf_next_put_image(vf, dmpi, MP_NOPTS_VALUE);
-	else {
-	    if (fps < 29.0 || fps > 31.0)
-		p->drop_countdown = 0;
-	    switch(p->drop_countdown) {
-		case 0:
-		    my_pts = pts;
-		    break;
-		case 4:
-		    p->undrop_pts = pts;
-		default:
-		    my_pts = p->drop_pts + (pts - vf->priv->undrop_pts) * 1.25;
-		    vf->priv->drop_countdown--;
-	    }
-	    if (my_pts < p->prev_out_pts) {
-		my_pts = p->prev_out_pts + p->prev_diff / 2;
-	    }
-	    p->prev_out_pts = my_pts;
-	    return vf_next_put_image(vf, dmpi, my_pts);
-	}
-		
-    } else {
-	p->drop_pts = pts;
-	p->drop_countdown = 4;
-	return 0;
-    }
+    pts = vf_detc_adjust_pts(&p->ptsbuf, pts, 0, !show_fields);
+    return show_fields ? vf_next_put_image(vf, dmpi, pts) : 0;
 }
 
 static int query_format(struct vf_instance *vf, unsigned int fmt)
@@ -1400,6 +1359,7 @@ static int config(struct vf_instance *vf,
     unsigned long cxm = 0;
     unsigned long cym = 0;
     struct vf_priv_s *p = vf->priv;
+    vf_detc_init_pts_buf(&p->ptsbuf);
     // rounding:
     if(!IMGFMT_IS_RGB(outfmt) && !IMGFMT_IS_BGR(outfmt)){
 	switch(outfmt){
@@ -1467,12 +1427,6 @@ static int vf_open(vf_instance_t *vf, char *args)
     p->luma_only = 0;
     p->fast = 3;
     p->mmx2 = gCpuCaps.hasMMX2 ? 1 : gCpuCaps.has3DNow ? 2 : 0;
-    p->prev_diff = 0;
-    p->prev_pts = 0;
-    p->prev_out_pts = 0;
-    p->prev_diff = 1.0/80;
-    p->drop_countdown = 0;
-    p->vfr_mode = 0;
     if (args) {
 	const char *args_remain = parse_args(p, args);
 	if (args_remain) {

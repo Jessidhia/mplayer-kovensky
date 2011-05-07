@@ -122,21 +122,6 @@ SRCS_COMMON-$(MACOSX_FINDER)         += osdep/macosx_finder_args.c
 SRCS_COMMON-$(MNG)                   += libmpdemux/demux_mng.c
 SRCS_COMMON-$(MPG123)                += libmpcodecs/ad_mpg123.c
 
-SRCS_MP3LIB-X86-$(HAVE_AMD3DNOW)     += mp3lib/dct36_3dnow.c \
-                                        mp3lib/dct64_3dnow.c
-SRCS_MP3LIB-X86-$(HAVE_AMD3DNOWEXT)  += mp3lib/dct36_k7.c \
-                                        mp3lib/dct64_k7.c
-SRCS_MP3LIB-X86-$(HAVE_MMX)          += mp3lib/dct64_mmx.c
-SRCS_MP3LIB-$(ARCH_X86_32)           += mp3lib/decode_i586.c \
-                                        $(SRCS_MP3LIB-X86-yes)
-SRCS_MP3LIB-$(HAVE_ALTIVEC)          += mp3lib/dct64_altivec.c
-SRCS_MP3LIB-$(HAVE_MMX)              += mp3lib/decode_mmx.c
-SRCS_MP3LIB-$(HAVE_SSE)              += mp3lib/dct64_sse.c
-SRCS_MP3LIB                          += mp3lib/sr1.c \
-                                        $(SRCS_MP3LIB-yes)
-SRCS_COMMON-$(MP3LIB)                += libmpcodecs/ad_mp3lib.c \
-                                        $(SRCS_MP3LIB)
-
 SRCS_COMMON-$(MUSEPACK)              += libmpcodecs/ad_mpc.c \
                                         libmpdemux/demux_mpc.c
 SRCS_COMMON-$(NATIVE_RTSP)           += stream/stream_rtsp.c \
@@ -390,6 +375,7 @@ SRCS_COMMON = asxparser.c \
               libmpdemux/demux_audio.c \
               libmpdemux/demux_avi.c \
               libmpdemux/demux_demuxers.c \
+              libmpdemux/demux_edl.c \
               libmpdemux/demux_film.c \
               libmpdemux/demux_fli.c \
               libmpdemux/demux_lmlm4.c \
@@ -407,7 +393,6 @@ SRCS_COMMON = asxparser.c \
               libmpdemux/demux_smjpeg.c \
               libmpdemux/demux_ts.c \
               libmpdemux/demux_ty.c \
-              libmpdemux/demux_ty_osd.c \
               libmpdemux/demux_viv.c \
               libmpdemux/demux_vqf.c \
               libmpdemux/demux_y4m.c \
@@ -424,7 +409,6 @@ SRCS_COMMON = asxparser.c \
               libmpdemux/yuv4mpeg.c \
               libmpdemux/yuv4mpeg_ratio.c \
               libvo/osd.c \
-              osdep/findfiles.c \
               osdep/numcores.c \
               osdep/$(GETCH) \
               osdep/$(TIMER) \
@@ -440,10 +424,13 @@ SRCS_COMMON = asxparser.c \
               sub/sub_cc.c \
               sub/dec_sub.c \
               sub/find_sub.c \
+              sub/find_subfiles.c \
               sub/spudec.c \
               sub/subassconvert.c \
               sub/subreader.c \
               sub/vobsub.c \
+              timeline/tl_edl.c \
+              timeline/tl_matroska.c \
               $(SRCS_COMMON-yes)
 
 
@@ -581,13 +568,13 @@ DIRS =  . \
         loader/dshow \
         loader/dmo \
         loader/wine \
-        mp3lib \
         osdep \
         stream \
         stream/freesdp \
         stream/librtsp \
         stream/realrtsp \
         sub \
+        timeline \
         TOOLS \
 
 MOFILES := $(MSG_LANGS:%=locale/%/LC_MESSAGES/mplayer.mo)
@@ -677,8 +664,6 @@ libdvdread4/%: CFLAGS := -Ilibdvdread4 -D_GNU_SOURCE $(CFLAGS_LIBDVDCSS_DVDREAD)
 loader/%: CFLAGS += -fno-omit-frame-pointer $(CFLAGS_NO_OMIT_LEAF_FRAME_POINTER)
 #loader/%: CFLAGS += -Ddbg_printf=__vprintf -DTRACE=__vprintf -DDETAILED_OUT
 loader/win32%: CFLAGS += $(CFLAGS_STACKREALIGN)
-
-mp3lib/decode_i586%: CFLAGS += -fomit-frame-pointer
 
 stream/stream_dvdnav%: CFLAGS := $(CFLAGS_LIBDVDNAV) $(CFLAGS)
 
@@ -770,9 +755,7 @@ LOADER_TEST_OBJS = $(SRCS_WIN32_EMULATION:.c=.o) $(SRCS_QTX_EMULATION:.S=.o) lib
 loader/qtx/list$(EXESUF) loader/qtx/qtxload$(EXESUF): CFLAGS += -g
 loader/qtx/list$(EXESUF) loader/qtx/qtxload$(EXESUF): $(LOADER_TEST_OBJS)
 
-mp3lib/test$(EXESUF) mp3lib/test2$(EXESUF): $(SRCS_MP3LIB:.c=.o) libvo/aclib.o cpudetect.o $(TEST_OBJS)
-
-TESTS = codecs2html codec-cfg-test libvo/aspecttest mp3lib/test mp3lib/test2
+TESTS = codecs2html codec-cfg-test libvo/aspecttest
 
 ifdef ARCH_X86
 TESTS += loader/qtx/list loader/qtx/qtxload

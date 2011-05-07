@@ -346,19 +346,13 @@ static unsigned char *demux_ogg_read_packet(ogg_stream_t *os, ogg_packet *pack,
 }
 
 // check if clang has substring from comma separated langlist
-static int demux_ogg_check_lang(const char *clang, const char *langlist)
+static int demux_ogg_check_lang(const char *clang, char **langlist)
 {
-    const char *c;
-
-    if (!langlist || !*langlist)
+    if (!langlist)
         return 0;
-    while ((c = strchr(langlist, ','))) {
-        if (!strncasecmp(clang, langlist, c - langlist))
+    for (int i = 0; langlist[i]; i++)
+        if (!strncasecmp(clang, langlist[i], strlen(langlist[i])))
             return 1;
-        langlist = &c[1];
-    }
-    if (!strncasecmp(clang, langlist, strlen(langlist)))
-        return 1;
     return 0;
 }
 
@@ -1412,7 +1406,7 @@ static void demux_ogg_seek(demuxer_t *demuxer, float rel_seek_secs,
     demux_stream_t *ds;
     ogg_packet op;
     float rate;
-    int i, sp, first, precision = 1, do_seek = 1;
+    int i, sp, first = 1, precision = 1, do_seek = 1;
     vorbis_info *vi = NULL;
     int64_t gp = 0, old_gp;
     off_t pos, old_pos;

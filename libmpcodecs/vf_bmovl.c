@@ -219,7 +219,6 @@ put_image(struct vf_instance *vf, mp_image_t* mpi, double pts){
 	int have, got, want;
 	int xpos=0, ypos=0, pos=0;
 	unsigned char red=0, green=0, blue=0;
-	int  alpha;
 	mp_image_t* dmpi;
 
     dmpi = vf_get_image(vf->next, mpi->imgfmt, MP_IMGTYPE_TEMP,
@@ -261,10 +260,10 @@ put_image(struct vf_instance *vf, mp_image_t* mpi, double pts){
 			else if( strncmp(cmd,"OPAQUE",6)==0 ) vf->priv->opaque=TRUE;
 			else if( strncmp(cmd,"SHOW",  4)==0 ) vf->priv->hidden=FALSE;
 			else if( strncmp(cmd,"HIDE",  4)==0 ) vf->priv->hidden=TRUE;
-			else if( strncmp(cmd,"FLUSH" ,5)==0 ) return vf_next_put_image(vf, dmpi, MP_NOPTS_VALUE);
+			else if( strncmp(cmd,"FLUSH" ,5)==0 ) return vf_next_put_image(vf, dmpi, pts);
 			else {
 			    mp_msg(MSGT_VFILTER, MSGL_WARN, "\nvf_bmovl: Unknown command: '%s'. Ignoring.\n", cmd);
-			    return vf_next_put_image(vf, dmpi, MP_NOPTS_VALUE);
+			    return vf_next_put_image(vf, dmpi, pts);
 			}
 
 			if(command == CMD_ALPHA) {
@@ -283,7 +282,7 @@ put_image(struct vf_instance *vf, mp_image_t* mpi, double pts){
 			    buffer = malloc(imgw*imgh*pxsz);
 			    if(!buffer) {
 			    	mp_msg(MSGT_VFILTER, MSGL_WARN, "\nvf_bmovl: Couldn't allocate temporary buffer! Skipping...\n\n");
-					return vf_next_put_image(vf, dmpi, MP_NOPTS_VALUE);
+					return vf_next_put_image(vf, dmpi, pts);
 			    }
   				/* pipes/sockets might need multiple calls to read(): */
 			    want = (imgw*imgh*pxsz);
@@ -344,11 +343,13 @@ put_image(struct vf_instance *vf, mp_image_t* mpi, double pts){
 					if( (imgx <= vf->priv->x2) && ( (imgx+imgw) >= vf->priv->x2) )
 						vf->priv->x2 = imgx;
 				}
-				return vf_next_put_image(vf, dmpi, MP_NOPTS_VALUE);
+				return vf_next_put_image(vf, dmpi, pts);
 			}
 
 			for( buf_y=0 ; (buf_y < imgh) && (buf_y < (vf->priv->h-imgy)) ; buf_y++ ) {
 			    for( buf_x=0 ; (buf_x < (imgw*pxsz)) && (buf_x < ((vf->priv->w+imgx)*pxsz)) ; buf_x += pxsz ) {
+					int alpha = 0xff;
+
 					if(command & IS_RAWIMG) buf_pos = (buf_y * imgw * pxsz) + buf_x;
 					pos = ((buf_y+imgy) * vf->priv->w) + ((buf_x/pxsz)+imgx);
 
@@ -369,13 +370,11 @@ put_image(struct vf_instance *vf, mp_image_t* mpi, double pts){
 							red   = buffer[buf_pos+0];
 							green = buffer[buf_pos+1];
 							blue  = buffer[buf_pos+2];
-							alpha = 0xFF;
 		    				break;
 						case IMG_BGR24:
 							blue  = buffer[buf_pos+0];
 							green = buffer[buf_pos+1];
 							red   = buffer[buf_pos+2];
-							alpha = 0xFF;
 		    				break;
 						case CMD_ALPHA:
 							vf->priv->bitmap.a[pos] = INRANGE((vf->priv->bitmap.oa[pos]+imgalpha),0,255);
@@ -402,7 +401,7 @@ put_image(struct vf_instance *vf, mp_image_t* mpi, double pts){
 		}
     }
 
-	if(vf->priv->hidden) return vf_next_put_image(vf, dmpi, MP_NOPTS_VALUE);
+	if(vf->priv->hidden) return vf_next_put_image(vf, dmpi, pts);
 
 	if(vf->priv->opaque) {	// Just copy buffer memory to screen
 		for( ypos=vf->priv->y1 ; ypos < vf->priv->y2 ; ypos++ ) {
@@ -423,7 +422,7 @@ put_image(struct vf_instance *vf, mp_image_t* mpi, double pts){
 	        for ( xpos=vf->priv->x1 ; xpos < vf->priv->x2 ; xpos++ ) {
 				pos = (ypos * dmpi->stride[0]) + xpos;
 
-				alpha = vf->priv->bitmap.a[pos];
+				int alpha = vf->priv->bitmap.a[pos];
 
 				if (alpha == 0) continue; // Completly transparent pixel
 
@@ -454,7 +453,7 @@ put_image(struct vf_instance *vf, mp_image_t* mpi, double pts){
 			} // for xpos
 		} // for ypos
 	} // if !opaque
-    return vf_next_put_image(vf, dmpi, MP_NOPTS_VALUE);
+    return vf_next_put_image(vf, dmpi, pts);
 } // put_image
 
 static int
