@@ -241,7 +241,7 @@ typedef struct demux_attachment
 
 typedef struct demuxer {
     const demuxer_desc_t *desc; ///< Demuxer description structure
-    char *filetype; // format name when not identified by demuxer (libavformat)
+    const char *filetype; // format name when not identified by demuxer (libavformat)
     off_t filepos;  // input stream current pos.
     off_t movi_start;
     off_t movi_end;
@@ -377,7 +377,7 @@ struct demuxer *new_demuxers_demuxer(struct demuxer *vd, struct demuxer *ad,
                                      struct demuxer *sd);
 
 // AVI demuxer params:
-extern int index_mode;  // -1=untouched  0=don't use index  1=use (geneate) index
+extern int index_mode;  // -1=untouched  0=don't use index  1=use (generate) index
 extern char *index_file_save, *index_file_load;
 extern int force_ni;
 extern int pts_from_bps;

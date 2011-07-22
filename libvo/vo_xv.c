@@ -187,7 +187,7 @@ static void resize(struct vo *vo)
     calc_src_dst_rects(vo, ctx->image_width, ctx->image_height, &ctx->src_rect,
                        &ctx->dst_rect, NULL, NULL);
     struct vo_rect *dst = &ctx->dst_rect;
-    vo_x11_clearwindow_part(vo, vo->x11->window, dst->width, dst->height, 1);
+    vo_x11_clearwindow_part(vo, vo->x11->window, dst->width, dst->height);
     vo_xv_draw_colorkey(vo, dst->left, dst->top, dst->width, dst->height);
 }
 
@@ -252,11 +252,12 @@ static int config(struct vo *vo, uint32_t width, uint32_t height,
             depth = 24;
         XMatchVisualInfo(x11->display, x11->screen, depth, TrueColor, &vinfo);
 
-        xswa.background_pixel = 0;
-        if (x11->xv_ck_info.method == CK_METHOD_BACKGROUND)
-            xswa.background_pixel = x11->xv_colorkey;
         xswa.border_pixel = 0;
-        xswamask = CWBackPixel | CWBorderPixel;
+        xswamask = CWBorderPixel;
+        if (x11->xv_ck_info.method == CK_METHOD_BACKGROUND) {
+            xswa.background_pixel = x11->xv_colorkey;
+            xswamask |= CWBackPixel;
+        }
 
         vo_x11_create_vo_window(vo, &vinfo, vo->dx, vo->dy, vo->dwidth,
                                 vo->dheight, flags, CopyFromParent, "xv",
@@ -527,7 +528,7 @@ static uint32_t draw_image(struct vo *vo, mp_image_t *mpi)
 
     if (mpi->flags & MP_IMGFLAG_DIRECT)
         // direct rendering:
-        ctx->current_buf = (int) (mpi->priv);        // hack!
+        ctx->current_buf = (size_t)(mpi->priv);      // hack!
     else if (mpi->flags & MP_IMGFLAG_DRAW_CALLBACK)
         ; // done
     else if (mpi->flags & MP_IMGFLAG_PLANAR)
@@ -603,7 +604,7 @@ static uint32_t get_image(struct xvctx *ctx, mp_image_t *mpi)
             }
         }
         mpi->flags |= MP_IMGFLAG_DIRECT;
-        mpi->priv = (void *) ctx->current_buf;
+        mpi->priv = (void *)(size_t)ctx->current_buf;
         return VO_TRUE;
     }
     return VO_FALSE;

@@ -59,7 +59,6 @@ typedef struct MPOpts {
     char *term_osd_esc;
     char *playing_msg;
     int player_idle_mode;
-    int key_fifo_size;
     int consolecontrols;
     int doubleclick_time;
     int list_properties;
@@ -124,6 +123,7 @@ typedef struct MPOpts {
 
     struct input_conf {
         char *config_file;
+        int key_fifo_size;
         unsigned int ar_delay;
         unsigned int ar_rate;
         char *js_dev;

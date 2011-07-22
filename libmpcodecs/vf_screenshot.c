@@ -134,7 +134,7 @@ static void scale_image(struct vf_priv_s* priv, mp_image_t *mpi)
         priv->buffer = av_malloc(dst_stride[0]*priv->dh);
 
     dst[0] = priv->buffer;
-    sws_scale(priv->ctx, mpi->planes, mpi->stride, 0, priv->dh, dst, dst_stride);
+    sws_scale(priv->ctx, (const uint8_t **)mpi->planes, mpi->stride, 0, priv->dh, dst, dst_stride);
 }
 
 static void start_slice(struct vf_instance *vf, mp_image_t *mpi)
@@ -157,7 +157,7 @@ static void draw_slice(struct vf_instance *vf, unsigned char** src,
         int dst_stride[MP_MAX_PLANES] = {0};
         dst_stride[0] = vf->priv->stride;
         dst[0] = vf->priv->buffer;
-        sws_scale(vf->priv->ctx, src, stride, y, h, dst, dst_stride);
+        sws_scale(vf->priv->ctx, (const uint8_t **)src, stride, y, h, dst, dst_stride);
     }
     vf_next_draw_slice(vf,src,stride,w,h,x,y);
 }
@@ -301,7 +301,6 @@ static int vf_open(vf_instance_t *vf, char *args)
     vf->priv->outbuffer=0;
     vf->priv->ctx=0;
     vf->priv->avctx = avcodec_alloc_context();
-    avcodec_register_all();
     if (avcodec_open(vf->priv->avctx, avcodec_find_encoder(CODEC_ID_PNG))) {
         mp_msg(MSGT_VFILTER, MSGL_FATAL, "Could not open libavcodec PNG encoder\n");
         return 0;

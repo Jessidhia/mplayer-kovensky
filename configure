@@ -347,7 +347,7 @@ Optional features:
   --disable-vstream      disable TiVo vstream client support [autodetect]
   --disable-pthreads     disable Posix threads support [autodetect]
   --disable-w32threads   disable Win32 threads support [autodetect]
-  --disable-ass          disable internal SSA/ASS subtitle support [autodetect]
+  --disable-libass       disable subtitle rendering with libass [autodetect]
   --enable-rpath         enable runtime linker path for extra libs [disabled]
 
 Codecs:
@@ -401,7 +401,6 @@ Video output:
   --enable-mga             enable mga_vid video output [autodetect]
   --enable-xmga            enable mga_vid X11 video output [autodetect]
   --enable-xv              enable Xv video output [autodetect]
-  --enable-xvmc            enable XvMC acceleration [disable]
   --enable-vdpau           enable VDPAU acceleration [autodetect]
   --enable-vm              enable XF86VidMode support [autodetect]
   --enable-xinerama        enable Xinerama support [autodetect]
@@ -429,6 +428,7 @@ Audio output:
   --disable-ossaudio     disable OSS audio output [autodetect]
   --disable-arts         disable aRts audio output [autodetect]
   --disable-esd          disable esd audio output [autodetect]
+  --disable-rsound       disable RSound audio output [autodetect]
   --disable-pulse        disable Pulseaudio audio output [autodetect]
   --disable-jack         disable JACK audio output [autodetect]
   --enable-openal        enable OpenAL audio output [disable]
@@ -503,7 +503,6 @@ Use these options if autodetection fails:
   --extra-ldflags=FLAGS       extra LDFLAGS
   --extra-libs=FLAGS          extra linker flags
   --extra-libs-mplayer=FLAGS  extra linker flags for MPlayer
-  --with-xvmclib=NAME         adapter-specific library name (e.g. XvMCNVIDIA)
 
   --with-freetype-config=PATH path to freetype-config
   --with-sdl-config=PATH      path to sdl*-config
@@ -560,7 +559,6 @@ _xss=auto
 _dga1=auto
 _dga2=auto
 _xv=auto
-_xvmc=no  #auto when complete
 _vdpau=auto
 _sdl=auto
 _kva=auto
@@ -594,6 +592,7 @@ _rtc=auto
 _ossaudio=auto
 _arts=auto
 _esd=auto
+_rsound=auto
 _pulse=auto
 _jack=auto
 _kai=auto
@@ -745,9 +744,6 @@ for ac_option do
   --with-install=*)
     _install=$(echo $ac_option | cut -d '=' -f 2 )
     ;;
-  --with-xvmclib=*)
-    _xvmclib=$(echo $ac_option | cut -d '=' -f 2)
-    ;;
 
   --with-sdl-config=*)
     _sdlconfig=$(echo $ac_option | cut -d '=' -f 2)
@@ -857,8 +853,6 @@ for ac_option do
   --disable-xss)        _xss=no         ;;
   --enable-xv)          _xv=yes         ;;
   --disable-xv)         _xv=no          ;;
-  --enable-xvmc)        _xvmc=yes       ;;
-  --disable-xvmc)       _xvmc=no        ;;
   --enable-vdpau)       _vdpau=yes      ;;
   --disable-vdpau)      _vdpau=no       ;;
   --enable-sdl)         _sdl=yes        ;;
@@ -927,6 +921,8 @@ for ac_option do
   --disable-arts)       _arts=no        ;;
   --enable-esd)         _esd=yes        ;;
   --disable-esd)        _esd=no         ;;
+  --enable-rsound)      _rsound=yes     ;;
+  --disable-rsound)     _rsound=no      ;;
   --enable-pulse)       _pulse=yes      ;;
   --disable-pulse)      _pulse=no       ;;
   --enable-jack)        _jack=yes       ;;
@@ -1100,8 +1096,8 @@ for ac_option do
   --disable-pthreads)   _pthreads=no    ;;
   --enable-w32threads)  _w32threads=yes ;;
   --disable-w32threads) _w32threads=no  ;;
-  --enable-ass)         _ass=yes        ;;
-  --disable-ass)        _ass=no         ;;
+  --enable-libass)      _ass=yes        ;;
+  --disable-libass)     _ass=no         ;;
   --enable-rpath)       _rpath=yes      ;;
   --disable-rpath)      _rpath=no       ;;
 
@@ -1435,8 +1431,7 @@ else
       echores "$cc_version"
       break
     fi
-    cc_name_tmp=$($_cc -v 2>&1 | head -n 1 | cut -d ' ' -f 1)
-    if test "$cc_name_tmp" = "clang"; then
+    if $_cc -v 2>&1 | grep -q "clang"; then
       echocheck "$_cc version"
       cc_vendor=clang
       cc_version=$($_cc -dumpversion 2>&1)
@@ -1457,6 +1452,10 @@ else
 fi # icc
 test "$cc_fail" = yes && die "unsupported compiler version"
 
+echocheck "working compiler"
+cflag_check "" || die "Compiler is not functioning correctly. Check your installation and custom CFLAGS $CFLAGS ."
+echo "yes"
+
 if test -z "$_target" && x86 ; then
   cat > $TMPC << EOF
 int main(void) {
@@ -1470,10 +1469,6 @@ fi
 echo "Detected operating system: $system_name"
 echo "Detected host architecture: $host_arch"
 
-echocheck "host cc"
-test "$_host_cc" || _host_cc=$_cc
-echores $_host_cc
-
 echocheck "cross compilation"
 if test $_cross_compile = auto ; then
   _cross_compile=yes
@@ -1485,7 +1480,12 @@ if test $_cross_compile = yes; then
   tmp_run() {
     return 0
   }
+  test "$_host_cc" || _host_cc=cc
 fi
+
+echocheck "host cc"
+test "$_host_cc" || _host_cc=$_cc
+echores $_host_cc
 
 # ---
 
@@ -1541,13 +1541,12 @@ if x86 ; then
 
   pparam=$(echo $exts | sed -e s/k6_mtrr/mtrr/ -e s/cyrix_arr/mtrr/ -e s/centaur_mcr/mtrr/ \
                             -e s/xmm/sse/ -e s/kni/sse/)
+  # SSE implies MMX2, but not all SSE processors report the mmxext CPU flag.
+  pparam=$(echo $pparam | sed -e 's/sse/sse mmxext/')
 
   for ext in $pparam ; do
     eval test \"\$_$ext\" = auto 2>/dev/null && eval _$ext=kernel_check
   done
-
-  # SSE implies MMX2, but not all SSE processors report the mmxext CPU flag.
-  test $_sse = kernel_check && _mmxext=kernel_check
 
   echocheck "CPU vendor"
   echores "$pvendor ($pfamily:$pmodel:$pstepping)"
@@ -2291,17 +2290,6 @@ echocheck "assembler support of -pipe option"
 cflag_check -pipe -I. && _pipe="-pipe" && echores "yes" || echores "no"
 
 
-echocheck "compiler support of named assembler arguments"
-_named_asm_args=yes
-def_named_asm_args="#define NAMED_ASM_ARGS 1"
-if test "$cc_vendor" = "gnu" && test "$_cc_major" -lt 3 \
-     -o "$_cc_major" -eq 3 -a "$_cc_minor" = 0 ; then
-  _named_asm_args=no
-  def_named_asm_args="#undef NAMED_ASM_ARGS"
-fi
-echores $_named_asm_args
-
-
 if darwin && test "$cc_vendor" = "gnu" ; then
 echocheck "GCC support of -mstackrealign"
 # GCC 4.2 and some earlier Apple versions support this flag on x86. Since
@@ -2335,11 +2323,14 @@ elif test -z "$CFLAGS" ; then
     CFLAGS="-O2 $_march $_mcpu $_pipe -xc99 -xregs=frameptr"
   elif test "$cc_vendor" = "clang"; then
     CFLAGS="-O2 $_march $_pipe"
+    WARNFLAGS="-Wall -Wno-switch-enum -Wno-logical-op-parentheses -Wpointer-arith -Wundef -Wno-pointer-sign -Wmissing-prototypes"
+    ERRORFLAGS="-Werror=implicit-function-declaration"
   elif test "$cc_vendor" != "gnu" ; then
     CFLAGS="-O2 $_march $_mcpu $_pipe"
   else
     CFLAGS="-O2 $_march $_mcpu $_pipe -ffast-math -fomit-frame-pointer"
     WARNFLAGS="-Wall -Wno-switch -Wno-parentheses -Wpointer-arith -Wredundant-decls"
+    ERRORFLAGS="-Werror-implicit-function-declaration"
     extra_ldflags="$extra_ldflags -ffast-math"
   fi
 else
@@ -2458,22 +2449,6 @@ fi
 echores $_asmalign_pot
 
 
-echocheck "10 assembler operands"
-ten_operands=no
-def_ten_operands='#define HAVE_TEN_OPERANDS 0'
-cat > $TMPC << EOF
-int main(void) {
-    int x=0;
-    __asm__ volatile(
-        ""
-        :"+&rm"(x), "+&rm"(x), "+&rm"(x), "+&rm"(x), "+&rm"(x), "+&rm"(x)
-    );
-    return 0;
-}
-EOF
-cc_check && ten_operands=yes && def_ten_operands='#define HAVE_TEN_OPERANDS 1'
-echores $ten_operands
-
 echocheck "ebx availability"
 ebx_available=no
 def_ebx_available='#define HAVE_EBX_AVAILABLE 0'
@@ -2589,11 +2564,6 @@ echores "$xform_asm"
 fi
 
 if arm ; then
-  echocheck "ARM pld instruction"
-  pld=no
-  inline_asm_check '"pld [r0]"' && pld=yes
-  echores "$pld"
-
   echocheck "ARMv5TE (Enhanced DSP Extensions)"
   if test $_armv5te = "auto" ; then
     _armv5te=no
@@ -2639,7 +2609,7 @@ if arm ; then
   echores "$_iwmmxt"
 fi
 
-cpuexts_all='ALTIVEC MMX MMX2 AMD3DNOW AMD3DNOWEXT SSE SSE2 SSSE3 FAST_CMOV CMOV FAST_CLZ PLD ARMV5TE ARMV6 ARMV6T2 ARMVFP NEON IWMMXT MMI VIS MVI'
+cpuexts_all='ALTIVEC MMX MMX2 AMD3DNOW AMD3DNOWEXT SSE SSE2 SSSE3 FAST_CMOV CMOV FAST_CLZ ARMV5TE ARMV6 ARMV6T2 ARMVFP NEON IWMMXT MMI VIS MVI'
 test "$_altivec"   = yes && cpuexts="ALTIVEC $cpuexts"
 test "$_mmx"       = yes && cpuexts="MMX $cpuexts"
 test "$_mmxext"    = yes && cpuexts="MMX2 $cpuexts"
@@ -2651,7 +2621,6 @@ test "$_ssse3"     = yes && cpuexts="SSSE3 $cpuexts"
 test "$_cmov"      = yes && cpuexts="CMOV $cpuexts"
 test "$_fast_cmov" = yes && cpuexts="FAST_CMOV $cpuexts"
 test "$_fast_clz"  = yes && cpuexts="FAST_CLZ $cpuexts"
-test "$pld"        = yes && cpuexts="PLD $cpuexts"
 test "$_armv5te"   = yes && cpuexts="ARMV5TE $cpuexts"
 test "$_armv6"     = yes && cpuexts="ARMV6 $cpuexts"
 test "$_armv6t2"   = yes && cpuexts="ARMV6T2 $cpuexts"
@@ -3298,6 +3267,14 @@ fi
 echores "$_soundcard_h"
 
 
+echocheck "sys/videoio.h"
+sys_videoio_h=no
+def_sys_videoio_h='#undef HAVE_SYS_VIDEOIO_H'
+header_check sys/videoio.h && sys_videoio_h=yes &&
+    def_sys_videoio_h='#define HAVE_SYS_VIDEOIO_H 1'
+echores "$sys_videoio_h"
+
+
 echocheck "sys/dvdio.h"
 _dvdio=no
 # FreeBSD 8.1 has broken dvdio.h
@@ -3473,7 +3450,8 @@ echores "$_vsscanf"
 
 echocheck "swab()"
 _swab=no
-define_statement_check "_XOPEN_SOURCE 600" "unistd.h" 'int a, b; swab(&a, &b, 0)' && _swab=yes
+define_statement_check "_XOPEN_SOURCE 600" "unistd.h" 'int a, b; swab(&a, &b, 0)' ||
+    statement_check "string.h" 'int a, b; swab(&a, &b, 0)' && _swab=yes
 if test "$_swab" = yes ; then
   def_swab='#define HAVE_SWAB 1'
   need_swab=no
@@ -3526,12 +3504,15 @@ echores "$_gettimeofday"
 echocheck "glob()"
 _glob=no
 statement_check glob.h 'glob("filename", 0, 0, 0)' && _glob=yes
+need_glob=no
 if test "$_glob" = yes ; then
   def_glob='#define HAVE_GLOB 1'
-  need_glob=no
 else
   def_glob='#undef HAVE_GLOB'
-  need_glob=yes
+  # HACK! need_glob currently enables compilation of a
+  # win32-specific glob()-replacement.
+  # Other OS neither need it nor can they use it (mf:// is disabled for them).
+  win32 && need_glob=yes
 fi
 echores "$_glob"
 
@@ -3572,7 +3553,7 @@ fi #if sunos
 
 echocheck "sys/sysinfo.h"
 _sys_sysinfo=no
-statement_check sys/sysinfo.h 'struct sysinfo s_info; sysinfo(&s_info)' && _sys_sysinfo=yes
+statement_check sys/sysinfo.h 'struct sysinfo s_info; s_info.mem_unit=0; sysinfo(&s_info)' && _sys_sysinfo=yes
 if test "$_sys_sysinfo" = yes ; then
   def_sys_sysinfo_h='#define HAVE_SYS_SYSINFO_H 1'
 else
@@ -3888,8 +3869,6 @@ else
   def_x11='#undef CONFIG_X11'
   novomodules="x11 $novomodules"
   res_comment="check if the dev(el) packages are installed"
-  # disable stuff that depends on X
-  _xv=no ; _xvmc=no ; _xinerama=no ; _vm=no ; _xf86keysym=no ; _vdpau=no
 fi
 echores "$_x11"
 
@@ -3937,7 +3916,7 @@ fi
 
 
 echocheck "Xv"
-if test "$_xv" = auto ; then
+if test "$_xv" = auto && test "$_x11" = yes ; then
   _xv=no
   statement_check_broken X11/Xlib.h X11/extensions/Xvlib.h 'XvGetPortAttribute(0, 0, 0, 0)' -lXv && _xv=yes
 fi
@@ -3953,36 +3932,8 @@ fi
 echores "$_xv"
 
 
-echocheck "XvMC"
-if test "$_xv" = yes && test "$_xvmc" != no ; then
-  _xvmc=no
-  cat > $TMPC <<EOF
-#include <X11/Xlib.h>
-#include <X11/extensions/Xvlib.h>
-#include <X11/extensions/XvMClib.h>
-int main(void) {
-  XvMCQueryExtension(0, 0, 0);
-  XvMCCreateContext(0, 0, 0, 0, 0, 0, 0);
-  return 0; }
-EOF
-  for _ld_tmp in $_xvmclib XvMCNVIDIA XvMCW I810XvMC ; do
-    cc_check -lXvMC -l$_ld_tmp && _xvmc=yes && _xvmclib="$_ld_tmp" && break
-  done
-fi
-if test "$_xvmc" = yes ; then
-  def_xvmc='#define CONFIG_XVMC 1'
-  libs_mplayer="$libs_mplayer -lXvMC -l$_xvmclib"
-  vomodules="xvmc $vomodules"
-  res_comment="using $_xvmclib"
-else
-  def_xvmc='#define CONFIG_XVMC 0'
-  novomodules="xvmc $novomodules"
-fi
-echores "$_xvmc"
-
-
 echocheck "VDPAU"
-if test "$_vdpau" = auto ; then
+if test "$_vdpau" = auto && test "$_x11" = yes ; then
   _vdpau=no
   if test "$_dl" = yes ; then
     return_statement_check vdpau/vdpau_x11.h 'vdp_device_create_x11(0, 0, 0, 0)' VDP_VIDEO_MIXER_FEATURE_HIGH_QUALITY_SCALING_L1 -lvdpau && _vdpau=yes
@@ -4000,7 +3951,7 @@ echores "$_vdpau"
 
 
 echocheck "Xinerama"
-if test "$_xinerama" = auto ; then
+if test "$_xinerama" = auto && test "$_x11" = yes ; then
   _xinerama=no
   statement_check X11/extensions/Xinerama.h 'XineramaIsActive(0)' -lXinerama && _xinerama=yes
 fi
@@ -4020,7 +3971,7 @@ echores "$_xinerama"
 # This check may be useful for future mplayer versions (to change resolution)
 # If you run into problems, remove '-lXxf86vm'.
 echocheck "Xxf86vm"
-if test "$_vm" = auto ; then
+if test "$_vm" = auto && test "$_x11" = yes ; then
   _vm=no
   statement_check_broken X11/Xlib.h X11/extensions/xf86vmode.h 'XF86VidModeQueryExtension(0, 0, 0)' -lXxf86vm && _vm=yes
 fi
@@ -4037,7 +3988,7 @@ echores "$_vm"
 # has nothing to do with xf86vm and XFree 3.x has xf86vm but does NOT
 # have these new keycodes.
 echocheck "XF86keysym"
-if test "$_xf86keysym" = auto; then
+if test "$_xf86keysym" = auto && test "$_x11" = yes ; then
   _xf86keysym=no
   return_check X11/XF86keysym.h XF86XK_AudioPause && _xf86keysym=yes
 fi
@@ -4910,6 +4861,22 @@ else
   noaomodules="esd $noaomodules"
 fi
 
+echocheck "RSound"
+if test "$_rsound" = auto ; then
+   _rsound=no
+   statement_check rsound.h 'rsd_init(NULL);' -lrsound && _rsound=yes
+fi
+echores "$_rsound"
+
+if test "$_rsound" = yes ; then
+   def_rsound='#define CONFIG_RSOUND 1'
+   aomodules="rsound $aomodules"
+   libs_mplayer="$libs_mplayer -lrsound"
+else
+   def_rsound='#undef CONFIG_RSOUND'
+   noaomodules="rsound $noaomodules"
+fi
+
 
 echocheck "NAS"
 if test "$_nas" = auto ; then
@@ -5251,7 +5218,7 @@ echores "$_vcd"
 echocheck "Blu-ray support"
 if test "$_bluray" = auto ; then
   _bluray=no
-  statement_check libbluray/bluray.h 'bd_get_title_info(0, 0)' -lbluray && _bluray=yes
+  statement_check libbluray/bluray.h 'bd_get_title_info(0, 0, 0)' -lbluray && _bluray=yes
 fi
 if test "$_bluray" = yes ; then
   def_bluray='#define CONFIG_LIBBLURAY 1'
@@ -5392,6 +5359,7 @@ if test "$_libcdio" = yes && test "$_cdparanoia" = no ; then
     def_libcdio='#define CONFIG_LIBCDIO 1'
     def_havelibcdio='yes'
 else
+    _libcdio=no
     if test "$_cdparanoia" = yes ; then
        res_comment="using cdparanoia"
     fi
@@ -5533,7 +5501,7 @@ if test "$_ass" = auto -o "$_ass" = yes ; then
                 extra_ldflags="$extra_ldflags $($_pkg_config --libs libass)"
                 extra_cflags="$extra_cflags $($_pkg_config --cflags libass)"
         else
-            die "Unable to find development files for libass. Aborting. If you really mean to compile without libass support use --disable-ass."
+            die "Unable to find development files for libass. Aborting. If you really mean to compile without libass support use --disable-libass."
         fi
 else
     def_ass='#undef CONFIG_ASS'
@@ -6092,7 +6060,7 @@ def_ffmpeg_eval_api="#undef CONFIG_FFMPEG_EVAL_API"
 if test "$ffmpeg" = yes; then
   def_ffmpeg='#define CONFIG_FFMPEG 1'
   codecmodules="ffmpeg $codecmodules"
-  if $_pkg_config --atleast-version=50.18.0 libavutil ; then
+  if $_pkg_config --atleast-version=50.33.0 libavutil ; then
     ffmpeg_eval_api=yes
     def_ffmpeg_eval_api="#define CONFIG_FFMPEG_EVAL_API 1"
   fi
@@ -6330,6 +6298,8 @@ if test "$_tv_v4l2" = auto ; then
   _tv_v4l2=no
   if test "$_tv" = yes && linux ; then
     header_check_broken sys/time.h linux/videodev2.h && _tv_v4l2=yes
+  elif test "$_tv" = yes && test "$sys_videoio_h" = "yes" ; then
+    _tv_v4l2=yes
   fi
 fi
 if test "$_tv_v4l2" = yes ; then
@@ -6715,8 +6685,8 @@ INSTALL = $_install
 INSTALLSTRIP = $_install_strip
 WINDRES = $_windres
 
-CFLAGS   = $WARNFLAGS $WARN_CFLAGS $CFLAGS $extra_cflags
-CXXFLAGS = $WARNFLAGS $CXXFLAGS $extra_cflags $extra_cxxflags
+CFLAGS   = $WARNFLAGS $ERRORFLAGS $WARN_CFLAGS $CFLAGS $extra_cflags
+CXXFLAGS = $WARNFLAGS $ERRORFLAGS $CXXFLAGS $extra_cflags $extra_cxxflags
 DEPFLAGS = $DEPFLAGS
 
 CFLAGS_LIBDVDCSS         = $cflags_libdvdcss
@@ -6840,6 +6810,7 @@ QUARTZ = $_quartz
 RADIO=$_radio
 RADIO_CAPTURE=$_radio_capture
 REAL_CODECS = $_real
+RSOUND = $_rsound
 S3FB = $_s3fb
 SDL = $_sdl
 SPEEX = $_speex
@@ -6873,7 +6844,6 @@ XMGA = $_xmga
 XMMS_PLUGINS = $_xmms
 XV = $_xv
 XVID4 = $_xvid
-XVMC = $_xvmc
 XVR100 = $_xvr100
 YUV4MPEG = $_yuv4mpeg
 
@@ -6888,7 +6858,6 @@ YASM       = $_yasm
 YASMFLAGS  = $YASMFLAGS
 
 CONFIG_VDPAU    = $_vdpau
-CONFIG_XVMC     = $_xvmc
 CONFIG_ZLIB     = $_zlib
 
 HAVE_PTHREADS   = $_pthreads
@@ -6980,6 +6949,7 @@ $def_soundcard_h
 $def_sys_asoundlib_h
 $def_sys_soundcard_h
 $def_sys_sysinfo_h
+$def_sys_videoio_h
 $def_termios_h
 $def_termios_sys_h
 $def_winsock2_h
@@ -7019,7 +6989,6 @@ $def_iconv
 $def_kstat
 $def_macosx_bundle
 $def_macosx_finder
-$def_named_asm_args
 $def_priority
 $def_quicktime
 $def_restrict_keyword
@@ -7123,6 +7092,7 @@ $def_ossaudio
 $def_ossaudio_devdsp
 $def_ossaudio_devmixer
 $def_pulse
+$def_rsound
 $def_sgiaudio
 $def_sunaudio
 $def_win32waveout
@@ -7230,7 +7200,6 @@ $def_xinerama
 $def_xmga
 $def_xss
 $def_xv
-$def_xvmc
 $def_xvr100
 $def_yuv4mpeg
 
@@ -7257,7 +7226,6 @@ $def_posix_memalign
 $def_pthreads
 $def_round
 $def_roundf
-$def_ten_operands
 $def_threads
 $def_truncf
 $def_xform_asm

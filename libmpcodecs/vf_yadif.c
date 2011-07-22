@@ -43,6 +43,7 @@ struct vf_priv_s {
     int buffered_i;
     int buffered_tff;
     double buffered_pts;
+    double buffered_pts_delta;
     mp_image_t *buffered_mpi;
     int stride[3];
     uint8_t *ref[4][3];
@@ -64,7 +65,7 @@ static void store_ref(struct vf_priv_s *p, uint8_t *src[3], int src_stride[3], i
     }
 }
 
-#if HAVE_MMX && defined(NAMED_ASM_ARGS)
+#if HAVE_MMX
 
 #define LOAD4(mem,dst) \
             "movd      "mem", "#dst" \n\t"\
@@ -277,7 +278,7 @@ static void filter_line_mmx2(struct vf_priv_s *p, uint8_t *dst, uint8_t *prev, u
 #undef CHECK2
 #undef FILTER
 
-#endif /* HAVE_MMX && defined(NAMED_ASM_ARGS) */
+#endif /* HAVE_MMX */
 
 static void filter_line_c(struct vf_priv_s *p, uint8_t *dst, uint8_t *prev, uint8_t *cur, uint8_t *next, int w, int refs, int parity){
     int x;
@@ -359,7 +360,7 @@ static void filter(struct vf_priv_s *p, uint8_t *dst[3], int dst_stride[3], int 
             }
         }
     }
-#if HAVE_MMX && defined(NAMED_ASM_ARGS)
+#if HAVE_MMX
     if(gCpuCaps.hasMMX2) __asm__ volatile("emms \n\t" : : : "memory");
 #endif
 }
@@ -397,6 +398,17 @@ static int put_image(struct vf_instance *vf, mp_image_t *mpi, double pts){
 
     store_ref(vf->priv, mpi->planes, mpi->stride, mpi->w, mpi->h);
 
+    {
+        double delta;
+        if (vf->priv->buffered_pts == MP_NOPTS_VALUE)
+            delta = 1001.0/60000.0; // delta = field time distance
+        else
+            delta = (pts - vf->priv->buffered_pts) / 2;
+        if (delta <= 0.0 || delta >= 0.5)
+            delta = 0.0;
+        vf->priv->buffered_pts_delta = delta;
+    }
+
     vf->priv->buffered_mpi = mpi;
     vf->priv->buffered_tff = tff;
     vf->priv->buffered_i = 0;
@@ -420,7 +432,7 @@ static int continue_buffered_image(struct vf_instance *vf)
     int ret=0;
     mp_image_t *dmpi;
 
-    pts += vf->priv->buffered_i * .02; // XXX not right
+    pts += (vf->priv->buffered_i - 0.5 * (vf->priv->mode&1)) * vf->priv->buffered_pts_delta;
 
     for(i = vf->priv->buffered_i; i<=(vf->priv->mode&1); i++){
         dmpi=vf_get_image(vf->next,mpi->imgfmt,
@@ -431,7 +443,7 @@ static int continue_buffered_image(struct vf_instance *vf)
         filter(vf->priv, dmpi->planes, dmpi->stride, mpi->w, mpi->h, i ^ tff ^ 1, tff);
         if (i < (vf->priv->mode & 1))
             vf_queue_frame(vf, continue_buffered_image);
-        ret |= vf_next_put_image(vf, dmpi, pts /*FIXME*/);
+        ret |= vf_next_put_image(vf, dmpi, pts);
         break;
     }
     vf->priv->buffered_i = 1;
@@ -493,7 +505,7 @@ static int vf_open(vf_instance_t *vf, char *args){
     if (args) sscanf(args, "%d:%d", &vf->priv->mode, &vf->priv->parity);
 
     filter_line = filter_line_c;
-#if HAVE_MMX && defined(NAMED_ASM_ARGS)
+#if HAVE_MMX
     if(gCpuCaps.hasMMX2) filter_line = filter_line_mmx2;
 #endif
 

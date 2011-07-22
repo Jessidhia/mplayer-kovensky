@@ -35,6 +35,8 @@
 
 static int av_log_level_to_mp_level(int av_level)
 {
+    if (av_level > AV_LOG_VERBOSE)
+        return MSGL_DBG2;
     if (av_level > AV_LOG_INFO)
         return MSGL_V;
     if (av_level > AV_LOG_WARNING)
@@ -103,7 +105,13 @@ static void mp_msg_av_log_callback(void *ptr, int level, const char *fmt,
     mp_msg_va(type, mp_level, fmt, vl);
 }
 
-void set_av_log_callback(void)
+void init_libav(void)
 {
-  av_log_set_callback(mp_msg_av_log_callback);
+    av_log_set_callback(mp_msg_av_log_callback);
+#ifdef CONFIG_FFMPEG
+    avcodec_init();
+    avcodec_register_all();
+
+    av_register_all();
+#endif
 }

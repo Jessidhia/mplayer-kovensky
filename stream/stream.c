@@ -165,9 +165,9 @@ static stream_t *open_stream_plugin(const stream_info_t *sinfo,
     arg = m_struct_alloc(desc);
     if(sinfo->opts_url) {
       m_option_t url_opt =
-	{ "stream url", arg , CONF_TYPE_CUSTOM_URL, 0, 0 ,0, sinfo->opts };
+	{ "stream url", arg , CONF_TYPE_CUSTOM_URL, 0, 0 ,0, (void *)sinfo->opts };
       if(m_option_parse(&url_opt,"stream url",filename,arg,M_CONFIG_FILE) < 0) {
-	mp_msg(MSGT_OPEN,MSGL_ERR, "URL parsing failed on url %s\n",filename);
+	mp_tmsg(MSGT_OPEN,MSGL_ERR, "URL parsing failed on url %s\n",filename);
 	m_struct_free(desc,arg);
 	return NULL;
       }
@@ -251,7 +251,7 @@ stream_t *open_stream_full(const char *filename, int mode,
     }
   }
 
-  mp_msg(MSGT_OPEN,MSGL_ERR, "No stream found to handle url %s\n",filename);
+  mp_tmsg(MSGT_OPEN,MSGL_ERR, "No stream found to handle url %s\n", filename);
   return NULL;
 }
 
@@ -287,6 +287,8 @@ int stream_read_internal(stream_t *s, void *buf, int len)
 #ifdef CONFIG_NETWORKING
     if( s->streaming_ctrl!=NULL && s->streaming_ctrl->streaming_read ) {
       len=s->streaming_ctrl->streaming_read(s->fd, buf, len, s->streaming_ctrl);
+      if (s->streaming_ctrl->status == streaming_stopped_e)
+        s->eof = 1;
     } else
 #endif
     if (s->fill_buffer)
@@ -303,22 +305,29 @@ int stream_read_internal(stream_t *s, void *buf, int len)
     len= s->fill_buffer ? s->fill_buffer(s, buf, len) : 0;
   }
   if(len<=0){
+    off_t pos = s->pos;
+    // do not retry if this looks like proper eof
+    if (s->eof || (s->end_pos && pos == s->end_pos))
+      goto eof_out;
     // dvdnav has some horrible hacks to "suspend" reads,
     // we need to skip this code or seeks will hang.
-    if (!s->eof && s->type != STREAMTYPE_DVDNAV) {
-      // just in case this is an error e.g. due to network
-      // timeout reset and retry
-      // Seeking is used as a hack to make network streams
-      // reopen the connection, ideally they would implement
-      // e.g. a STREAM_CTRL_RECONNECT to do this
-      off_t pos = s->pos;
-      s->eof=1;
-      stream_reset(s);
-      stream_seek_internal(s, pos);
-      // make sure EOF is set to ensure no endless loops
-      s->eof=1;
-      return stream_read_internal(s, buf, orig_len);
-    }
+    if (s->type == STREAMTYPE_DVDNAV)
+      goto eof_out;
+
+    // just in case this is an error e.g. due to network
+    // timeout reset and retry
+    // Seeking is used as a hack to make network streams
+    // reopen the connection, ideally they would implement
+    // e.g. a STREAM_CTRL_RECONNECT to do this
+    s->eof=1;
+    stream_reset(s);
+    if (stream_seek_internal(s, pos) >= 0 || s->pos != pos) // seek failed
+      goto eof_out;
+    // make sure EOF is set to ensure no endless loops
+    s->eof=1;
+    return stream_read_internal(s, buf, orig_len);
+
+eof_out:
     s->eof=1;
     return 0;
   }
@@ -365,7 +374,7 @@ if(newpos==0 || newpos!=s->pos){
 #ifdef CONFIG_NETWORKING
     if(s->seek) { // new stream seek is much cleaner than streaming_ctrl one
       if(!s->seek(s,newpos)) {
-      	mp_msg(MSGT_STREAM,MSGL_ERR, "Seek failed\n");
+        mp_tmsg(MSGT_STREAM,MSGL_ERR, "Seek failed\n");
       	return 0;
       }
       break;
@@ -373,14 +382,15 @@ if(newpos==0 || newpos!=s->pos){
 
     if( s->streaming_ctrl!=NULL && s->streaming_ctrl->streaming_seek ) {
       if( s->streaming_ctrl->streaming_seek( s->fd, newpos, s->streaming_ctrl )<0 ) {
-        mp_msg(MSGT_STREAM,MSGL_INFO,"Stream not seekable!\n");
+        mp_tmsg(MSGT_STREAM,MSGL_INFO,"Stream not seekable!\n");
         return 1;
       }
       break;
     }
 #endif
     if(newpos<s->pos){
-      mp_msg(MSGT_STREAM,MSGL_INFO,"Cannot seek backward in linear streams!\n");
+      mp_tmsg(MSGT_STREAM, MSGL_INFO,
+              "Cannot seek backward in linear streams!\n");
       return 1;
     }
     break;
@@ -390,7 +400,7 @@ if(newpos==0 || newpos!=s->pos){
       return 0;
     // Now seek
     if(!s->seek(s,newpos)) {
-      mp_msg(MSGT_STREAM,MSGL_ERR, "Seek failed\n");
+      mp_tmsg(MSGT_STREAM,MSGL_ERR, "Seek failed\n");
       return 0;
     }
   }

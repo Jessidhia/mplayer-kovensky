@@ -75,12 +75,11 @@ SRCS_COMMON-$(FFMPEG)                += libmpcodecs/vf_pp.c \
 
 # Requires a new enough libavutil that installs eval.h
 SRCS_COMMON-$(FFMPEG_EVAL_API)          += libmpcodecs/vf_geq.c \
+                                           libmpcodecs/vf_qp.c \
 
 # These filters use private headers and do not work with shared libavcodec.
 SRCS_COMMON-$(FFMPEG_INTERNALS)      += libmpcodecs/vf_fspp.c \
-                                        libmpcodecs/vf_geq.c \
                                         libmpcodecs/vf_mcdeint.c \
-                                        libmpcodecs/vf_qp.c \
                                         libmpcodecs/vf_spp.c \
 
 SRCS_COMMON-$(FREETYPE)              += sub/font_load_ft.c
@@ -492,6 +491,7 @@ SRCS_MPLAYER-$(OSS)           += libao2/ao_oss.c
 SRCS_MPLAYER-$(PNM)           += libvo/vo_pnm.c
 SRCS_MPLAYER-$(PULSE)         += libao2/ao_pulse.c
 SRCS_MPLAYER-$(QUARTZ)        += libvo/vo_quartz.c libvo/osx_common.c
+SRCS_MPLAYER-$(RSOUND)        += libao2/ao_rsound.c
 SRCS_MPLAYER-$(S3FB)          += libvo/vo_s3fb.c
 SRCS_MPLAYER-$(SDL)           += libao2/ao_sdl.c libvo/vo_sdl.c libvo/sdl_common.c
 SRCS_MPLAYER-$(SGIAUDIO)      += libao2/ao_sgi.c
@@ -511,7 +511,6 @@ SRCS_MPLAYER-$(X11)           += libvo/vo_x11.c libvo/vo_xover.c \
                                  libvo/x11_common.c
 SRCS_MPLAYER-$(XMGA)          += libvo/vo_xmga.c
 SRCS_MPLAYER-$(XV)            += libvo/vo_xv.c
-SRCS_MPLAYER-$(XVMC)          += libvo/vo_xvmc.c
 SRCS_MPLAYER-$(XVR100)        += libvo/vo_xvr100.c
 SRCS_MPLAYER-$(YUV4MPEG)      += libvo/vo_yuv4mpeg.c
 
@@ -585,6 +584,13 @@ ADDSUFFIXES     = $(foreach suf,$(1),$(addsuffix $(suf),$(2)))
 ADD_ALL_DIRS    = $(call ADDSUFFIXES,$(1),$(DIRS))
 ADD_ALL_EXESUFS = $(1) $(call ADDSUFFIXES,$(EXESUFS_ALL),$(1))
 
+###### brief build output #######
+
+ifndef V
+$(eval override CC = @printf "CC\t$$@\n"; $(CC))
+$(eval override RM = @$(RM))
+endif
+
 ###### generic rules #######
 
 all: $(ALL_PRG-yes) locales
@@ -649,11 +655,8 @@ checkheaders: $(ALLHEADERS:.h=.ho)
 codec-cfg.o: codecs.conf.h
 mpcommon.o osdep/mplayer-rc.o: version.h
 
-# Files that depend on libswscale internals
-libmpcodecs/vf_palette.o: CFLAGS := -I$(FFMPEG_SOURCE_PATH) $(CFLAGS)
-
 # Files that depend on libavcodec internals
-libmpcodecs/vf_fspp.o libmpcodecs/vf_geq.o libmpcodecs/vf_mcdeint.o libmpcodecs/vf_qp.o libmpcodecs/vf_spp.o libvo/jpeg_enc.o: CFLAGS := -I$(FFMPEG_SOURCE_PATH) $(CFLAGS)
+libmpcodecs/vf_fspp.o libmpcodecs/vf_mcdeint.o libmpcodecs/vf_spp.o: CFLAGS := -I$(FFMPEG_SOURCE_PATH) $(CFLAGS)
 
 osdep/mplayer-rc.o: osdep/mplayer.exe.manifest
 
@@ -705,34 +708,33 @@ endef
 $(foreach lang,$(MSG_LANG_ALL),$(eval $(MPLAYER_MSG_RULE)))
 
 uninstall:
-	rm -f $(BINDIR)/mplayer$(EXESUF) $(BINDIR)/gmplayer$(EXESUF)
-	rm -f $(prefix)/share/pixmaps/mplayer.xpm
-	rm -f $(prefix)/share/applications/mplayer.desktop
-	rm -f $(MANDIR)/man1/mplayer.1
-	rm -f $(foreach lang,$(MAN_LANGS),$(foreach man,mplayer.1,$(MANDIR)/$(lang)/man1/$(man)))
-	rm -f $(foreach lang,$(MSG_LANGS),$(LOCALEDIR)/$(lang)/LC_MESSAGES/mplayer.1)
+	$(RM) $(BINDIR)/mplayer$(EXESUF) $(BINDIR)/gmplayer$(EXESUF)
+	$(RM) $(prefix)/share/pixmaps/mplayer.xpm
+	$(RM) $(prefix)/share/applications/mplayer.desktop
+	$(RM) $(MANDIR)/man1/mplayer.1
+	$(RM) $(foreach lang,$(MAN_LANGS),$(foreach man,mplayer.1,$(MANDIR)/$(lang)/man1/$(man)))
+	$(RM) $(foreach lang,$(MSG_LANGS),$(LOCALEDIR)/$(lang)/LC_MESSAGES/mplayer.1)
 
 clean:
-	-rm -f $(call ADD_ALL_DIRS,/*.o /*.a /*.ho /*~)
-	-rm -f $(call ADD_ALL_EXESUFS,mplayer)
-	-rm -f $(MOFILES)
+	-$(RM) $(call ADD_ALL_DIRS,/*.o /*.a /*.ho /*~)
+	-$(RM) $(call ADD_ALL_EXESUFS,mplayer)
+	-$(RM) $(MOFILES)
 
 distclean: clean testsclean toolsclean driversclean
-	-rm -rf DOCS/tech/doxygen
-	-rm -rf locale
-	-rm -f $(call ADD_ALL_DIRS,/*.d)
-	-rm -f config.log config.mak config.h codecs.conf.h \
-           version.h TAGS tags
-	-rm -f $(call ADD_ALL_EXESUFS,codec-cfg cpuinfo)
+	-$(RM) -r DOCS/tech/doxygen
+	-$(RM) -r locale
+	-$(RM) $(call ADD_ALL_DIRS,/*.d)
+	-$(RM) config.log config.mak config.h codecs.conf.h version.h TAGS tags
+	-$(RM) $(call ADD_ALL_EXESUFS,codec-cfg cpuinfo)
 
 doxygen:
 	doxygen DOCS/tech/Doxyfile
 
 TAGS:
-	rm -f $@; find . -name '*.[chS]' -o -name '*.asm' | xargs etags -a
+	$(RM) $@; find . -name '*.[chS]' -o -name '*.asm' | xargs etags -a
 
 tags:
-	rm -f $@; find . -name '*.[chS]' -o -name '*.asm' | xargs ctags -a
+	$(RM) $@; find . -name '*.[chS]' -o -name '*.asm' | xargs ctags -a
 
 generated_ebml:
 	TOOLS/matroska.py --generate-header >libmpdemux/ebml_types.h
@@ -748,14 +750,12 @@ codec-cfg-test$(EXESUF): codec-cfg.c codecs.conf.h $(TEST_OBJS)
 codecs2html$(EXESUF): codec-cfg.c $(TEST_OBJS)
 	$(CC) -I. -DCODECS2HTML -o $@ $^
 
-libvo/aspecttest$(EXESUF): libvo/aspect.o libvo/geometry.o $(TEST_OBJS)
-
 LOADER_TEST_OBJS = $(SRCS_WIN32_EMULATION:.c=.o) $(SRCS_QTX_EMULATION:.S=.o) libavutil/libavutil.a osdep/mmap_anon.o cpudetect.o path.o $(TEST_OBJS)
 
 loader/qtx/list$(EXESUF) loader/qtx/qtxload$(EXESUF): CFLAGS += -g
 loader/qtx/list$(EXESUF) loader/qtx/qtxload$(EXESUF): $(LOADER_TEST_OBJS)
 
-TESTS = codecs2html codec-cfg-test libvo/aspecttest
+TESTS = codecs2html codec-cfg-test
 
 ifdef ARCH_X86
 TESTS += loader/qtx/list loader/qtx/qtxload
@@ -764,7 +764,7 @@ endif
 tests: $(addsuffix $(EXESUF),$(TESTS))
 
 testsclean:
-	-rm -f $(call ADD_ALL_EXESUFS,$(TESTS))
+	-$(RM) $(call ADD_ALL_EXESUFS,$(TESTS))
 
 TOOLS = $(addprefix TOOLS/,alaw-gen asfinfo avi-fix avisubdump compare dump_mp4 movinfo netstream subrip vivodump)
 
@@ -778,8 +778,8 @@ tools: $(addsuffix $(EXESUF),$(TOOLS))
 alltools: $(addsuffix $(EXESUF),$(ALLTOOLS))
 
 toolsclean:
-	-rm -f $(call ADD_ALL_EXESUFS,$(ALLTOOLS))
-	-rm -f TOOLS/realcodecs/*.so.6.0
+	-$(RM) $(call ADD_ALL_EXESUFS,$(ALLTOOLS))
+	-$(RM) TOOLS/realcodecs/*.so.6.0
 
 TOOLS/bmovl-test$(EXESUF): -lSDL_image
 
@@ -836,7 +836,7 @@ install-drivers: $(DRIVER_OBJS)
 	-ln -s /dev/radeon_vid /dev/rage128_vid
 
 driversclean:
-	-rm -f $(DRIVER_OBJS) drivers/*~
+	-$(RM) $(DRIVER_OBJS) drivers/*~
 
 
 

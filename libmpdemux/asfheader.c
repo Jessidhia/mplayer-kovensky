@@ -139,7 +139,7 @@ static int get_ext_stream_properties(char *buf, int buf_len, int stream_num, str
 {
   int pos=0;
   uint8_t *buffer = &buf[0];
-  uint64_t avg_ft;
+  uint64_t avg_ft av_unused;
   unsigned bitrate;
 
   while ((pos = find_asf_guid(buf, asf_ext_stream_header, pos, buf_len)) >= 0) {
@@ -542,7 +542,7 @@ int read_asf_header(demuxer_t *demuxer,struct asf_priv* asf){
       asf->packetsize=fileh->max_packet_size;
       asf->packet=malloc(asf->packetsize); // !!!
       asf->packetrate=fileh->max_bitrate/8.0/(double)asf->packetsize;
-      asf->movielength=(fileh->play_duration-10000*fileh->preroll)/10000000.0;
+      asf->movielength=FFMAX(0.0, (fileh->play_duration / 10000.0 - fileh->preroll) / 1000.0);
   }
 
   // find content header

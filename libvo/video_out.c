@@ -83,7 +83,6 @@ extern struct vo_driver video_out_mga;
 extern struct vo_driver video_out_xmga;
 extern struct vo_driver video_out_x11;
 extern struct vo_driver video_out_xover;
-extern struct vo_driver video_out_xvmc;
 extern struct vo_driver video_out_vdpau;
 extern struct vo_driver video_out_xv;
 extern struct vo_driver video_out_gl_nosw;
@@ -232,9 +231,6 @@ const struct vo_driver *video_out_drivers[] =
 #ifdef CONFIG_DIRECTFB
         // vo directfb can call exit() if initialization fails
         &video_out_directfb,
-#endif
-#if CONFIG_XVMC
-        &video_out_xvmc,
 #endif
         &video_out_mpegpes,
 #ifdef CONFIG_YUV4MPEG
@@ -461,7 +457,7 @@ static int event_fd_callback(void *ctx, int fd)
 {
     struct vo *vo = ctx;
     vo_check_events(vo);
-    return mplayer_get_key(vo->key_fifo, 0);
+    return MP_INPUT_NOTHING;
 }
 
 int vo_config(struct vo *vo, uint32_t width, uint32_t height,

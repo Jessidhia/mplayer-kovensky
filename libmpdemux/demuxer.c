@@ -41,7 +41,6 @@
 
 #include "libaf/af_format.h"
 #include "libmpcodecs/dec_teletext.h"
-#include "libmpcodecs/vd_ffmpeg.h"
 
 #ifdef CONFIG_FFMPEG
 #include "libavcodec/avcodec.h"
@@ -195,14 +194,12 @@ struct demux_packet *new_demux_packet(size_t len)
     dp->refcount = 1;
     dp->master = NULL;
     dp->buffer = NULL;
-    if (len > 0) {
-        dp->buffer = malloc(len + MP_INPUT_BUFFER_PADDING_SIZE);
-        if (!dp->buffer) {
-            mp_msg(MSGT_DEMUXER, MSGL_FATAL, "Memory allocation failure!\n");
-            abort();
-        }
-        memset(dp->buffer + len, 0, 8);
+    dp->buffer = malloc(len + MP_INPUT_BUFFER_PADDING_SIZE);
+    if (!dp->buffer) {
+        mp_msg(MSGT_DEMUXER, MSGL_FATAL, "Memory allocation failure!\n");
+        abort();
     }
+    memset(dp->buffer + len, 0, 8);
     return dp;
 }
 
@@ -213,17 +210,12 @@ void resize_demux_packet(struct demux_packet *dp, size_t len)
                "over 1 GB!\n");
         abort();
     }
-    if (len > 0) {
-        dp->buffer = realloc(dp->buffer, len + 8);
-        if (!dp->buffer) {
-            mp_msg(MSGT_DEMUXER, MSGL_FATAL, "Memory allocation failure!\n");
-            abort();
-        }
-        memset(dp->buffer + len, 0, 8);
-    } else {
-        free(dp->buffer);
-        dp->buffer = NULL;
+    dp->buffer = realloc(dp->buffer, len + MP_INPUT_BUFFER_PADDING_SIZE);
+    if (!dp->buffer) {
+        mp_msg(MSGT_DEMUXER, MSGL_FATAL, "Memory allocation failure!\n");
+        abort();
     }
+    memset(dp->buffer + len, 0, 8);
     dp->len = len;
 }
 
@@ -345,7 +337,7 @@ sh_sub_t *new_sh_sub_sid(demuxer_t *demuxer, int id, int sid)
     if (demuxer->s_streams[id])
         mp_msg(MSGT_DEMUXER, MSGL_WARN, "Sub stream %i redefined\n", id);
     else {
-        sh_sub_t *sh = calloc(1, sizeof(sh_sub_t));
+        struct sh_sub *sh = talloc_zero(demuxer, struct sh_sub);
         demuxer->s_streams[id] = sh;
         sh->sid = sid;
         sh->opts = demuxer->opts;
@@ -359,7 +351,7 @@ struct sh_sub *new_sh_sub_sid_lang(struct demuxer *demuxer, int id, int sid,
 {
     struct sh_sub *sh = new_sh_sub_sid(demuxer, id, sid);
     if (lang && lang[0] && strcmp(lang, "und")) {
-        sh->lang = strdup(lang);
+        sh->lang = talloc_strdup(sh, lang);
         mp_msg(MSGT_IDENTIFY, MSGL_INFO, "ID_SID_%d_LANG=%s\n", sid, lang);
     }
     return sh;
@@ -369,11 +361,10 @@ static void free_sh_sub(sh_sub_t *sh)
 {
     mp_msg(MSGT_DEMUXER, MSGL_DBG2, "DEMUXER: freeing sh_sub at %p\n", sh);
     free(sh->extradata);
-    free(sh->lang);
 #ifdef CONFIG_FFMPEG
     clear_parser((sh_common_t *)sh);
 #endif
-    free(sh);
+    talloc_free(sh);
 }
 
 sh_audio_t *new_sh_audio_aid(demuxer_t *demuxer, int id, int aid)
@@ -388,7 +379,7 @@ sh_audio_t *new_sh_audio_aid(demuxer_t *demuxer, int id, int aid)
         mp_tmsg(MSGT_DEMUXER, MSGL_WARN, "WARNING: Audio stream header %d redefined.\n", id);
     } else {
         mp_tmsg(MSGT_DEMUXER, MSGL_V, "==> Found audio stream: %d\n", id);
-        sh_audio_t *sh = calloc(1, sizeof(sh_audio_t));
+        struct sh_audio *sh = talloc_zero(demuxer, struct sh_audio);
         demuxer->a_streams[id] = sh;
         sh->aid = aid;
         sh->ds = demuxer->audio;
@@ -408,11 +399,10 @@ void free_sh_audio(demuxer_t *demuxer, int id)
     mp_msg(MSGT_DEMUXER, MSGL_DBG2, "DEMUXER: freeing sh_audio at %p\n", sh);
     free(sh->wf);
     free(sh->codecdata);
-    free(sh->lang);
 #ifdef CONFIG_FFMPEG
     clear_parser((sh_common_t *)sh);
 #endif
-    free(sh);
+    talloc_free(sh);
 }
 
 sh_video_t *new_sh_video_vid(demuxer_t *demuxer, int id, int vid)
@@ -427,7 +417,7 @@ sh_video_t *new_sh_video_vid(demuxer_t *demuxer, int id, int vid)
         mp_tmsg(MSGT_DEMUXER, MSGL_WARN, "WARNING: Video stream header %d redefined.\n", id);
     else {
         mp_tmsg(MSGT_DEMUXER, MSGL_V, "==> Found video stream: %d\n", id);
-        sh_video_t *sh = calloc(1, sizeof *sh);
+        struct sh_video *sh = talloc_zero(demuxer, struct sh_video);
         demuxer->v_streams[id] = sh;
         sh->vid = vid;
         sh->ds = demuxer->video;
@@ -444,7 +434,7 @@ void free_sh_video(sh_video_t *sh)
 #ifdef CONFIG_FFMPEG
     clear_parser((sh_common_t *)sh);
 #endif
-    free(sh);
+    talloc_free(sh);
 }
 
 void free_demuxer(demuxer_t *demuxer)
@@ -503,8 +493,6 @@ void ds_add_packet(demux_stream_t *ds, demux_packet_t *dp)
 static void allocate_parser(AVCodecContext **avctx, AVCodecParserContext **parser, unsigned format)
 {
     enum CodecID codec_id = CODEC_ID_NONE;
-
-    init_avcodec();
 
     switch (format) {
 #if LIBAVCODEC_VERSION_INT >= AV_VERSION_INT(52, 94, 0)
@@ -639,19 +627,9 @@ int ds_fill_buffer(demux_stream_t *ds)
     if (ds->current)
         free_demux_packet(ds->current);
     ds->current = NULL;
-    if (mp_msg_test(MSGT_DEMUXER, MSGL_DBG3)) {
-        if (ds == demux->audio)
-            mp_dbg(MSGT_DEMUXER, MSGL_DBG3,
-                   "ds_fill_buffer(d_audio) called\n");
-        else if (ds == demux->video)
-            mp_dbg(MSGT_DEMUXER, MSGL_DBG3,
-                   "ds_fill_buffer(d_video) called\n");
-        else if (ds == demux->sub)
-            mp_dbg(MSGT_DEMUXER, MSGL_DBG3, "ds_fill_buffer(d_sub) called\n");
-        else
-            mp_dbg(MSGT_DEMUXER, MSGL_DBG3,
-                   "ds_fill_buffer(unknown 0x%X) called\n", (unsigned int) ds);
-    }
+    mp_dbg(MSGT_DEMUXER, MSGL_DBG3, "ds_fill_buffer (%s) called\n",
+           ds == demux->audio ? "d_audio" : ds == demux->video ? "d_video" :
+           ds == demux->sub   ? "d_sub"   : "unknown");
     while (1) {
         if (ds->packs) {
             demux_packet_t *p = ds->first;
@@ -1487,18 +1465,16 @@ char *demuxer_chapter_display_name(demuxer_t *demuxer, int chapter)
 {
     char *chapter_name = demuxer_chapter_name(demuxer, chapter);
     if (chapter_name) {
-        char *tmp = malloc(strlen(chapter_name) + 14);
-        snprintf(tmp, 63, "(%d) %s", chapter + 1, chapter_name);
+        char *tmp = talloc_asprintf(NULL, "(%d) %s", chapter + 1, chapter_name);
         free(chapter_name);
         return tmp;
     } else {
         int chapter_num = demuxer_chapter_count(demuxer);
-        char tmp[30];
         if (chapter_num <= 0)
-            sprintf(tmp, "(%d)", chapter + 1);
+            return talloc_asprintf(NULL, "(%d)", chapter + 1);
         else
-            sprintf(tmp, "(%d) of %d", chapter + 1, chapter_num);
-        return strdup(tmp);
+            return talloc_asprintf(NULL, "(%d) of %d", chapter + 1,
+                                   chapter_num);
     }
 }
 

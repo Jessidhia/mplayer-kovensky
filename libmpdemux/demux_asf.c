@@ -200,7 +200,7 @@ static int demux_asf_read_packet(demuxer_t *demux,unsigned char *data,int len,in
  */
 static void get_payload_extension_data(demuxer_t *demux, unsigned char** pp, unsigned char id, unsigned int seq, int *keyframe, uint64_t *seg_time){
     struct asf_priv* asf = demux->priv;
-    uint64_t payload_time; //100ns units
+    uint64_t payload_time = -1; //100ns units
     int i, ext_max, ext_timing_index;
     uint8_t *pi = *pp+4;
 
@@ -362,8 +362,8 @@ static int demux_asf_fill_buffer(demuxer_t *demux, demux_stream_t *ds){
             unsigned char segtype=p[1];
             unsigned padding;
             unsigned plen;
-	    unsigned sequence;
-            unsigned long time=0;
+            unsigned sequence av_unused;
+            unsigned long time av_unused = 0;
             unsigned short duration=0;
 
             int segs=1;
@@ -468,8 +468,8 @@ static int demux_asf_fill_buffer(demuxer_t *demux, demux_stream_t *ds){
 	      rlen = read_varlen(&p, segtype, 0);
 
 //	      printf("### rlen=%d   \n",rlen);
-              if (rlen < 0 || rlen > p_end - p) {
-                mp_msg(MSGT_DEMUX, MSGL_V, "invalid rlen=%d\n", rlen);
+              if (rlen > p_end - p) {
+                mp_msg(MSGT_DEMUX, MSGL_V, "invalid rlen=%u\n", rlen);
                 break;
               }
 

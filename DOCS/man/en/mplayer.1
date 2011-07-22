@@ -178,21 +178,21 @@ See the \-input option for ways to customize it.
 .B keyboard control
 .PD 0
 .RS
-.IPs "<\- and \->"
+.IPs "LEFT and RIGHT"
 Seek backward/\:forward 10 seconds.
 Shift+arrow does a 1 second exact seek (see \-hr\-seek; currently modifier
 keys like shift only work if used in an X output window).
-.IPs "up and down"
+.IPs "UP and DOWN"
 Seek forward/\:backward 1 minute.
 Shift+arrow does a 5 second exact seek (see \-hr\-seek; currently modifier
 keys like shift only work if used in an X output window).
-.IPs "pgup and pgdown"
+.IPs "PGUP and PGDWN"
 Seek forward/\:backward 10 minutes.
 .IPs "[ and ]"
 Decrease/increase current playback speed by 10%.
 .IPs "{ and }"
 Halve/double current playback speed.
-.IPs "backspace"
+.IPs "BACKSPACE"
 Reset playback speed to normal.
 .IPs "< and >"
 Go backward/\:forward in the playlist.
@@ -267,7 +267,7 @@ Show filename on the OSD.
 Show progression bar, elapsed time and total duration on the OSD.
 .IPs "! and @"
 Seek to the beginning of the previous/next chapter.
-.IPs "D (\-vo xvmc, \-vo vdpau, \-vf yadif, \-vf kerndeint only)"
+.IPs "D (\-vo vdpau, \-vf yadif, \-vf kerndeint only)"
 Activate/deactivate deinterlacer.
 .IPs "A\ \ \ \ "
 Cycle through the available DVD angles.
@@ -748,15 +748,13 @@ chapter change instead of doing a seek.
 Changes the colorkey to an RGB value of your choice.
 0x000000 is black and 0xffffff is white.
 Only supported by the fbdev, svga, vesa, xmga,
-xover, xv (see \-vo xv:ck), xvmc (see \-vo xv:ck) and directx video output
-drivers.
+xover, xv (see \-vo xv:ck) and directx video output drivers.
 .
 .TP
 .B \-nocolorkey
 Disables colorkeying.
 Only supported by the fbdev, svga, vesa, xmga,
-xover, xv (see \-vo xv:ck), xvmc (see \-vo xv:ck) and directx video output
-drivers.
+xover, xv (see \-vo xv:ck) and directx video output drivers.
 .
 .TP
 .B \-correct\-pts, \-nocorrect\-pts
@@ -978,7 +976,7 @@ Display the main menu at MPlayer startup.
 Permit MPlayer to receive pointer events reported by the video
 output driver.
 Necessary to select the buttons in DVD menus.
-Supported for X11-based VOs (x11, xv, xvmc, etc) and the gl, gl2, direct3d and
+Supported for X11-based VOs (x11, xv, etc) and the gl, gl2, direct3d and
 corevideo VOs.
 .
 .TP
@@ -3020,11 +3018,21 @@ When not included, raw PCM will be generated.
 Write the sound to <filename> instead of the default
 audiodump.wav.
 If nowaveheader is specified, the default is audiodump.pcm.
-.IPs "fast\ "
-Try to dump faster than realtime.
-Make sure the output does not get truncated (usually with
-"Too many video packets in buffer" message).
-It is normal that you get a "Your system is too SLOW to play this!" message.
+.RE
+.PD 1
+.
+.TP
+.B "rsound\ \ \ \ "
+audio output to an RSound daemon
+.PD 0
+.RSs
+.IPs host=<name/path>
+Set the address of the server (default: localhost).
+Can be either a network hostname for TCP connections or a Unix domain
+socket path starting with '/'.
+.IPs port=<number>
+Set the TCP port used for connecting to the server (default: 12345).
+Not used if connecting to a Unix domain socket.
 .RE
 .PD 1
 .
@@ -3176,7 +3184,7 @@ y coordinates are relative to the top-left corner of the window rather
 than the screen.
 The coordinates are relative to the screen given with \-xineramascreen for
 the video output drivers that fully support \-xineramascreen (direct3d, gl, gl2,
-vdpau, x11, xv, xvmc, corevideo).
+vdpau, x11, xv, corevideo).
 .br
 .I NOTE:
 May not be supported by some of the older VO drivers.
@@ -3568,38 +3576,6 @@ surfaces that work well or at all.
 .PD 1
 .
 .TP
-.B xvmc (X11 with \-vc ffmpeg12mc only)
-Video output driver that uses the XvMC (X Video Motion Compensation)
-extension of XFree86 4.x to speed up MPEG-1/2 and VCR2 decoding.
-.PD 0
-.RSs
-.IPs adaptor=<number>
-Select a specific XVideo adaptor (check xvinfo results).
-.IPs port=<number>
-Select a specific XVideo port.
-.IPs (no)benchmark
-Disables image display.
-Necessary for proper benchmarking of drivers that change
-image buffers on monitor retrace only (nVidia).
-Default is not to disable image display (nobenchmark).
-.IPs (no)bobdeint
-Very simple deinterlacer.
-Might not look better than \-vf tfields=1,
-but it is the only deinterlacer for xvmc (default: nobobdeint).
-.IPs (no)queue
-Queue frames for display to allow more parallel work of the video hardware.
-May add a small (not noticeable) constant A/V desync (default: noqueue).
-.IPs (no)sleep
-Use sleep function while waiting for rendering to finish
-(not recommended on Linux) (default: nosleep).
-.IPs ck=cur|use|set
-Same as \-vo xv:ck (see \-vo xv).
-.IPs ck-method=man|bg|auto
-Same as \-vo xv:ck-method (see \-vo xv).
-.RE
-.PD 1
-.
-.TP
 .B dga (X11 only)
 Play video through the XFree86 Direct Graphics Access extension.
 Considered obsolete.
@@ -3879,21 +3855,22 @@ Do not do any conversion.
 Select the scaling function to use for luminance scaling.
 Only valid for yuv modes 2, 3, 4 and 6.
 .RSss
-0: Use simple linear filtering (default).
-.br
-1: Use bicubic B-spline filtering (better quality).
+.IPs 0
+Use simple linear filtering (default).
+.IPs 1
+Use bicubic B-spline filtering (better quality).
 Needs one additional texture unit.
 Older cards will not be able to handle this for chroma at least in fullscreen mode.
-.br
-2: Use cubic filtering in horizontal, linear filtering in vertical direction.
+.IPs 2
+Use cubic filtering in horizontal, linear filtering in vertical direction.
 Works on a few more cards than method 1.
-.br
-3: Same as 1 but does not use a lookup texture.
+.IPs 3
+Same as 1 but does not use a lookup texture.
 Might be faster on some cards.
-.br
-4: Use experimental unsharp masking with 3x3 support and a default strength of 0.5 (see filter-strength).
-.br
-5: Use experimental unsharp masking with 5x5 support and a default strength of 0.5 (see filter-strength).
+.IPs 4
+Use experimental unsharp masking with 3x3 support and a default strength of 0.5 (see filter-strength).
+.IPs 5
+Use experimental unsharp masking with 5x5 support and a default strength of 0.5 (see filter-strength).
 .RE
 .IPs cscale=<n>
 Select the scaling function to use for chrominance scaling.
@@ -3902,16 +3879,17 @@ For details see lscale.
 Set the effect strength for the lscale/cscale filters that support it.
 .IPs stereo=<value>
 Select a method for stereo display.
-You may have to use -aspect to fix the aspect value.
+You may have to use \-aspect to fix the aspect value.
 Experimental, do not expect too much from it.
 .RSss
-0: Normal 2D display
-.br
-1: left-right split input to full-color red-cyan stereo.
-.br
-2: left-right split input to full-color red-cyan stereo.
-.br
-3: left-right split input to quadbuffered stereo.
+.IPs 0
+normal 2D display
+.IPs 1
+Convert side by side input to full-color red-cyan stereo.
+.IPs 2
+Convert side by side input to full-color green-magenta stereo.
+.IPs 3
+Convert side by side input to quadbuffered stereo.
 Only supported by very few OpenGL cards.
 .RE
 .RE
@@ -4526,7 +4504,7 @@ Disable automatic movie aspect ratio compensation.
 .B "\-field\-dominance <\-1\-1>"
 Set first field for interlaced content.
 Useful for deinterlacers that double the framerate: \-vf tfields=1,
-\-vf yadif=1, \-vo vdpau:deint and \-vo xvmc:bobdeint.
+\-vf yadif=1 and \-vo vdpau:deint.
 .PD 0
 .RSs
 .IPs \-1
@@ -7272,6 +7250,10 @@ width and height of the cleared rectangle
 Thickness of the fuzzy edge of the rectangle (added to w and h).
 When set to \-1, a green rectangle is drawn on the screen to
 simplify finding the right x,y,w,h parameters.
+.IPs file=<file>
+You can specify a text file to load the coordinates from.
+Each line must have a timestamp (in seconds, and in ascending order) and the
+"x:y:w:h:t" coordinates (t can be omitted).
 .RE
 .PD 1
 .
@@ -7416,6 +7398,14 @@ right eye)
 anaglyph yellow/blue colored (yellow filter on left eye, blue filter on right
 eye)
 .RE
+.B irl or interleave_rows_left_first
+.RS
+Interleaved rows (left eye has top row, right eye starts on next row)
+.RE
+.B irr or interleave_rows_right_first
+.RS
+Interleaved rows (right eye has top row, left eye starts on next row)
+.RE
 .B ml or mono_left
 .RS
 mono output (left eye only)
@@ -7425,6 +7415,13 @@ mono output (left eye only)
 mono output (right eye only)
 .RE
 .RE
+.I NOTE:
+To use either of the interleaved-rows output formats to display
+full-screen on a row-interleaved 3D display, you will need to scale the
+video to the correct height first using the "scale" filter, if it is not
+already the right height.  Typically, that is 1080 rows (so use e.g.
+"-vf scale=1440:1080,stereo3d=sbsl:irl" for a 720p side-by-side encoded
+movie).
 .RE
 .PD 1
 .

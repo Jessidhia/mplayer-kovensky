@@ -23,6 +23,7 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <math.h>
+#include <assert.h>
 
 #include "config.h"
 #include "talloc.h"
@@ -213,6 +214,8 @@ static const char help_text[]=_(
 " * or /           increase or decrease PCM volume\n"
 " x or z           adjust subtitle delay by +/- 0.1 second\n"
 " r or t           adjust subtitle position up/down, also see -vf expand\n"
+" double click     toggle fullscreen\n"
+" right click      pause (press again to continue)\n"
 "\n"
 " * * * SEE THE MAN PAGE FOR DETAILS, FURTHER (ADVANCED) OPTIONS AND KEYS * * *\n"
 "\n");
@@ -361,7 +364,7 @@ int use_filename_title;
 
 #include "metadata.h"
 
-const void *mpctx_get_video_out(MPContext *mpctx)
+void *mpctx_get_video_out(MPContext *mpctx)
 {
     return mpctx->video_out;
 }
@@ -745,11 +748,6 @@ void exit_player_with_rc(struct MPContext *mpctx, enum exit_reason how, int rc)
 
   current_module="exit_player";
 
-// free mplayer config
-  if(mpctx->mconfig)
-    m_config_free(mpctx->mconfig);
-  mpctx->mconfig = NULL;
-
   if(mpctx->playtree_iter)
     play_tree_iter_free(mpctx->playtree_iter);
   mpctx->playtree_iter = NULL;
@@ -778,6 +776,12 @@ void exit_player_with_rc(struct MPContext *mpctx, enum exit_reason how, int rc)
     mp_msg(MSGT_IDENTIFY, MSGL_INFO, "ID_EXIT=NONE\n");
   }
   mp_msg(MSGT_CPLAYER,MSGL_DBG2,"max framesize was %d bytes\n",max_framesize);
+
+  // must be last since e.g. mp_msg uses option values
+  // that will be freed by this.
+  if (mpctx->mconfig)
+    m_config_free(mpctx->mconfig);
+  mpctx->mconfig = NULL;
 
   exit(rc);
 }
@@ -1138,6 +1142,7 @@ void add_subtitles(struct MPContext *mpctx, char *filename, float fps, int noerr
 
 void init_vo_spudec(struct MPContext *mpctx)
 {
+  unsigned width, height;
   spudec_free(vo_spudec);
   mpctx->initialized_flags &= ~INITIALIZED_SPUDEC;
   vo_spudec = NULL;
@@ -1147,17 +1152,20 @@ void init_vo_spudec(struct MPContext *mpctx)
     return;
 
   if (spudec_ifo) {
-    unsigned int palette[16], width, height;
+    unsigned int palette[16];
     current_module="spudec_init_vobsub";
     if (vobsub_parse_ifo(NULL,spudec_ifo, palette, &width, &height, 1, -1, NULL) >= 0)
       vo_spudec=spudec_new_scaled(palette, width, height, NULL, 0);
   }
 
+    width  = mpctx->sh_video->disp_w;
+    height = mpctx->sh_video->disp_h;
+
 #ifdef CONFIG_DVDREAD
   if (vo_spudec==NULL && mpctx->stream->type==STREAMTYPE_DVD) {
     current_module="spudec_init_dvdread";
     vo_spudec=spudec_new_scaled(((dvd_priv_t *)(mpctx->stream->priv))->cur_pgc->palette,
-                                mpctx->sh_video->disp_w, mpctx->sh_video->disp_h,
+                                width, height,
                                 NULL, 0);
   }
 #endif
@@ -1166,14 +1174,14 @@ void init_vo_spudec(struct MPContext *mpctx)
   if (vo_spudec==NULL && mpctx->stream->type==STREAMTYPE_DVDNAV) {
     unsigned int *palette = mp_dvdnav_get_spu_clut(mpctx->stream);
     current_module="spudec_init_dvdnav";
-    vo_spudec=spudec_new_scaled(palette, mpctx->sh_video->disp_w, mpctx->sh_video->disp_h, NULL, 0);
+    vo_spudec=spudec_new_scaled(palette, width, height, NULL, 0);
   }
 #endif
 
   if (vo_spudec==NULL) {
     sh_sub_t *sh = mpctx->d_sub->sh;
     current_module="spudec_init_normal";
-    vo_spudec=spudec_new_scaled(NULL, mpctx->sh_video->disp_w, mpctx->sh_video->disp_h, sh->extradata, sh->extradata_len);
+    vo_spudec=spudec_new_scaled(NULL, width, height, sh->extradata, sh->extradata_len);
     spudec_set_font_factor(vo_spudec,font_factor);
   }
 
@@ -1344,6 +1352,50 @@ static void print_status(struct MPContext *mpctx, double a_pos, bool at_frame)
     mp_msg(MSGT_STATUSLINE, MSGL_STATUS, "%s\r", line);
   }
   free(line);
+}
+
+struct stream_dump_progress {
+    uint64_t count;
+    unsigned start_time;
+    unsigned last_print_time;
+};
+
+static void stream_dump_progress_start(struct stream_dump_progress *p)
+{
+    p->start_time = p->last_print_time = GetTimerMS();
+    p->count = 0;
+}
+
+static void stream_dump_progress(struct stream_dump_progress *p,
+                                 uint64_t len, stream_t *stream)
+{
+    p->count += len;
+    unsigned t = GetTimerMS();
+    if (t - p->last_print_time < 1000)
+        return;
+
+    uint64_t start = stream->start_pos;
+    uint64_t end   = stream->end_pos;
+    uint64_t pos   = stream->pos;
+
+    p->last_print_time = t;
+    /* TODO: pretty print sizes; ETA */
+    if (end > start && pos >= start && pos <= end) {
+        mp_tmsg(MSGT_STATUSLINE, MSGL_STATUS,
+               "dump: %"PRIu64" bytes written (~%.1f%%)",
+               p->count, 100.0 * (pos - start) / (end - start));
+        mp_msg(MSGT_STATUSLINE, MSGL_STATUS, "\r");
+    } else {
+        mp_tmsg(MSGT_STATUSLINE, MSGL_STATUS,
+               "dump: %"PRIu64" bytes written", p->count);
+        mp_msg(MSGT_STATUSLINE, MSGL_STATUS, "\r");
+    }
+}
+
+static void stream_dump_progress_end(struct stream_dump_progress *p, char *name)
+{
+    mp_msg(MSGT_CPLAYER, MSGL_INFO, "dump: %"PRIu64" bytes written to '%s'.\n",
+           p->count, name);
 }
 
 /**
@@ -1776,6 +1828,7 @@ void reinit_audio_chain(struct MPContext *mpctx)
             mp_tmsg(MSGT_CPLAYER,MSGL_ERR,"Could not open/initialize audio device -> no sound.\n");
             goto init_error;
         }
+        ao->buffer.start = talloc_new(ao);
         mp_msg(MSGT_CPLAYER,MSGL_INFO,"AO: [%s] %dHz %dch %s (%d bytes per sample)\n",
                ao->driver->info->short_name,
                ao->samplerate, ao->channels,
@@ -1816,7 +1869,6 @@ static double written_audio_pts(struct MPContext *mpctx)
 {
     sh_audio_t *sh_audio = mpctx->sh_audio;
     demux_stream_t *d_audio = mpctx->d_audio;
-    double buffered_output;
     // first calculate the end pts of audio that has been output by decoder
     double a_pts = sh_audio->pts;
     if (a_pts != MP_NOPTS_VALUE)
@@ -1850,11 +1902,11 @@ static double written_audio_pts(struct MPContext *mpctx)
     a_pts -= sh_audio->a_buffer_len / (double)sh_audio->o_bps;
 
     // Data buffered in audio filters, measured in bytes of "missing" output
-    buffered_output = af_calc_delay(sh_audio->afilter);
+    double buffered_output = af_calc_delay(sh_audio->afilter);
 
     // Data that was ready for ao but was buffered because ao didn't fully
     // accept everything to internal buffers yet
-    buffered_output += sh_audio->a_out_buffer_len;
+    buffered_output += mpctx->ao->buffer.len;
 
     // Filters divide audio length by playback_speed, so multiply by it
     // to get the length in original units without speedup or slowdown
@@ -2080,7 +2132,7 @@ static int check_framedrop(struct MPContext *mpctx, double frame_time) {
     struct MPOpts *opts = &mpctx->opts;
 	// check for frame-drop:
 	current_module = "check_framedrop";
-	if (mpctx->sh_audio && !mpctx->d_audio->eof) {
+	if (mpctx->sh_audio && !mpctx->ao->untimed && !mpctx->d_audio->eof) {
 	    static int dropped_frames;
 	    float delay = opts->playback_speed * ao_get_delay(mpctx->ao);
 	    float d = delay-mpctx->delay;
@@ -2228,7 +2280,7 @@ static void mp_dvdnav_reset_stream (MPContext *ctx) {
         /// free audio packets and reset
         ds_free_packs(ctx->d_audio);
         audio_delay -= ctx->sh_audio->stream_delay;
-        ctx->delay =- audio_delay;
+        ctx->delay = -audio_delay;
         ao_reset(ctx->ao);
         resync_audio_stream(ctx->sh_audio);
     }
@@ -2256,7 +2308,7 @@ static mp_image_t *mp_dvdnav_restore_smpi(struct MPContext *mpctx,
     if (mpctx->stream->type != STREAMTYPE_DVDNAV)
         return decoded_frame;
 
-    /// a change occured in dvdnav stream
+    /// a change occurred in dvdnav stream
     if (mp_dvdnav_cell_has_changed(mpctx->stream,0)) {
         mp_dvdnav_read_wait(mpctx->stream, 1, 1);
         mp_dvdnav_context_free(mpctx);
@@ -2301,12 +2353,16 @@ static void mp_dvdnav_save_smpi(struct MPContext *mpctx, int in_size,
         return;
 
     free(mpctx->nav_buffer);
+    mpctx->nav_buffer  = NULL;
+    mpctx->nav_start   = NULL;
+    mpctx->nav_in_size = -1;
 
-    mpctx->nav_buffer = malloc(in_size);
-    mpctx->nav_start = start;
-    mpctx->nav_in_size = mpctx->nav_buffer ? in_size : -1;
-    if (mpctx->nav_buffer)
+    if (in_size > 0)
+        mpctx->nav_buffer = malloc(in_size);
+    if (mpctx->nav_buffer) {
+        mpctx->nav_start = start;
         memcpy(mpctx->nav_buffer,start,in_size);
+    }
 
     if (decoded_frame && mpctx->nav_smpi != decoded_frame)
         mpctx->nav_smpi = mp_dvdnav_copy_mpi(mpctx->nav_smpi,decoded_frame);
@@ -2356,7 +2412,7 @@ static int audio_start_sync(struct MPContext *mpctx, int playsize)
     int res;
 
     // Timing info may not be set without
-    res = decode_audio(sh_audio, 1);
+    res = decode_audio(sh_audio, &ao->buffer, 1);
     if (res < 0)
         return res;
 
@@ -2373,7 +2429,7 @@ static int audio_start_sync(struct MPContext *mpctx, int playsize)
         if (written_pts <= 1 && sh_audio->pts == MP_NOPTS_VALUE) {
             if (!did_retry) {
                 // Try to read more data to see packets that have pts
-                int res = decode_audio(sh_audio, ao->bps);
+                int res = decode_audio(sh_audio, &ao->buffer, ao->bps);
                 if (res < 0)
                     return res;
                 did_retry = true;
@@ -2390,19 +2446,17 @@ static int audio_start_sync(struct MPContext *mpctx, int playsize)
 
         mpctx->syncing_audio = false;
         int a = FFMIN(-bytes, FFMAX(playsize, 20000));
-        int res = decode_audio(sh_audio, a);
-        bytes += sh_audio->a_out_buffer_len;
+        int res = decode_audio(sh_audio, &ao->buffer, a);
+        bytes += ao->buffer.len;
         if (bytes >= 0) {
-            memmove(sh_audio->a_out_buffer,
-                    sh_audio->a_out_buffer +
-                    sh_audio->a_out_buffer_len - bytes,
-                    bytes);
-            sh_audio->a_out_buffer_len = bytes;
+            memmove(ao->buffer.start,
+                    ao->buffer.start + ao->buffer.len - bytes, bytes);
+            ao->buffer.len = bytes;
             if (res < 0)
                 return res;
-            return decode_audio(sh_audio, playsize);
+            return decode_audio(sh_audio, &ao->buffer, playsize);
         }
-        sh_audio->a_out_buffer_len = 0;
+        ao->buffer.len = 0;
         if (res < 0)
             return res;
     }
@@ -2422,8 +2476,8 @@ static int audio_start_sync(struct MPContext *mpctx, int playsize)
         return ASYNC_PLAY_DONE;
     }
     mpctx->syncing_audio = false;
-    decode_audio_prepend_bytes(sh_audio, bytes, fillbyte);
-    return decode_audio(sh_audio, playsize);
+    decode_audio_prepend_bytes(&ao->buffer, bytes, fillbyte);
+    return decode_audio(sh_audio, &ao->buffer, playsize);
 }
 
 static int fill_audio_out_buffers(struct MPContext *mpctx)
@@ -2436,12 +2490,14 @@ static int fill_audio_out_buffers(struct MPContext *mpctx)
     int playflags=0;
     bool audio_eof = false;
     bool partial_fill = false;
-    bool format_change = false;
     sh_audio_t * const sh_audio = mpctx->sh_audio;
     bool modifiable_audio_format = !(ao->format & AF_FORMAT_SPECIAL_MASK);
     int unitsize = ao->channels * af_fmt2bits(ao->format) / 8;
 
     current_module="play_audio";
+
+    if (ao->untimed && mpctx->sh_video && mpctx->delay > 0)
+        return 0;
 
     // all the current uses of ao->pts seem to be in aos that handle
     // sync completely wrong; there should be no need to use ao->pts
@@ -2460,11 +2516,17 @@ static int fill_audio_out_buffers(struct MPContext *mpctx)
     if (mpctx->syncing_audio && mpctx->sh_video)
         res = audio_start_sync(mpctx, playsize);
     else
-        res = decode_audio(sh_audio, playsize);
+        res = decode_audio(sh_audio, &ao->buffer, playsize);
     if (res < 0) {  // EOF, error or format change
-        if (res == -2)
-            format_change = true;
-        else if (res == ASYNC_PLAY_DONE)
+        if (res == -2) {
+            /* The format change isn't handled too gracefully. A more precise
+             * implementation would require draining buffered old-format audio
+             * while displaying video, then doing the output format switch.
+             */
+            uninit_player(mpctx, INITIALIZED_AO);
+            reinit_audio_chain(mpctx);
+            return -1;
+        } else if (res == ASYNC_PLAY_DONE)
             return 0;
         else if (mpctx->d_audio->eof)
             audio_eof = true;
@@ -2483,9 +2545,10 @@ static int fill_audio_out_buffers(struct MPContext *mpctx)
         }
     }
 
-    if (playsize > sh_audio->a_out_buffer_len) {
+    assert(ao->buffer.len % unitsize == 0);
+    if (playsize > ao->buffer.len) {
         partial_fill = true;
-        playsize = sh_audio->a_out_buffer_len;
+        playsize = ao->buffer.len;
         if (audio_eof)
             playflags |= AOPLAY_FINAL_CHUNK;
     }
@@ -2500,28 +2563,18 @@ static int fill_audio_out_buffers(struct MPContext *mpctx)
     // They're obviously badly broken in the way they handle av sync;
     // would not having access to this make them more broken?
     ao->pts = ((mpctx->sh_video?mpctx->sh_video->timer:0)+mpctx->delay)*90000.0;
-    playsize = ao_play(ao, sh_audio->a_out_buffer, playsize, playflags);
+    int played = ao_play(ao, ao->buffer.start, playsize, playflags);
+    assert(played % unitsize == 0);
+    ao->buffer_playable_size = playsize - played;
 
-    if (playsize > 0) {
-        sh_audio->a_out_buffer_len -= playsize;
-        memmove(sh_audio->a_out_buffer, &sh_audio->a_out_buffer[playsize],
-                sh_audio->a_out_buffer_len);
-        mpctx->delay += opts->playback_speed*playsize/(double)ao->bps;
+    if (played > 0) {
+        ao->buffer.len -= played;
+        memmove(ao->buffer.start, ao->buffer.start + played, ao->buffer.len);
+        mpctx->delay += opts->playback_speed * played / ao->bps;
     } else if (audio_eof && ao_get_delay(ao) < .04) {
         // Sanity check to avoid hanging in case current ao doesn't output
         // partial chunks and doesn't check for AOPLAY_FINAL_CHUNK
-        mp_msg(MSGT_CPLAYER, MSGL_WARN, "Audio output truncated at end.\n");
-        sh_audio->a_out_buffer_len = 0;
-    }
-
-    /* The format change isn't handled too gracefully. A more precise
-     * implementation would require draining buffered old-format audio
-     * while displaying video, then doing the output format switch.
-     */
-    if (format_change) {
-        uninit_player(mpctx, INITIALIZED_AO);
-        reinit_audio_chain(mpctx);
-        return -1;
+        return -2;
     }
 
     return -partial_fill;
@@ -3070,10 +3123,9 @@ static void seek_reset(struct MPContext *mpctx, bool reset_ao)
 	current_module = "seek_audio_reset";
         resync_audio_stream(mpctx->sh_audio);
         if (reset_ao)
-            // stop audio, throwing away buffered data
             ao_reset(mpctx->ao);
+        mpctx->ao->buffer.len = mpctx->ao->buffer_playable_size;
 	mpctx->sh_audio->a_buffer_len = 0;
-	mpctx->sh_audio->a_out_buffer_len = 0;
 	if (!mpctx->sh_video)
 	    update_subtitles(mpctx, mpctx->sh_audio->pts,
                              mpctx->video_offset, true);
@@ -3178,7 +3230,6 @@ static int seek(MPContext *mpctx, struct seek_params seek,
             if (mpctx->sh_audio) {
                 ao_reset(mpctx->ao);
                 mpctx->sh_audio->a_buffer_len = 0;
-                mpctx->sh_audio->a_out_buffer_len = 0;
             }
             return -1;
         }
@@ -3341,7 +3392,7 @@ char *chapter_display_name(struct MPContext *mpctx, int chapter)
 {
     if (!mpctx->chapters || !mpctx->sh_video)
         return demuxer_chapter_display_name(mpctx->demuxer, chapter);
-    return strdup(mpctx->chapters[chapter].name);
+    return talloc_strdup(NULL, mpctx->chapters[chapter].name);
 }
 
 int seek_chapter(struct MPContext *mpctx, int chapter, double *seek_pts,
@@ -3398,7 +3449,7 @@ static void run_playloop(struct MPContext *mpctx)
     if (mpctx->sh_audio && !mpctx->paused
         && (!mpctx->restart_playback || !mpctx->sh_video)) {
         int status = fill_audio_out_buffers(mpctx);
-        full_audio_buffers = status >= 0;
+        full_audio_buffers = status >= 0 && !mpctx->ao->untimed;
         if (status == -2)
             // at eof, all audio at least written to ao
             if (!mpctx->sh_video)
@@ -3444,7 +3495,9 @@ static void run_playloop(struct MPContext *mpctx)
         } else if (!mpctx->stop_play) {
             int sleep_time = 100;
             if (mpctx->sh_audio) {
-                if (full_audio_buffers)
+                if (mpctx->ao->untimed)
+                    sleep_time = 0;
+                else if (full_audio_buffers)
                     sleep_time = FFMAX(20, a_buf * 1000 - 50);
                 else
                     sleep_time = 20;
@@ -3711,7 +3764,7 @@ static void run_playloop(struct MPContext *mpctx)
 static int read_keys(void *ctx, int fd)
 {
     getch2(ctx);
-    return mplayer_get_key(ctx, 0);
+    return MP_INPUT_NOTHING;
 }
 
 static bool attachment_is_font(struct demux_attachment *att)
@@ -3830,7 +3883,7 @@ int i;
   srand(GetTimerMS());
 
   mp_msg_init();
-  set_av_log_callback();
+  init_libav();
 
 #ifdef CONFIG_X11
   mpctx->x11_state = vo_x11_init_state();
@@ -3872,7 +3925,6 @@ int i;
       }
     }
     }
-    mpctx->key_fifo = mp_fifo_create(opts);
 
   print_version("MPlayer2");
 
@@ -3897,9 +3949,6 @@ int i;
 #ifdef CONFIG_PRIORITY
     set_priority();
 #endif
-
-  if (codec_path)
-    set_codec_path(codec_path);
 
     if(opts->video_driver_list && strcmp(opts->video_driver_list[0],"help")==0){
       list_video_out();
@@ -4067,13 +4116,8 @@ if(!codecs_file || !parse_codec_cfg(codecs_file)){
 // Init input system
 current_module = "init_input";
  mpctx->input = mp_input_init(&opts->input);
- mp_input_add_key_fd(mpctx->input, -1,0,mplayer_get_key,NULL, mpctx->key_fifo);
+ mpctx->key_fifo = mp_fifo_create(mpctx->input, opts);
  if(slave_mode) {
-#if USE_FD0_CMD_SELECT
-    int flags = fcntl(0, F_GETFL);
-    if (flags != -1)
-        fcntl(0, F_SETFL, flags | O_NONBLOCK);
-#endif
     mp_input_add_cmd_fd(mpctx->input, 0,USE_FD0_CMD_SELECT,MP_INPUT_SLAVE_CMD_FUNC,NULL);
  }
 else if (opts->consolecontrols)
@@ -4230,7 +4274,8 @@ while (opts->player_idle_mode && !mpctx->filename) {
 	mp_tmsg(MSGT_CPLAYER,MSGL_INFO,"\nPlaying %s.\n",
 		filename_recode(mpctx->filename));
         if(use_filename_title && opts->vo_wintitle == NULL)
-            opts->vo_wintitle = strdup(mp_basename(mpctx->filename));
+            opts->vo_wintitle = talloc_strdup(NULL,
+                                              mp_basename(mpctx->filename));
     }
 
 if (edl_filename) {
@@ -4324,6 +4369,8 @@ if(stream_dump_type==5){
     int chapter = opts->chapterrange[0] - 1;
     stream_control(mpctx->stream, STREAM_CTRL_SEEK_TO_CHAPTER, &chapter);
   }
+  struct stream_dump_progress info;
+  stream_dump_progress_start(&info);
   while(!mpctx->stream->eof && !async_quit_request){
       len=stream_read(mpctx->stream,buf,4096);
       if(len>0) {
@@ -4332,6 +4379,7 @@ if(stream_dump_type==5){
           exit_player(mpctx, EXIT_ERROR);
         }
       }
+      stream_dump_progress(&info, len, mpctx->stream);
       if (opts->chapterrange[1] > 0) {
         int chapter = -1;
         if (stream_control(mpctx->stream, STREAM_CTRL_GET_CURRENT_CHAPTER,
@@ -4344,6 +4392,7 @@ if(stream_dump_type==5){
     mp_tmsg(MSGT_GLOBAL,MSGL_FATAL,"%s: Error writing file.\n",opts->stream_dump_name);
     exit_player(mpctx, EXIT_ERROR);
   }
+  stream_dump_progress_end(&info, opts->stream_dump_name);
   mp_tmsg(MSGT_CPLAYER, MSGL_INFO, "Stream dump complete.\n");
   exit_player_with_rc(mpctx, EXIT_EOF, 0);
 }
@@ -4549,12 +4598,17 @@ if((stream_dump_type)&&(stream_dump_type<4)){
     mp_tmsg(MSGT_CPLAYER,MSGL_FATAL,"Cannot open dump file.\n");
     exit_player(mpctx, EXIT_ERROR);
   }
+  struct stream_dump_progress info;
+  stream_dump_progress_start(&info);
   while(!ds->eof){
     unsigned char* start;
     int in_size=ds_get_packet(ds,&start);
     if( (mpctx->demuxer->file_format==DEMUXER_TYPE_AVI || mpctx->demuxer->file_format==DEMUXER_TYPE_ASF || mpctx->demuxer->file_format==DEMUXER_TYPE_MOV)
 	&& stream_dump_type==2) fwrite(&in_size,1,4,f);
-    if(in_size>0) fwrite(start,in_size,1,f);
+    if(in_size>0) {
+        fwrite(start,in_size,1,f);
+        stream_dump_progress(&info, in_size, mpctx->stream);
+    }
     if (opts->chapterrange[1] > 0) {
       int cur_chapter = demuxer_get_current_chapter(mpctx->demuxer, 0);
       if(cur_chapter!=-1 && cur_chapter+1 > opts->chapterrange[1])
@@ -4562,6 +4616,7 @@ if((stream_dump_type)&&(stream_dump_type<4)){
     }
   }
   fclose(f);
+  stream_dump_progress_end(&info, opts->stream_dump_name);
   mp_tmsg(MSGT_CPLAYER ,MSGL_INFO, "Stream dump complete.\n");
   exit_player_with_rc(mpctx, EXIT_EOF, 0);
 }

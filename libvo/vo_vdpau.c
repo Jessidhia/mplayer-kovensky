@@ -214,7 +214,7 @@ static int change_vdptime_sync(struct vdpctx *vc, unsigned int *t)
             vdp_time -= (t2 - t1) * 1000ULL;
         else
             vdp_time = old;
-    mp_msg(MSGT_VO, MSGL_V, "[vdpau] adjusting VdpTime offset by %f µs\n",
+    mp_msg(MSGT_VO, MSGL_DBG2, "[vdpau] adjusting VdpTime offset by %f µs\n",
            (int64_t)(vdp_time - old) / 1000.);
     vc->last_vdp_time = vdp_time;
     vc->last_sync_update = t1;
@@ -371,6 +371,10 @@ static void resize(struct vo *vo)
     struct vdp_functions *vdp = vc->vdp;
     VdpStatus vdp_st;
     int i;
+
+    if (!vo->config_ok || vc->is_preempted)
+        return;
+
     struct vo_rect src_rect;
     struct vo_rect dst_rect;
     struct vo_rect borders;
@@ -420,7 +424,7 @@ static void resize(struct vo *vo)
                                                 vc->output_surface_height,
                                                 &vc->output_surfaces[i]);
             CHECK_ST_WARNING("Error when calling vdp_output_surface_create");
-            mp_msg(MSGT_VO, MSGL_DBG2, "OUT CREATE: %u\n",
+            mp_msg(MSGT_VO, MSGL_DBG2, "vdpau out create: %u\n",
                    vc->output_surfaces[i]);
         }
         vc->num_shown_frames = 0;
@@ -931,6 +935,7 @@ static int config(struct vo *vo, uint32_t width, uint32_t height,
     if ((flags & VOFLAG_FULLSCREEN) && WinID <= 0)
         vo_fs = 1;
 
+    vo->config_ok = true;   // set temporarily as resize() checks it below
     if (initialize_vdpau_objects(vo) < 0)
         return -1;
 
@@ -1262,7 +1267,6 @@ eosd_skip_upload:
 static void draw_osd(struct vo *vo, struct osd_state *osd)
 {
     struct vdpctx *vc = vo->priv;
-    mp_msg(MSGT_VO, MSGL_DBG2, "DRAW_OSD\n");
 
     if (handle_preemption(vo) < 0)
         return;
@@ -1302,7 +1306,7 @@ static int update_presentation_queue_status(struct vo *vo)
     }
     int num_queued = WRAP_ADD(vc->surface_num, -vc->query_surface_num,
                               vc->num_output_surfaces);
-    mp_msg(MSGT_VO, MSGL_DBG2, "[vdpau] Queued surface count (before add): "
+    mp_msg(MSGT_VO, MSGL_DBG3, "[vdpau] Queued surface count (before add): "
            "%d\n", num_queued);
     return num_queued;
 }
@@ -1449,7 +1453,7 @@ static struct vdpau_render_state *get_surface(struct vo *vo, int number)
                                            &vc->surface_render[number].surface);
         CHECK_ST_WARNING("Error when calling vdp_video_surface_create");
     }
-    mp_msg(MSGT_VO, MSGL_DBG2, "VID CREATE: %u\n",
+    mp_msg(MSGT_VO, MSGL_DBG3, "vdpau vid create: %u\n",
            vc->surface_render[number].surface);
     return &vc->surface_render[number];
 }

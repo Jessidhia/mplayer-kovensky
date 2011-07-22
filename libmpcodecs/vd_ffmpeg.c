@@ -38,7 +38,6 @@
 #include "libmpdemux/stheader.h"
 #include "codec-cfg.h"
 #include "osdep/numcores.h"
-#include "vd_ffmpeg.h"
 
 static const vd_info_t info = {
     "FFmpeg's libavcodec codec family",
@@ -67,12 +66,6 @@ static const vd_info_t info = {
 #error palette too large, adapt libmpcodecs/vf.c:vf_get_image
 #endif
 
-#if CONFIG_XVMC
-#include "libavcodec/xvmc.h"
-#endif
-
-int avcodec_initialized=0;
-
 typedef struct {
     AVCodecContext *avctx;
     AVFrame *pic;
@@ -89,7 +82,7 @@ typedef struct {
     int ip_count;
     int b_count;
     AVRational last_sample_aspect_ratio;
-    int lowres;
+    enum AVDiscard skip_frame;
 } vd_ffmpeg_ctx;
 
 #include "m_option.h"
@@ -156,11 +149,6 @@ static int control(sh_video_t *sh, int cmd, void *arg, ...){
             if(ctx->best_csp == IMGFMT_YV12) return CONTROL_TRUE;// u/v swap
             if(ctx->best_csp == IMGFMT_422P && !ctx->do_dr1) return CONTROL_TRUE;// half stride
             break;
-#if CONFIG_XVMC
-        case IMGFMT_XVMC_IDCT_MPEG2:
-        case IMGFMT_XVMC_MOCO_MPEG2:
-            if(avctx->pix_fmt==PIX_FMT_XVMC_MPEG2_IDCT) return CONTROL_TRUE;
-#endif
         }
         return CONTROL_FALSE;
     }
@@ -174,25 +162,13 @@ static int control(sh_video_t *sh, int cmd, void *arg, ...){
     return CONTROL_UNKNOWN;
 }
 
-void init_avcodec(void)
-{
-    if (!avcodec_initialized) {
-        avcodec_init();
-        avcodec_register_all();
-        avcodec_initialized = 1;
-    }
-}
-
 // init driver
 static int init(sh_video_t *sh){
     struct lavc_param *lavc_param = &sh->opts->lavc_param;
     AVCodecContext *avctx;
     vd_ffmpeg_ctx *ctx;
     AVCodec *lavc_codec;
-    int lowres_w=0;
     int do_vis_debug= lavc_param->vismv || (lavc_param->debug&(FF_DEBUG_VIS_MB_TYPE|FF_DEBUG_VIS_QP));
-
-    init_avcodec();
 
     ctx = sh->context = talloc_zero(NULL, vd_ffmpeg_ctx);
 
@@ -293,10 +269,12 @@ static int init(sh_video_t *sh){
     avctx->skip_bottom= lavc_param->skip_bottom;
     if(lavc_param->lowres_str != NULL)
     {
-        sscanf(lavc_param->lowres_str, "%d,%d", &ctx->lowres, &lowres_w);
-        if(ctx->lowres < 1 || ctx->lowres > 16 || (lowres_w > 0 && avctx->width < lowres_w))
-            ctx->lowres = 0;
-        avctx->lowres = ctx->lowres;
+        int lowres, lowres_w;
+        sscanf(lavc_param->lowres_str, "%d,%d", &lowres, &lowres_w);
+        if (lowres < 1 || lowres > 16 ||
+                lowres_w > 0 && avctx->width < lowres_w)
+            lowres = 0;
+        avctx->lowres = lowres;
     }
     avctx->skip_loop_filter = str2AVDiscard(lavc_param->skip_loop_filter_str);
     avctx->skip_idct = str2AVDiscard(lavc_param->skip_idct_str);
@@ -309,6 +287,9 @@ static int init(sh_video_t *sh){
             return 0;
         }
     }
+
+    // Do this after the above avopt handling in case it changes values
+    ctx->skip_frame = avctx->skip_frame;
 
     mp_dbg(MSGT_DECVIDEO, MSGL_DBG2, "libavcodec.size: %d x %d\n", avctx->width, avctx->height);
     switch (sh->format) {
@@ -418,7 +399,7 @@ static void uninit(sh_video_t *sh){
     vd_ffmpeg_ctx *ctx = sh->context;
     AVCodecContext *avctx = ctx->avctx;
 
-    if(sh->opts->lavc_param.vstats){
+    if (sh->opts->lavc_param.vstats && avctx->coded_frame) {
         int i;
         for(i=1; i<32; i++){
             mp_msg(MSGT_DECVIDEO, MSGL_INFO, "QP: %d, count: %d\n", i, ctx->qp_stat[i]);
@@ -453,7 +434,7 @@ static void draw_slice(struct AVCodecContext *s,
     int start=0, i;
     int width= s->width;
     vd_ffmpeg_ctx *ctx = sh->context;
-    int skip_stride= ((width << ctx->lowres)+15)>>4;
+    int skip_stride = ((width << s->lowres)+15) >> 4;
     uint8_t *skip= &s->coded_frame->mbskip_table[(y>>4)*skip_stride];
     int threshold= s->coded_frame->age;
     if(s->pict_type!=B_TYPE){
@@ -503,8 +484,8 @@ static int init_vo(sh_video_t *sh, enum PixelFormat pix_fmt){
     // if sh->ImageDesc is non-NULL, it means we decode QuickTime(tm) video.
     // use dimensions from BIH to avoid black borders at the right and bottom.
     if (sh->bih && sh->ImageDesc) {
-        width = sh->bih->biWidth >> ctx->lowres;
-        height = sh->bih->biHeight >> ctx->lowres;
+        width = sh->bih->biWidth >> avctx->lowres;
+        height = sh->bih->biHeight >> avctx->lowres;
     }
 
      // it is possible another vo buffers to be used after vo config()
@@ -530,7 +511,18 @@ static int init_vo(sh_video_t *sh, enum PixelFormat pix_fmt){
         sh->disp_h = height;
         ctx->pix_fmt = pix_fmt;
         ctx->best_csp = pixfmt2imgfmt(pix_fmt);
-        if (!mpcodecs_config_vo(sh, sh->disp_w, sh->disp_h, ctx->best_csp))
+        const unsigned int *supported_fmts;
+        if (ctx->best_csp == IMGFMT_YV12)
+            supported_fmts = (const unsigned int[])
+                {IMGFMT_YV12, IMGFMT_I420, IMGFMT_IYUV, 0xffffffff};
+        else if (ctx->best_csp == IMGFMT_422P)
+            supported_fmts = (const unsigned int[])
+                {IMGFMT_422P, IMGFMT_YV12, IMGFMT_I420, IMGFMT_IYUV,
+                 0xffffffff};
+        else
+            supported_fmts = (const unsigned int[]){ctx->best_csp, 0xffffffff};
+        if (!mpcodecs_config_vo2(sh, sh->disp_w, sh->disp_h, supported_fmts,
+                                 ctx->best_csp))
             return -1;
         ctx->vo_initialized = 1;
     }
@@ -624,28 +616,6 @@ static int get_buffer(AVCodecContext *avctx, AVFrame *pic){
     if(IMGFMT_IS_HWACCEL(mpi->imgfmt)) {
         avctx->draw_horiz_band= draw_slice;
     }
-#if CONFIG_XVMC
-    if(IMGFMT_IS_XVMC(mpi->imgfmt)) {
-        struct xvmc_pix_fmt *render = mpi->priv; //same as data[2]
-        if(!avctx->xvmc_acceleration) {
-            mp_tmsg(MSGT_DECVIDEO, MSGL_INFO, "[VD_FFMPEG] The mc_get_buffer should work only with XVMC acceleration!!");
-            assert(0);
-            exit(1);
-//            return -1;//!!fixme check error conditions in ffmpeg
-        }
-        if(!(mpi->flags & MP_IMGFLAG_DIRECT)) {
-            mp_tmsg(MSGT_DECVIDEO, MSGL_ERR, "[VD_FFMPEG] Only buffers allocated by vo_xvmc allowed.\n");
-            assert(0);
-            exit(1);
-//            return -1;//!!fixme check error conditions in ffmpeg
-        }
-        if(mp_msg_test(MSGT_DECVIDEO, MSGL_DBG5))
-            mp_msg(MSGT_DECVIDEO, MSGL_DBG5, "vd_ffmpeg::get_buffer (xvmc render=%p)\n", render);
-        assert(render != 0);
-        assert(render->xvmc_id == AV_XVMC_ID);
-        render->state |= AV_XVMC_STATE_PREDICTION;
-    }
-#endif
 
     pic->data[0]= mpi->planes[0];
     pic->data[1]= mpi->planes[1];
@@ -730,16 +700,6 @@ static void release_buffer(struct AVCodecContext *avctx, AVFrame *pic){
         // Palette support: free palette buffer allocated in get_buffer
         if (mpi->bpp == 8)
             av_freep(&mpi->planes[1]);
-#if CONFIG_XVMC
-        if (IMGFMT_IS_XVMC(mpi->imgfmt)) {
-            struct xvmc_pix_fmt *render = (struct xvmc_pix_fmt*)pic->data[2]; //same as mpi->priv
-            if(mp_msg_test(MSGT_DECVIDEO, MSGL_DBG5))
-                mp_msg(MSGT_DECVIDEO, MSGL_DBG5, "vd_ffmpeg::release_buffer (xvmc render=%p)\n", render);
-            assert(render!=NULL);
-            assert(render->xvmc_id == AV_XVMC_ID);
-            render->state&=~AV_XVMC_STATE_PREDICTION;
-        }
-#endif
         // release mpi (in case MPI_IMGTYPE_NUMBERED is used, e.g. for VDPAU)
         mpi->usage_count--;
     }
@@ -806,9 +766,9 @@ static struct mp_image *decode(struct sh_video *sh, void *data, int len,
     else if (flags & 1)
         avctx->skip_frame = AVDISCARD_NONREF;
     else
-        avctx->skip_frame = 0;
+        avctx->skip_frame = ctx->skip_frame;
 
-    mp_msg(MSGT_DECVIDEO, MSGL_DBG2, "vd_ffmpeg data: %04x, %04x, %04x, %04x\n",
+    mp_msg(MSGT_DECVIDEO, MSGL_DBG3, "vd_ffmpeg data: %04x, %04x, %04x, %04x\n",
            ((int *)data)[0], ((int *)data)[1], ((int *)data)[2], ((int *)data)[3]);
     av_init_packet(&pkt);
     pkt.data = data;
@@ -816,9 +776,10 @@ static struct mp_image *decode(struct sh_video *sh, void *data, int len,
     // HACK: make PNGs decode normally instead of as CorePNG delta frames
     pkt.flags = AV_PKT_FLAG_KEY;
     // The avcodec opaque field stupidly supports only int64_t type
-    *(double *)&avctx->reordered_opaque = *reordered_pts;
+    union pts { int64_t i; double d; };
+    avctx->reordered_opaque = (union pts){.d = *reordered_pts}.i;
     ret = avcodec_decode_video2(avctx, pic, &got_picture, &pkt);
-    *reordered_pts = *(double *)&pic->reordered_opaque;
+    *reordered_pts = (union pts){.i = pic->reordered_opaque}.d;
 
     dr1= ctx->do_dr1;
     if(ret<0) mp_msg(MSGT_DECVIDEO, MSGL_WARN, "Error while decoding frame!\n");
@@ -832,6 +793,9 @@ static struct mp_image *decode(struct sh_video *sh, void *data, int len,
         static double all_frametime=0.0;
         AVFrame *pic= avctx->coded_frame;
         double quality=0.0;
+
+        if (!pic)
+            break;
 
         if(!fvstats) {
             time_t today2;
@@ -852,8 +816,8 @@ static struct mp_image *decode(struct sh_video *sh, void *data, int len,
         // average MB quantizer
         {
             int x, y;
-            int w = ((avctx->width  << ctx->lowres)+15) >> 4;
-            int h = ((avctx->height << ctx->lowres)+15) >> 4;
+            int w = ((avctx->width  << avctx->lowres)+15) >> 4;
+            int h = ((avctx->height << avctx->lowres)+15) >> 4;
             int8_t *q = pic->qscale_table;
             for(y = 0; y < h; y++) {
                 for(x = 0; x < w; x++)

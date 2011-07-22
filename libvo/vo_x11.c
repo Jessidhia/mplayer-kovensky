@@ -103,7 +103,7 @@ static void check_events(void)
         vo_x11_clearwindow(mDisplay, vo_window);
     else if (ret & VO_EVENT_EXPOSE)
         vo_x11_clearwindow_part(mDisplay, vo_window, myximage->width,
-                                myximage->height, 0);
+                                myximage->height);
     if (ret & VO_EVENT_EXPOSE && int_pause)
         flip_page();
 }
@@ -306,12 +306,7 @@ static int config(uint32_t width, uint32_t height, uint32_t d_width,
                        uint32_t d_height, uint32_t flags, char *title,
                        uint32_t format)
 {
-// int screen;
-
-// int interval, prefer_blank, allow_exp, nothing;
-    unsigned int fg, bg;
     Colormap theCmap;
-    XSetWindowAttributes xswa;
     unsigned long xswamask;
     const struct fmt2Xfmtentry_s *fmte = fmt2Xfmt;
 
@@ -358,22 +353,13 @@ static int config(uint32_t width, uint32_t height, uint32_t d_width,
             vo_vm_switch();
         }
 #endif
-        bg = WhitePixel(mDisplay, mScreen);
-        fg = BlackPixel(mDisplay, mScreen);
-
         theCmap = vo_x11_create_colormap(&vinfo);
 
-        xswa.background_pixel = 0;
-        xswa.border_pixel = 0;
-        xswa.colormap = theCmap;
         xswamask = CWBackPixel | CWBorderPixel | CWColormap;
 
 #ifdef CONFIG_XF86VM
         if (vm)
-        {
-            xswa.override_redirect = True;
             xswamask |= CWOverrideRedirect;
-        }
 #endif
 
             vo_x11_create_vo_window(&vinfo, vo_dx, vo_dy, vo_dwidth, vo_dheight,
@@ -553,7 +539,7 @@ static int draw_slice(uint8_t * src[], int stride[], int w, int h,
         dst[0] += dstStride[0] * (image_height - 1);
         dstStride[0] = -dstStride[0];
     }
-    sws_scale(swsContext, src, stride, y, h, dst, dstStride);
+    sws_scale(swsContext, (const uint8_t **)src, stride, y, h, dst, dstStride);
     return 0;
 }
 

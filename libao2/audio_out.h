@@ -21,52 +21,69 @@
 
 #include <stdbool.h>
 
-typedef struct ao_info_s
-{
-        /* driver name ("Matrox Millennium G200/G400" */
-        const char *name;
-        /* short name (for config strings) ("mga") */
-        const char *short_name;
-        /* author ("Aaron Holtzman <aholtzma@ess.engr.uvic.ca>") */
-        const char *author;
-        /* any additional comments */
-        const char *comment;
+#include "bstr.h"
+
+typedef struct ao_info {
+    /* driver name ("Matrox Millennium G200/G400" */
+    const char *name;
+    /* short name (for config strings) ("mga") */
+    const char *short_name;
+    /* author ("Aaron Holtzman <aholtzma@ess.engr.uvic.ca>") */
+    const char *author;
+    /* any additional comments */
+    const char *comment;
 } ao_info_t;
 
 /* interface towards mplayer and */
-typedef struct ao_functions
-{
-	const ao_info_t *info;
-        int (*control)(int cmd,void *arg);
-        int (*init)(int rate,int channels,int format,int flags);
-        void (*uninit)(int immed);
-        void (*reset)(void);
-        int (*get_space)(void);
-        int (*play)(void* data,int len,int flags);
-        float (*get_delay)(void);
-        void (*pause)(void);
-        void (*resume)(void);
+typedef struct ao_old_functions {
+    int (*control)(int cmd, void *arg);
+    int (*init)(int rate, int channels, int format, int flags);
+    void (*uninit)(int immed);
+    void (*reset)(void);
+    int (*get_space)(void);
+    int (*play)(void *data, int len, int flags);
+    float (*get_delay)(void);
+    void (*pause)(void);
+    void (*resume)(void);
 } ao_functions_t;
+
+struct ao;
+
+struct ao_driver {
+    bool is_new;
+    const struct ao_info *info;
+    const struct ao_old_functions *old_functions;
+    int (*control)(struct ao *ao, int cmd, void *arg);
+    int (*init)(struct ao *ao, char *params);
+    void (*uninit)(struct ao *ao, bool cut_audio);
+    void (*reset)(struct ao*ao);
+    int (*get_space)(struct ao *ao);
+    int (*play)(struct ao *ao, void *data, int len, int flags);
+    float (*get_delay)(struct ao *ao);
+    void (*pause)(struct ao *ao);
+    void (*resume)(struct ao *ao);
+};
 
 /* global data used by mplayer and plugins */
 struct ao {
-  int samplerate;
-  int channels;
-  int format;
-  int bps;
-  int outburst;
-  int buffersize;
-  int pts;
+    int samplerate;
+    int channels;
+    int format;
+    int bps;
+    int outburst;
+    int buffersize;
+    int pts;
+    struct bstr buffer;
+    int buffer_playable_size;
     bool initialized;
-    const struct ao_functions *driver;
+    bool untimed;
+    const struct ao_driver *driver;
+    void *priv;
 };
 
 extern char *ao_subdevice;
 
 void list_audio_out(void);
-
-// NULL terminated array of all drivers
-extern const ao_functions_t* const audio_out_drivers[];
 
 #define CONTROL_OK 1
 #define CONTROL_TRUE 1
@@ -85,14 +102,14 @@ extern const ao_functions_t* const audio_out_drivers[];
 
 #define AOPLAY_FINAL_CHUNK 1
 
-typedef struct ao_control_vol_s {
-	float left;
-	float right;
+typedef struct ao_control_vol {
+    float left;
+    float right;
 } ao_control_vol_t;
 
 struct ao *ao_create(void);
 void ao_init(struct ao *ao, char **ao_list);
-void ao_uninit(struct ao *ao, bool drain_audio);
+void ao_uninit(struct ao *ao, bool cut_audio);
 int ao_play(struct ao *ao, void *data, int len, int flags);
 int ao_control(struct ao *ao, int cmd, void *arg);
 double ao_get_delay(struct ao *ao);
@@ -100,5 +117,15 @@ int ao_get_space(struct ao *ao);
 void ao_reset(struct ao *ao);
 void ao_pause(struct ao *ao);
 void ao_resume(struct ao *ao);
+
+int old_ao_control(struct ao *ao, int cmd, void *arg);
+int old_ao_init(struct ao *ao, char *params);
+void old_ao_uninit(struct ao *ao, bool cut_audio);
+void old_ao_reset(struct ao*ao);
+int old_ao_get_space(struct ao *ao);
+int old_ao_play(struct ao *ao, void *data, int len, int flags);
+float old_ao_get_delay(struct ao *ao);
+void old_ao_pause(struct ao *ao);
+void old_ao_resume(struct ao *ao);
 
 #endif /* MPLAYER_AUDIO_OUT_H */
