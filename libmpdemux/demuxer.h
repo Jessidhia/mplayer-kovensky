@@ -25,9 +25,9 @@
 #include <string.h>
 #include <stdbool.h>
 
-#include "stream/stream.h"
 #include "bstr.h"
 #include "mpcommon.h"
+#include "demux_packet.h"
 
 struct MPOpts;
 
@@ -122,21 +122,8 @@ enum timestamp_type {
 #define SEEK_FORWARD  (1 << 2)
 #define SEEK_BACKWARD (1 << 3)
 
-#define MP_INPUT_BUFFER_PADDING_SIZE 64
-
-// Holds one packet/frame/whatever
-typedef struct demux_packet {
-    int len;
-    double pts;
-    double duration;
-    double stream_pts;
-    off_t pos; // position in index (AVI) or file (MPG)
-    unsigned char *buffer;
-    int flags; // keyframe, etc
-    int refcount; // counter for the master packet, if 0, buffer can be free()d
-    struct demux_packet *master; //in clones, pointer to the master packet
-    struct demux_packet *next;
-} demux_packet_t;
+// demux_lavf can pass lavf buffers using FF_INPUT_BUFFER_PADDING_SIZE instead
+#define MP_INPUT_BUFFER_PADDING_SIZE 8
 
 typedef struct demux_stream {
     int buffer_pos;        // current buffer position
@@ -239,6 +226,10 @@ typedef struct demux_attachment
     unsigned int data_size;
 } demux_attachment_t;
 
+struct demuxer_params {
+    unsigned char (*matroska_wanted_uids)[16];
+};
+
 typedef struct demuxer {
     const demuxer_desc_t *desc; ///< Demuxer description structure
     const char *filetype; // format name when not identified by demuxer (libavformat)
@@ -289,6 +280,7 @@ typedef struct demuxer {
     void *priv;   // demuxer-specific internal data
     char **info;  // metadata
     struct MPOpts *opts;
+    struct demuxer_params *params;
 } demuxer_t;
 
 typedef struct {
@@ -297,6 +289,8 @@ typedef struct {
 } demux_program_t;
 
 struct demux_packet *new_demux_packet(size_t len);
+// data must already have suitable padding
+struct demux_packet *new_demux_packet_fromdata(void *data, size_t len);
 void resize_demux_packet(struct demux_packet *dp, size_t len);
 struct demux_packet *clone_demux_packet(struct demux_packet *pack);
 void free_demux_packet(struct demux_packet *dp);
@@ -352,6 +346,7 @@ int ds_get_packet(struct demux_stream *ds, unsigned char **start);
 int ds_get_packet_pts(struct demux_stream *ds, unsigned char **start,
                       double *pts);
 int ds_get_packet_sub(struct demux_stream *ds, unsigned char **start);
+struct demux_packet *ds_get_packet2(struct demux_stream *ds);
 double ds_get_next_pts(struct demux_stream *ds);
 int ds_parse(struct demux_stream *sh, uint8_t **buffer, int *len, double pts,
              off_t pos);
@@ -370,6 +365,11 @@ static inline int avi_stream_id(unsigned int id)
 struct demuxer *demux_open(struct MPOpts *opts, struct stream *stream,
                            int file_format, int aid, int vid, int sid,
                            char *filename);
+
+struct demuxer *demux_open_withparams(struct MPOpts *opts,
+        struct stream *stream, int file_format, int aid, int vid, int sid,
+        char *filename, struct demuxer_params *params);
+
 void demux_flush(struct demuxer *demuxer);
 int demux_seek(struct demuxer *demuxer, float rel_seek_secs, float audio_delay,
                int flags);

@@ -41,13 +41,11 @@
 #endif
 
 // libass-related command line options
-ASS_Library *ass_library;
 float ass_font_scale = 1.;
 float ass_line_spacing = 0.;
 int ass_top_margin = 0;
 int ass_bottom_margin = 0;
 int use_embedded_fonts = 1;
-char **ass_force_style_list = NULL;
 int ass_use_margins = 0;
 char *ass_color = NULL;
 char *ass_border_color = NULL;
@@ -314,21 +312,16 @@ ASS_Library *mp_ass_init(void)
     ass_set_message_cb(priv, message_callback, NULL);
     ass_set_fonts_dir(priv, path);
     ass_set_extract_fonts(priv, use_embedded_fonts);
-    ass_set_style_overrides(priv, ass_force_style_list);
     free(path);
     return priv;
 }
 
-int ass_force_reload = 0;       // flag set if global ass-related settings were changed
-
-ASS_Image *mp_ass_render_frame(ASS_Renderer *priv, ASS_Track *track,
-                               long long now, int *detect_change)
+void mp_ass_reload_options(ASS_Renderer *priv, struct MPOpts *opts)
 {
-    if (ass_force_reload) {
-        ass_set_margins(priv, ass_top_margin, ass_bottom_margin, 0, 0);
-        ass_set_use_margins(priv, ass_use_margins);
-        ass_set_font_scale(priv, ass_font_scale);
-        ass_force_reload = 0;
-    }
-    return ass_render_frame(priv, track, now, detect_change);
+    /* This could be needed for vf_ass case if the margins were actually
+     * runtime configurable, but would be wrong with EOSD:
+     * ass_set_margins(priv, ass_top_margin, ass_bottom_margin, 0, 0);
+     */
+    ass_set_use_margins(priv, ass_use_margins);
+    ass_set_font_scale(priv, ass_font_scale);
 }

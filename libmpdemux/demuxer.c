@@ -21,6 +21,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 #include <unistd.h>
 
 #include <sys/types.h>
@@ -176,7 +177,7 @@ const demuxer_desc_t *const demuxer_list[] = {
     NULL
 };
 
-struct demux_packet *new_demux_packet(size_t len)
+static struct demux_packet *create_packet(size_t len)
 {
     if (len > 1000000000) {
         mp_msg(MSGT_DEMUXER, MSGL_FATAL, "Attempt to allocate demux packet "
@@ -194,12 +195,27 @@ struct demux_packet *new_demux_packet(size_t len)
     dp->refcount = 1;
     dp->master = NULL;
     dp->buffer = NULL;
+    dp->avpacket = NULL;
+    return dp;
+}
+
+struct demux_packet *new_demux_packet(size_t len)
+{
+    struct demux_packet *dp = create_packet(len);
     dp->buffer = malloc(len + MP_INPUT_BUFFER_PADDING_SIZE);
     if (!dp->buffer) {
         mp_msg(MSGT_DEMUXER, MSGL_FATAL, "Memory allocation failure!\n");
         abort();
     }
     memset(dp->buffer + len, 0, 8);
+    return dp;
+}
+
+// data must already have suitable padding
+struct demux_packet *new_demux_packet_fromdata(void *data, size_t len)
+{
+    struct demux_packet *dp = create_packet(len);
+    dp->buffer = data;
     return dp;
 }
 
@@ -237,7 +253,10 @@ void free_demux_packet(struct demux_packet *dp)
     if (dp->master == NULL) {  //dp is a master packet
         dp->refcount--;
         if (dp->refcount == 0) {
-            free(dp->buffer);
+            if (dp->avpacket)
+                talloc_free(dp->avpacket);
+            else
+                free(dp->buffer);
             free(dp);
         }
         return;
@@ -779,7 +798,7 @@ void ds_free_packs(demux_stream_t *ds)
     ds->current = NULL;
     ds->buffer = NULL;
     ds->buffer_pos = ds->buffer_size;
-    ds->pts = 0;
+    ds->pts = MP_NOPTS_VALUE;
     ds->pts_bytes = 0;
 }
 
@@ -826,6 +845,15 @@ int ds_get_packet_sub(demux_stream_t *ds, unsigned char **start)
     *start = &ds->buffer[ds->buffer_pos];
     ds->buffer_pos += len;
     return len;
+}
+
+struct demux_packet *ds_get_packet2(struct demux_stream *ds)
+{
+    // This shouldn't get used together with partial reads
+    assert(ds->buffer_pos >= ds->buffer_size);
+    ds_fill_buffer(ds);
+    ds->buffer_pos = ds->buffer_size;
+    return ds->current;
 }
 
 double ds_get_next_pts(demux_stream_t *ds)
@@ -911,12 +939,14 @@ static struct demuxer *open_given_type(struct MPOpts *opts,
                                        const struct demuxer_desc *desc,
                                        struct stream *stream, bool force,
                                        int audio_id, int video_id, int sub_id,
-                                       char *filename)
+                                       char *filename,
+                                       struct demuxer_params *params)
 {
     struct demuxer *demuxer;
     int fformat;
     demuxer = new_demuxer(opts, stream, desc->type, audio_id,
                           video_id, sub_id, filename);
+    demuxer->params = params;
     if (desc->check_file)
         fformat = desc->check_file(demuxer);
     else
@@ -960,7 +990,7 @@ static struct demuxer *open_given_type(struct MPOpts *opts,
             return NULL;
         }
         return open_given_type(opts, desc, stream, false, audio_id,
-                               video_id, sub_id, filename);
+                               video_id, sub_id, filename, params);
     }
  fail:
     free_demuxer(demuxer);
@@ -971,7 +1001,8 @@ static struct demuxer *demux_open_stream(struct MPOpts *opts,
                                          struct stream *stream,
                                          int file_format, bool force,
                                          int audio_id, int video_id, int sub_id,
-                                         char *filename)
+                                         char *filename,
+                                         struct demuxer_params *params)
 {
     struct demuxer *demuxer = NULL;
     const struct demuxer_desc *desc;
@@ -983,7 +1014,7 @@ static struct demuxer *demux_open_stream(struct MPOpts *opts,
             // should only happen with obsolete -demuxer 99 numeric format
             return NULL;
         demuxer = open_given_type(opts, desc, stream, force, audio_id,
-                                  video_id, sub_id, filename);
+                                  video_id, sub_id, filename, params);
         if (demuxer)
             goto dmx_open;
         return NULL;
@@ -993,7 +1024,7 @@ static struct demuxer *demux_open_stream(struct MPOpts *opts,
     for (int i = 0; (desc = demuxer_list[i]); i++) {
         if (desc->safe_check) {
             demuxer = open_given_type(opts, desc, stream, false, audio_id,
-                                      video_id, sub_id, filename);
+                                      video_id, sub_id, filename, params);
             if (demuxer)
                 goto dmx_open;
         }
@@ -1006,7 +1037,7 @@ static struct demuxer *demux_open_stream(struct MPOpts *opts,
         desc = get_demuxer_desc_from_type(demuxer_type_by_filename(filename));
         if (desc)
             demuxer = open_given_type(opts, desc, stream, false, audio_id,
-                                      video_id, sub_id, filename);
+                                      video_id, sub_id, filename, params);
         if (demuxer)
             goto dmx_open;
     }
@@ -1015,7 +1046,7 @@ static struct demuxer *demux_open_stream(struct MPOpts *opts,
     for (int i = 0; (desc = demuxer_list[i]); i++) {
         if (!desc->safe_check && desc->check_file) {
             demuxer = open_given_type(opts, desc, stream, false, audio_id,
-                                      video_id, sub_id, filename);
+                                      video_id, sub_id, filename, params);
             if (demuxer)
                 goto dmx_open;
         }
@@ -1041,9 +1072,17 @@ static struct demuxer *demux_open_stream(struct MPOpts *opts,
     return demuxer;
 }
 
-demuxer_t *demux_open(struct MPOpts *opts, stream_t *vs, int file_format,
-                      int audio_id, int video_id, int dvdsub_id,
-                      char *filename)
+struct demuxer *demux_open(struct MPOpts *opts, stream_t *vs, int file_format,
+                           int audio_id, int video_id, int sub_id,
+                           char *filename)
+{
+    return demux_open_withparams(opts, vs, file_format, audio_id, video_id,
+                                 sub_id, filename, NULL);
+}
+
+struct demuxer *demux_open_withparams(struct MPOpts *opts, stream_t *vs,
+                int file_format, int audio_id, int video_id, int dvdsub_id,
+                char *filename, struct demuxer_params *params)
 {
     stream_t *as = NULL, *ss = NULL;
     demuxer_t *vd, *ad = NULL, *sd = NULL;
@@ -1108,7 +1147,8 @@ demuxer_t *demux_open(struct MPOpts *opts, stream_t *vs, int file_format,
 
     vd = demux_open_stream(opts, vs, demuxer_type ? demuxer_type : file_format,
                            demuxer_force, opts->audio_stream ? -2 : audio_id,
-                           video_id, opts->sub_stream ? -2 : dvdsub_id, filename);
+                           video_id, opts->sub_stream ? -2 : dvdsub_id,
+                           filename, params);
     if (!vd) {
         if (as)
             free_stream(as);
@@ -1120,7 +1160,7 @@ demuxer_t *demux_open(struct MPOpts *opts, stream_t *vs, int file_format,
         ad = demux_open_stream(opts, as,
                                audio_demuxer_type ? audio_demuxer_type : afmt,
                                audio_demuxer_force, audio_id, -2, -2,
-                               opts->audio_stream);
+                               opts->audio_stream, params);
         if (!ad) {
             mp_tmsg(MSGT_DEMUXER, MSGL_WARN, "Failed to open audio demuxer: %s\n",
                    opts->audio_stream);
@@ -1133,7 +1173,7 @@ demuxer_t *demux_open(struct MPOpts *opts, stream_t *vs, int file_format,
         sd = demux_open_stream(opts, ss,
                                sub_demuxer_type ? sub_demuxer_type : sfmt,
                                sub_demuxer_force, -2, -2, dvdsub_id,
-                               opts->sub_stream);
+                               opts->sub_stream, params);
         if (!sd) {
             mp_tmsg(MSGT_DEMUXER, MSGL_WARN,
                    "Failed to open subtitle demuxer: %s\n", opts->sub_stream);
@@ -1227,7 +1267,7 @@ int demux_seek(demuxer_t *demuxer, float rel_seek_secs, float audio_delay,
 
 int demux_info_add(demuxer_t *demuxer, const char *opt, const char *param)
 {
-    return demux_info_add_bstr(demuxer, BSTR(opt), BSTR(param));
+    return demux_info_add_bstr(demuxer, bstr(opt), bstr(param));
 }
 
 int demux_info_add_bstr(demuxer_t *demuxer, struct bstr opt, struct bstr param)
@@ -1237,8 +1277,8 @@ int demux_info_add_bstr(demuxer_t *demuxer, struct bstr opt, struct bstr param)
 
 
     for (n = 0; info && info[2 * n] != NULL; n++) {
-        if (!bstrcasecmp(opt, BSTR(info[2*n]))) {
-            if (!bstrcmp(param, BSTR(info[2*n + 1]))) {
+        if (!bstrcasecmp(opt, bstr(info[2*n]))) {
+            if (!bstrcmp(param, bstr(info[2*n + 1]))) {
                 mp_msg(MSGT_DEMUX, MSGL_V, "Demuxer info %.*s set to unchanged value %.*s\n",
                        BSTR_P(opt), BSTR_P(param));
                 return 0;

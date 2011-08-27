@@ -62,6 +62,7 @@ typedef struct MPOpts {
     int consolecontrols;
     int doubleclick_time;
     int list_properties;
+    double seek_to_sec;
     int audio_id;
     int video_id;
     int sub_id;
@@ -91,6 +92,8 @@ typedef struct MPOpts {
     char **sub_paths;
     int sub_auto;
     int ass_enabled;
+    int ass_vsfilter_aspect_compat;
+    char **ass_force_style_list;
     struct lavc_param {
         int workaround_bugs;
         int error_resilience;

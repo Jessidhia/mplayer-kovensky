@@ -159,6 +159,7 @@ typedef struct MPContext {
     /* timestamp of video frame currently visible on screen
      * (or at least queued to be flipped by VO) */
     double video_pts;
+    double last_seek_pts;
 
     // used to prevent hanging in some error cases
     unsigned int start_timestamp;
@@ -200,6 +201,7 @@ typedef struct MPContext {
     struct ass_track *set_of_ass_tracks[MAX_SUBTITLE_FILES];
     sub_data* set_of_subtitles[MAX_SUBTITLE_FILES];
     bool track_was_native_ass[MAX_SUBTITLE_FILES];
+    struct ass_library *ass_library;
 
     int file_format;
 

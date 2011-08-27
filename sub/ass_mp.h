@@ -31,13 +31,11 @@
 #include <ass/ass.h>
 #include <ass/ass_types.h>
 
-extern ASS_Library *ass_library;
 extern float ass_font_scale;
 extern float ass_line_spacing;
 extern int ass_top_margin;
 extern int ass_bottom_margin;
 extern int use_embedded_fonts;
-extern char **ass_force_style_list;
 extern int ass_use_margins;
 extern char *ass_color;
 extern char *ass_border_color;
@@ -54,9 +52,7 @@ void mp_ass_configure(ASS_Renderer *priv, int w, int h, bool unscaled);
 void mp_ass_configure_fonts(ASS_Renderer *priv);
 ASS_Library *mp_ass_init(void);
 
-extern int ass_force_reload;
-ASS_Image *mp_ass_render_frame(ASS_Renderer *priv, ASS_Track *track,
-                               long long now, int *detect_change);
+void mp_ass_reload_options(ASS_Renderer *priv, struct MPOpts *opts);
 
 #else /* CONFIG_ASS */
 

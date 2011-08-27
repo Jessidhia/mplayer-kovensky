@@ -108,8 +108,8 @@ int m_property_do(const m_option_t *prop_list, const char *name,
         if (!arg)
             return M_PROPERTY_ERROR;
         val = calloc(1, opt->type->size);
-        if ((r =
-             m_option_parse(opt, opt->name, arg, val, M_CONFIG_FILE)) <= 0) {
+        if ((r = m_option_parse(opt, bstr(opt->name), bstr(arg), false,
+                val)) <= 0) {
             free(val);
             return r;
         }
@@ -145,7 +145,7 @@ char *m_properties_expand_string(const m_option_t *prop_list, char *str,
                     char num[3] = { str[2], str[3], 0 };
                     char *end = num;
                     num_val = strtol(num, &end, 16);
-                    sl = end - num;
+                    sl = end - num + 1;
                     l = 1;
                     p = &num_val;
                 } else

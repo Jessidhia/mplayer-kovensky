@@ -31,6 +31,8 @@
 #include <unistd.h>
 #include <ctype.h>
 #include <limits.h>
+
+#include "talloc.h"
 #include "asxparser.h"
 #include "m_config.h"
 #include "playtree.h"
@@ -355,7 +357,7 @@ parse_pls(play_tree_parser_t* p) {
       entry = play_tree_new();
       play_tree_add_file(entry,entries[num].file);
       if (entries[num].length)
-        play_tree_set_param(entry, "endpos", entries[num].length);
+          play_tree_set_param(entry, bstr("endpos"), bstr(entries[num].length));
       free(entries[num].file);
       if(list)
 	play_tree_append_entry(last_entry,entry);
@@ -803,9 +805,7 @@ parse_playtree(stream_t *stream, struct m_config *mconfig, int forced) {
   play_tree_parser_t* p;
   play_tree_t* ret;
 
-#ifdef MP_DEBUG
   assert(stream != NULL);
-#endif
 
   p = play_tree_parser_new(stream, mconfig, 0);
   if(!p)
@@ -853,13 +853,13 @@ play_tree_add_basepath(play_tree_t* pt, char* bp) {
 }
 
 // Wrapper for play_tree_add_basepath (add base path from file)
-void play_tree_add_bpf(play_tree_t* pt, char* filename)
+void play_tree_add_bpf(play_tree_t *pt, struct bstr filename)
 {
   char *ls, *file;
 
-  if (pt && filename)
+  if (pt)
   {
-    file = strdup(filename);
+    file = bstrdup0(NULL, filename);
     if (file)
     {
       ls = strrchr(file,'/');
@@ -868,25 +868,30 @@ void play_tree_add_bpf(play_tree_t* pt, char* filename)
         ls[1] = '\0';
         play_tree_add_basepath(pt,file);
       }
-      free(file);
+      talloc_free(file);
     }
   }
 }
 
 play_tree_t*
-parse_playlist_file(struct m_config *mconfig, char* file) {
+parse_playlist_file(struct m_config *mconfig, struct bstr file) {
   stream_t *stream;
   play_tree_t* ret;
   int f=DEMUXER_TYPE_PLAYLIST;
 
-  stream = open_stream(file,0,&f);
+  char *file0 = bstrdup0(NULL, file);
+  stream = open_stream(file0, 0, &f);
+  talloc_free(file0);
 
   if(!stream) {
-    mp_msg(MSGT_PLAYTREE,MSGL_ERR,"Error while opening playlist file %s: %s\n",file,strerror(errno));
+      mp_msg(MSGT_PLAYTREE,MSGL_ERR,
+             "Error while opening playlist file %.*s: %s\n",
+             BSTR_P(file), strerror(errno));
     return NULL;
   }
 
-  mp_msg(MSGT_PLAYTREE,MSGL_V,"Parsing playlist file %s...\n",file);
+  mp_msg(MSGT_PLAYTREE, MSGL_V,
+         "Parsing playlist file %.*s...\n", BSTR_P(file));
 
   ret = parse_playtree(stream, mconfig, 1);
   free_stream(stream);
@@ -917,9 +922,7 @@ play_tree_parser_new(stream_t* stream, struct m_config *mconfig, int deep) {
 void
 play_tree_parser_free(play_tree_parser_t* p) {
 
-#ifdef MP_DEBUG
   assert(p != NULL);
-#endif
 
   free(p->buffer);
   free(p->line);
@@ -930,10 +933,7 @@ play_tree_t*
 play_tree_parser_get_play_tree(play_tree_parser_t* p, int forced) {
   play_tree_t* tree = NULL;
 
-#ifdef MP_DEBUG
   assert(p != NULL);
-#endif
-
 
   while(play_tree_parser_get_line(p) != NULL) {
     play_tree_parser_reset(p);

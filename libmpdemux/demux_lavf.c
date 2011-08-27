@@ -294,8 +294,13 @@ static void handle_stream(demuxer_t *demuxer, AVFormatContext *avfc, int i)
     int stream_id;
     AVMetadataTag *lang = av_metadata_get(st->metadata, "language", NULL, 0);
     AVMetadataTag *title = av_metadata_get(st->metadata, "title", NULL, 0);
-    int g, override_tag = mp_av_codec_get_tag(mp_codecid_override_taglists,
-                                              codec->codec_id);
+    // Don't use native MPEG codec tag values with our generic tag tables.
+    // May contain for example value 3 for MP3, which we'd map to PCM audio.
+    if (matches_avinputformat_name(priv, "mpeg") ||
+            matches_avinputformat_name(priv, "mpegts"))
+        codec->codec_tag = 0;
+    int override_tag = mp_av_codec_get_tag(mp_codecid_override_taglists,
+                                           codec->codec_id);
     // For some formats (like PCM) always trust CODEC_ID_* more than codec_tag
     if (override_tag)
         codec->codec_tag = override_tag;
@@ -334,7 +339,7 @@ static void handle_stream(demuxer_t *demuxer, AVFormatContext *avfc, int i)
             sh_audio->audio.dwScale = codec->block_align ? codec->block_align * 8 : 8;
             sh_audio->audio.dwRate = codec->bit_rate;
         }
-        g = av_gcd(sh_audio->audio.dwScale, sh_audio->audio.dwRate);
+        int g = av_gcd(sh_audio->audio.dwScale, sh_audio->audio.dwRate);
         sh_audio->audio.dwScale /= g;
         sh_audio->audio.dwRate  /= g;
 //          printf("sca:%d rat:%d fs:%d sr:%d ba:%d\n", sh_audio->audio.dwScale, sh_audio->audio.dwRate, codec->frame_size, codec->sample_rate, codec->block_align);
@@ -503,8 +508,8 @@ static void handle_stream(demuxer_t *demuxer, AVFormatContext *avfc, int i)
                                               NULL, 0);
         char *filename = ftag ? ftag->value : NULL;
         if (st->codec->codec_id == CODEC_ID_TTF)
-            demuxer_add_attachment(demuxer, BSTR(filename),
-                                   BSTR("application/x-truetype-font"),
+            demuxer_add_attachment(demuxer, bstr(filename),
+                                   bstr("application/x-truetype-font"),
                                    (struct bstr){codec->extradata,
                                                  codec->extradata_size});
         break;
@@ -630,7 +635,7 @@ static demuxer_t *demux_open_lavf(demuxer_t *demuxer)
         uint64_t end   = av_rescale_q(c->end, c->time_base,
                                       (AVRational){1, 1000000000});
         t = av_metadata_get(c->metadata, "title", NULL, 0);
-        demuxer_add_chapter(demuxer, t ? BSTR(t->value) : BSTR(NULL),
+        demuxer_add_chapter(demuxer, t ? bstr(t->value) : bstr(NULL),
                             start, end);
     }
 
@@ -738,10 +743,15 @@ static void check_internet_radio_hack(struct demuxer *demuxer)
     }
 }
 
+static int destroy_avpacket(void *pkt)
+{
+    av_free_packet(pkt);
+    return 0;
+}
+
 static int demux_lavf_fill_buffer(demuxer_t *demux, demux_stream_t *dsds)
 {
     lavf_priv_t *priv = demux->priv;
-    AVPacket pkt;
     demux_packet_t *dp;
     demux_stream_t *ds;
     int id;
@@ -749,8 +759,12 @@ static int demux_lavf_fill_buffer(demuxer_t *demux, demux_stream_t *dsds)
 
     demux->filepos = stream_tell(demux->stream);
 
-    if (av_read_frame(priv->avfc, &pkt) < 0)
+    AVPacket *pkt = talloc(NULL, AVPacket);
+    if (av_read_frame(priv->avfc, pkt) < 0) {
+        talloc_free(pkt);
         return 0;
+    }
+    talloc_set_destructor(pkt, destroy_avpacket);
 
     // handle any new streams that might have been added
     for (id = priv->nb_streams_last; id < priv->avfc->nb_streams; id++)
@@ -759,7 +773,7 @@ static int demux_lavf_fill_buffer(demuxer_t *demux, demux_stream_t *dsds)
 
     priv->nb_streams_last = priv->avfc->nb_streams;
 
-    id = pkt.stream_index;
+    id = pkt->stream_index;
 
     if (id == demux->audio->id || priv->internet_radio_hack) {
         // audio
@@ -782,39 +796,32 @@ static int demux_lavf_fill_buffer(demuxer_t *demux, demux_stream_t *dsds)
         ds = demux->sub;
         sub_utf8 = 1;
     } else {
-        av_free_packet(&pkt);
+        talloc_free(pkt);
         return 1;
     }
 
-    if (0 /*pkt.destruct == av_destruct_packet*/) {
-        //ok kids, dont try this at home :)
-        dp = malloc(sizeof(demux_packet_t));
-        dp->len = pkt.size;
-        dp->next = NULL;
-        dp->refcount = 1;
-        dp->master = NULL;
-        dp->buffer = pkt.data;
-        pkt.destruct = NULL;
-    } else {
-        dp = new_demux_packet(pkt.size);
-        memcpy(dp->buffer, pkt.data, pkt.size);
-        av_free_packet(&pkt);
-    }
+    // If the packet has pointers to temporary fields that could be
+    // overwritten/freed by next av_read_frame(), copy them to persistent
+    // allocations so we can safely queue the packet for any length of time.
+    if (av_dup_packet(pkt) < 0)
+        abort();
+    dp = new_demux_packet_fromdata(pkt->data, pkt->size);
+    dp->avpacket = pkt;
 
-    int64_t ts = priv->use_dts ? pkt.dts : pkt.pts;
+    int64_t ts = priv->use_dts ? pkt->dts : pkt->pts;
     if (ts != AV_NOPTS_VALUE) {
         dp->pts = ts * av_q2d(priv->avfc->streams[id]->time_base);
         priv->last_pts = dp->pts * AV_TIME_BASE;
         // always set duration for subtitles, even if AV_PKT_FLAG_KEY isn't set,
         // otherwise they will stay on screen to long if e.g. ASS is demuxed
         // from mkv
-        if ((ds == demux->sub || (pkt.flags & AV_PKT_FLAG_KEY)) &&
-            pkt.convergence_duration > 0)
-            dp->duration = pkt.convergence_duration *
+        if ((ds == demux->sub || (pkt->flags & AV_PKT_FLAG_KEY)) &&
+            pkt->convergence_duration > 0)
+            dp->duration = pkt->convergence_duration *
                 av_q2d(priv->avfc->streams[id]->time_base);
     }
     dp->pos = demux->filepos;
-    dp->flags = !!(pkt.flags & AV_PKT_FLAG_KEY);
+    dp->flags = !!(pkt->flags & AV_PKT_FLAG_KEY);
     // append packet to DS stream:
     ds_add_packet(ds, dp);
     return 1;

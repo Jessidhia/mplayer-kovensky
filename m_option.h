@@ -21,8 +21,10 @@
 
 #include <string.h>
 #include <stddef.h>
+#include <stdbool.h>
 
 #include "config.h"
+#include "bstr.h"
 
 // m_option allows to parse, print and copy data of various types.
 
@@ -209,13 +211,15 @@ struct m_option_type {
      *  \param opt The option that is parsed.
      *  \param name The full option name.
      *  \param param The parameter to parse.
+     *  \param ambiguous_param: "param" old cmdline style, "param" may or
+     *         may not be an argument meant for this option
      *  \param dst Pointer to the memory where the data should be written.
      *             If NULL the parameter validity should still be checked.
-     *  \param src Source of the option, see \ref OptionParserModes.
-     *  \return On error a negative value is returned, on success the number of arguments
-     *          consumed. For details see \ref OptionParserReturn.
+     *  \return On error a negative value is returned, on success the number
+     *          of arguments consumed. For details see \ref OptionParserReturn.
      */
-    int (*parse)(const m_option_t *opt, const char *name, const char *param, void *dst, int src);
+    int (*parse)(const m_option_t *opt, struct bstr name, struct bstr param,
+                 bool ambiguous_param, void *dst);
 
     // Print back a value in string form.
     /** \param opt The option to print.
@@ -383,17 +387,6 @@ struct m_option {
 
 ///////////////////////////// Parser flags /////////////////////////////////
 
-// Some parsers behave differently depending on the mode passed in the src
-// parameter of m_option_type::parse. For example the flag type doesn't take
-// an argument when parsing from the command line.
-
-// Set when parsing from a config file.
-#define M_CONFIG_FILE 0
-// Set when parsing command line arguments.
-#define M_COMMAND_LINE 1
-// Set when pre-parsing the command line
-#define M_COMMAND_LINE_PRE_PARSE 2
-
 // On success parsers return the number of arguments consumed: 0 or 1.
 //
 // To indicate that MPlayer should exit without playing anything,
@@ -430,6 +423,8 @@ struct m_option {
 #define ERR_OUT_OF_RANGE        M_OPT_OUT_OF_RANGE
 #define ERR_FUNC_ERR            M_OPT_PARSER_ERR
 
+char *m_option_strerror(int code);
+
 // Find the option matching the given name in the list.
 /** \ingroup Options
  *  This function takes the possible wildcards into account (see
@@ -448,10 +443,11 @@ static inline void *m_option_get_ptr(const struct m_option *opt,
 }
 
 // Helper to parse options, see \ref m_option_type::parse.
-static inline int m_option_parse(const m_option_t *opt, const char *name,
-                                 const char *param, void *dst, int src)
+static inline int m_option_parse(const m_option_t *opt, struct bstr name,
+                                 struct bstr param, bool ambiguous_param,
+                                 void *dst)
 {
-    return opt->type->parse(opt, name, param, dst, src);
+    return opt->type->parse(opt, name, param, ambiguous_param, dst);
 }
 
 // Helper to print options, see \ref m_option_type::print.
@@ -482,17 +478,6 @@ static inline void m_option_free(const m_option_t *opt, void *dst)
 
 /*@}*/
 
-/**
- * Parse a string as a timestamp.
- *
- * @param[in]  str      the string to parse.
- * @param[out] time     parsed time.
- * @param[in]  endchar  return an error of the next character after the
- *                      timestamp is neither nul nor endchar.
- * @return              Number of chars in the timestamp.
- */
-int parse_timestring(const char *str, double *time, char endchar);
-
 #define OPTION_LIST_SEPARATOR ','
 
 #if HAVE_DOS_PATHS
@@ -516,5 +501,6 @@ int parse_timestring(const char *str, double *time, char endchar);
 #define OPT_AUDIOFORMAT(optname, varname, flags) {optname, NULL, &m_option_type_afmt, flags, 0, 0, NULL, 1, offsetof(struct MPOpts, varname)}
 #define OPT_HELPER_REMOVEPAREN(...) __VA_ARGS__
 #define OPT_CHOICE(optname, varname, flags, choices) {optname, NULL, &m_option_type_choice, flags, 0, 0, (void *)&(const struct m_opt_choice_alternatives[]){OPT_HELPER_REMOVEPAREN choices, {NULL}}, 1, offsetof(struct MPOpts, varname)}
+#define OPT_TIME(optname, varname, flags) {optname, NULL, &m_option_type_time, flags, 0, 0, NULL, 1, offsetof(struct MPOpts, varname)}
 
 #endif /* MPLAYER_M_OPTION_H */

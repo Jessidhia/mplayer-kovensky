@@ -23,6 +23,7 @@
 
 #include "config.h"
 #include "mp_msg.h"
+#include "options.h"
 
 #include "mp_image.h"
 #include "vf.h"
@@ -155,7 +156,7 @@ static int control(struct vf_instance *vf, int request, void* data)
         double pts = video_out->next_pts;
         ASS_Renderer *renderer;
         double scale;
-        if (osd->vsfilter_aspect) {
+        if (osd->vsfilter_aspect && vf->opts->ass_vsfilter_aspect_compat) {
             renderer = vf->priv->renderer_vsfilter;
             scale = vf->priv->scale_ratio;
         } else {
@@ -175,12 +176,16 @@ static int control(struct vf_instance *vf, int request, void* data)
                 ass_set_aspect_ratio(renderer, scale, 1);
             }
 
-            images.imgs = mp_ass_render_frame(renderer,
-                                              osd->ass_track,
-                                              (pts+sub_delay) * 1000 + .5,
-                                              &images.changed);
-            if (!vf->priv->prev_visibility)
+            if (osd->ass_force_reload) {
+                mp_ass_reload_options(vf->priv->renderer_realaspect, vf->opts);
+                mp_ass_reload_options(vf->priv->renderer_vsfilter, vf->opts);
+            }
+            images.imgs = ass_render_frame(renderer, osd->ass_track,
+                                           (pts+sub_delay) * 1000 + .5,
+                                           &images.changed);
+            if (!vf->priv->prev_visibility || osd->ass_force_reload)
                 images.changed = 2;
+            osd->ass_force_reload = false;
             vf->priv->prev_visibility = true;
         } else
             vf->priv->prev_visibility = false;
