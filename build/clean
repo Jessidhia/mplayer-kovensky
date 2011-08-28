@@ -6,7 +6,7 @@ from script.helpers import GitWrapper
 
 def main():
     git = GitWrapper()
-    check_call('rm -rf build_libs ffmpeg_build build-stamp configure-stamp'.split())
+    check_call('rm -rf build_libs libav_build build-stamp configure-stamp'.split())
     os.chdir('..')
     check_call('git clean -x -d -f build/debian/'.split())
     def cmd():

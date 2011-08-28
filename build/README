@@ -2,9 +2,6 @@ This repository contains scripts to help build MPlayer together with
 some dependencies that many platforms will not have a new enough
 version of.
 
-If you have a multicore machine read about FFmpeg-mt below.
-
-
 
 Initializing the repo
 
@@ -30,35 +27,19 @@ library sources being configured _and_ built first. If you want to
 give configuration options see the section below.
 
 
+Enabling Multithreading
 
-Enabling FFmpeg-mt
-
-FFmpeg-mt is version of FFmpeg with improved threading support, useful
-for things like high-bitrate H264. It allows significantly faster
-decoding on multicore machines but is sometimes less stable (it's
-quite usable in most cases though). You can enable compilation with
-FFmpeg-mt decoders using "./enable-mt" and disable it with
-"./disable-mt". To actually use the threading support in your
-mt-enabled MPlayer you need to it a "-lavdopts threads=N" option,
-where N is the number of threads you want to use (a value equal to
-your number of cores is normally good). So if you have a quadcore
-machine you can do for example:
-./enable-mt
-./init --shallow
-make -j 6
-mplayer/mplayer -lavdopts threads=4 some_high_bitrate_h264_stuff.mkv
-(or alternatively install first instead of running mplayer from the
-build location on the last line)
+FFmpeg-mt has been merged upstream into libav so there is no need for
+compiling the multithreaded branch anymore.
 
 
-
-Giving configure options to MPlayer and FFmpeg
+Giving configure options to MPlayer and libav
 
 You can specify extra options that will be passed to MPlayer's
 configure script by placing them in a file called "mplayer_options" in
-this directory. There's a corresponding file called "ffmpeg_options"
-for FFmpeg. Options in file "common_options" will be passed to both
-MPlayer and FFmpeg; this mainly makes sense for generic options like
+this directory. There's a corresponding file called "libav_options"
+for libav. Options in file "common_options" will be passed to both
+MPlayer and libav; this mainly makes sense for generic options like
 "-cc=gcc-4.4'. Place each option on its own line without any quoting.
 
 
@@ -78,12 +59,3 @@ Download the latest version of the sources.
 Remove all generated or extra files from build directories and
 restore them to their original state. Running this between builds is
 probably a good idea.
-
-./enable-mt
-./disable-mt
-Enabled or disable building with FFmpeg-mt support. Can be run before
-first ./init or later to switch support on and off. The file
-'ffmpeg-mt-enabled' is created or deleted to indicate whether -mt
-support is currently active. Note that if you build MPlayer and then
-switch -mt support on or off, a rebuild is likely to fail unless you
-remember to run ./clean before the new build.

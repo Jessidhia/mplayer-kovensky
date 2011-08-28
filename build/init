@@ -20,13 +20,13 @@ mplayer_options = \
 
 """ + option_helptext
 
-ffmpeg_options = \
-"""# You can place options for FFmpeg configure in this file.
+libav_options = \
+"""# You can place options for libav configure in this file.
 
 """ + option_helptext
 
 common_options = \
-"""# You can place options common for both MPlayer and FFmpeg configure in
+"""# You can place options common for both MPlayer and libav configure in
 # this file. This mainly makes sense for generic things like --cc.
 
 """ + option_helptext
@@ -54,7 +54,7 @@ def main():
         sys.exit(1)
 
     create_helpfile('mplayer_options', mplayer_options)
-    create_helpfile('ffmpeg_options', ffmpeg_options)
+    create_helpfile('libav_options', libav_options)
     create_helpfile('common_options', common_options)
     create_helpfile('libass_options', common_options)
 
@@ -63,21 +63,6 @@ def main():
     git.shallow = opts.shallow
 
     check_call('git submodule init'.split())
-    if path.exists('build/ffmpeg-mt-enabled'):
-        git.submodule_clone('build/ffmpeg-mt')
-    else:
-        git.submodule_clone('build/ffmpeg')
+    git.submodule_clone('build/libav')
     git.submodule_clone('build/libass')
-
-    # Ensure sync, needed in addition what's done in submodule_clone() above
-    # at least if both ffmpeg and ffmpeg-mt dirs exist separately
-    def cmd():
-        check_call('git submodule sync'.split())
-    git.foreach_module(cmd)
-    # Init recursive submodules (libswscale under ffmpeg) - not trying to
-    # make this support shallow clones for now.
-    def cmd():
-        check_call('git submodule update --init'.split())
-    git.foreach_submodule(cmd)
-
 main()

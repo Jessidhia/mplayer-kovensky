@@ -7,12 +7,12 @@ from subprocess import check_call
 
 def main():
     try:
-        os.mkdir('ffmpeg_build')
+        os.mkdir('libav_build')
     except:
         pass
     mydir = os.getcwd().replace("\\", "/")
     extra_args = parse_configfile('common_options')
-    extra_args += parse_configfile('ffmpeg_options')
+    extra_args += parse_configfile('libav_options')
 
     args = ['--prefix=%s/build_libs' % mydir,
             '--enable-gpl',
@@ -21,17 +21,13 @@ def main():
             '--enable-pthreads',
             '--disable-shared', '--enable-static',
             '--enable-postproc',
-            '--disable-devices', '--disable-ffmpeg',
-            '--disable-ffplay', '--disable-ffserver',
+            '--disable-devices', '--disable-avconv',
+            '--disable-avplay', '--disable-avserver',
+            '--disable-avprobe', '--disable-ffmpeg',
             '--disable-vaapi']
+    executable = path.join(mydir, 'libav', 'configure')
 
-    if os.path.exists('ffmpeg-mt-enabled'):
-        ffmpeg_dir = 'ffmpeg-mt'
-    else:
-        ffmpeg_dir = 'ffmpeg'
-    executable = path.join(mydir, ffmpeg_dir, 'configure')
-
-    os.chdir('ffmpeg_build')
+    os.chdir('libav_build')
     check_call(['sh', executable] + args + extra_args)
 
 main()
