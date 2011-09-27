@@ -606,7 +606,7 @@ const m_option_t common_opts[] = {
     // postprocessing:
 #ifdef CONFIG_FFMPEG
     {"pp", &divx_quality, CONF_TYPE_INT, 0, 0, 0, NULL},
-    {"pphelp", &pp_help, CONF_TYPE_PRINT_INDIRECT, CONF_NOCFG, 0, 0, NULL},
+    {"pphelp", &pp_help, CONF_TYPE_PRINT, CONF_NOCFG, 0, 0, NULL},
 #endif
 
     // scaling:
@@ -692,23 +692,21 @@ const m_option_t common_opts[] = {
     {"subfont-outline", &subtitle_font_thickness, CONF_TYPE_FLOAT, CONF_RANGE, 0, 8, NULL},
     {"subfont-autoscale", &subtitle_autoscale, CONF_TYPE_INT, CONF_RANGE, 0, 3, NULL},
 #endif
-#ifdef CONFIG_ASS
+    OPT_START_CONDITIONAL(CONFIG_ASS, "libass"),
     OPT_MAKE_FLAGS("ass", ass_enabled, 0),
-    {"ass-font-scale", &ass_font_scale, CONF_TYPE_FLOAT, CONF_RANGE, 0, 100, NULL},
-    {"ass-line-spacing", &ass_line_spacing, CONF_TYPE_FLOAT, CONF_RANGE, -1000, 1000, NULL},
-    {"ass-top-margin", &ass_top_margin, CONF_TYPE_INT, CONF_RANGE, 0, 2000, NULL},
-    {"ass-bottom-margin", &ass_bottom_margin, CONF_TYPE_INT, CONF_RANGE, 0, 2000, NULL},
-    {"ass-use-margins", &ass_use_margins, CONF_TYPE_FLAG, 0, 0, 1, NULL},
-    {"noass-use-margins", &ass_use_margins, CONF_TYPE_FLAG, 0, 1, 0, NULL},
+    OPT_FLOATRANGE("ass-font-scale", ass_font_scale, 0, 0, 100),
+    OPT_FLOATRANGE("ass-line-spacing", ass_line_spacing, 0, -1000, 1000),
+    OPT_INTRANGE("ass-top-margin", ass_top_margin, 0, 0, 2000),
+    OPT_INTRANGE("ass-bottom-margin", ass_bottom_margin, 0, 0, 2000),
+    OPT_MAKE_FLAGS("ass-use-margins", ass_use_margins, 0),
     OPT_MAKE_FLAGS("ass-vsfilter-aspect-compat", ass_vsfilter_aspect_compat, 0),
-    {"embeddedfonts", &use_embedded_fonts, CONF_TYPE_FLAG, 0, 0, 1, NULL},
-    {"noembeddedfonts", &use_embedded_fonts, CONF_TYPE_FLAG, 0, 1, 0, NULL},
+    OPT_MAKE_FLAGS("embeddedfonts", use_embedded_fonts, 0),
     OPT_STRINGLIST("ass-force-style", ass_force_style_list, 0),
-    {"ass-color", &ass_color, CONF_TYPE_STRING, 0, 0, 0, NULL},
-    {"ass-border-color", &ass_border_color, CONF_TYPE_STRING, 0, 0, 0, NULL},
-    {"ass-styles", &ass_styles_file, CONF_TYPE_STRING, 0, 0, 0, NULL},
-    {"ass-hinting", &ass_hinting, CONF_TYPE_INT, CONF_RANGE, 0, 7, NULL},
-#endif
+    OPT_STRING("ass-color", ass_color, 0),
+    OPT_STRING("ass-border-color", ass_border_color, 0),
+    OPT_STRING("ass-styles", ass_styles_file, 0),
+    OPT_INTRANGE("ass-hinting", ass_hinting, 0, 0, 7),
+    OPT_START_CONDITIONAL(1, ""),
 #ifdef CONFIG_FONTCONFIG
     {"fontconfig", &font_fontconfig, CONF_TYPE_FLAG, 0, -1, 1, NULL},
     {"nofontconfig", &font_fontconfig, CONF_TYPE_FLAG, 0, 1, -1, NULL},
