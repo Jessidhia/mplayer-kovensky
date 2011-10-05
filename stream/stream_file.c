@@ -23,6 +23,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <io.h>
 
 #include "mp_msg.h"
 #include "stream.h"

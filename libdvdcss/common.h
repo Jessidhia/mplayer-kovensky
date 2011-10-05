@@ -76,7 +76,7 @@ typedef __int64 off_t;
 #       define stat _stati64
 #   endif
 
-#   ifndef snprintf
+#   if !defined( snprintf ) && !defined( SYS_CYGWIN )
 #       define snprintf _snprintf  /* snprintf not defined in mingw32 (bug?) */
 #   endif
 
