@@ -2991,7 +2991,7 @@ cat > $TMPC << EOF
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
-int main(void) { gethostbyname2("", AF_INET); return 0; }
+int main(void) { struct hostent hp = *gethostbyname2("", AF_INET); return 0; }
 EOF
   _gethostbyname2=no
   if cc_check ; then
