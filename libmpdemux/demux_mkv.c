@@ -417,7 +417,7 @@ static int demux_mkv_read_info(demuxer_t *demuxer)
             if (!memcmp(info.segment_uid.start, uids[i], 16))
                 goto out;
         }
-        mp_tmsg(MSGT_DEMUX, MSGL_INFO,
+        mp_tmsg(MSGT_DEMUX, MSGL_V,
                 "[mkv] This is not one of the wanted files. "
                 "Stopping attempt to open.\n");
         res = -2;
