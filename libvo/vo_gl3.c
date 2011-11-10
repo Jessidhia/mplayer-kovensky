@@ -149,8 +149,6 @@ struct gl_priv {
     int mpi_flipped;
     int vo_flipped;
     int ass_border_x, ass_border_y;
-
-    unsigned int slice_height;
 };
 
 static void resize(struct vo *vo, int x, int y)
@@ -875,7 +873,7 @@ static int draw_slice(struct vo *vo, uint8_t *src[], int stride[], int w, int h,
         gl->BindTexture(p->target, p->planes[n].gl_texture);
         int xs = p->planes[n].shift_x, ys = p->planes[n].shift_y;
         glUploadTex(gl, p->target, p->gl_format, p->gl_type, src[n], stride[n],
-                    x >> xs, y >> ys, w >> xs, h >> ys, p->slice_height);
+                    x >> xs, y >> ys, w >> xs, h >> ys, 0);
     }
     gl->ActiveTexture(GL_TEXTURE0);
 
@@ -949,7 +947,6 @@ static uint32_t draw_image(struct vo *vo, mp_image_t *mpi)
     GL *gl = p->gl;
     int n;
 
-    int slice = p->slice_height;
     mp_image_t mpi2 = *mpi;
     int w = mpi->w, h = mpi->h;
     if (mpi->flags & MP_IMGFLAG_DRAW_CALLBACK)
@@ -976,12 +973,9 @@ static uint32_t draw_image(struct vo *vo, mp_image_t *mpi)
         mpi = &mpi2;
     }
     p->mpi_flipped = mpi->stride[0] < 0;
-    if (mpi->flags & MP_IMGFLAG_DIRECT) {
-        if (p->ati_hack) {
-            w = p->texture_width;
-            h = p->texture_height;
-        }
-        slice = 0; // always "upload" full texture
+    if ((mpi->flags & MP_IMGFLAG_DIRECT) && p->ati_hack) {
+        w = p->texture_width;
+        h = p->texture_height;
     }
     for (n = 0; n < p->plane_count; n++) {
         struct texplane *plane = &p->planes[n];
@@ -997,7 +991,7 @@ static uint32_t draw_image(struct vo *vo, mp_image_t *mpi)
         gl->BindTexture(p->target, plane->gl_texture);
         glUploadTex(gl, p->target, p->gl_format, p->gl_type, plane_ptr,
                     mpi->stride[n], mpi->x >> xs, mpi->y >> ys, w >> xs,
-                    h >> ys, slice);
+                    h >> ys, 0);
     }
     gl->ActiveTexture(GL_TEXTURE0);
     gl->BindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
@@ -1079,7 +1073,6 @@ static int preinit_internal(struct vo *vo, const char *arg, int allow_sw,
     const opt_t subopts[] = {
         {"manyfmts",     OPT_ARG_BOOL, &p->many_fmts,    NULL},
         {"ycbcr",        OPT_ARG_BOOL, &p->use_ycbcr,    NULL},
-        {"slice-height", OPT_ARG_INT,  &p->slice_height, int_non_neg},
         {"rectangle",    OPT_ARG_INT,  &p->use_rectangle,int_non_neg},
         {"yuv",          OPT_ARG_INT,  &p->use_yuv,      int_non_neg},
         {"lscale",       OPT_ARG_INT,  &p->lscale,       int_non_neg},
@@ -1107,12 +1100,10 @@ static int preinit_internal(struct vo *vo, const char *arg, int allow_sw,
     if (subopt_parse(arg, subopts) != 0) {
         mp_msg(MSGT_VO, MSGL_FATAL,
                "\n-vo gl command line help:\n"
-               "Example: mplayer -vo gl:slice-height=4\n"
+               "Example: mplayer -vo gl:yuv=2\n"
                "\nOptions:\n"
                "  nomanyfmts\n"
                "    Disable extended color formats for OpenGL 1.2 and later\n"
-               "  slice-height=<0-...>\n"
-               "    Slice size for texture transfer, 0 for whole image\n"
                "  rectangle=<0,1,2>\n"
                "    0: use power-of-two textures\n"
                "    1: use texture_rectangle\n"
@@ -1216,8 +1207,6 @@ static int preinit_internal(struct vo *vo, const char *arg, int allow_sw,
     if (p->many_fmts)
         mp_msg(MSGT_VO, MSGL_INFO, "[gl] using extended formats. "
                "Use -vo gl:nomanyfmts if playback fails.\n");
-    mp_msg(MSGT_VO, MSGL_V, "[gl] Using %d as slice height "
-           "(0 means image height).\n", p->slice_height);
 
     return 0;
 
