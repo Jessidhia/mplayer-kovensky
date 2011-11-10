@@ -81,8 +81,6 @@ struct gl_priv {
     MPGLContext *glctx;
     GL *gl;
 
-    int use_osd;
-    int scaled_osd;
     //! Textures for OSD
     GLuint osdtex[MAX_OSD_PARTS];
 #ifndef FAST_OSD
@@ -190,13 +188,12 @@ static void resize(struct vo *vo, int x, int y)
     gl->MatrixMode(GL_MODELVIEW);
     gl->LoadIdentity();
 
-    if (!p->scaled_osd) {
 #ifdef CONFIG_FREETYPE
-        // adjust font size to display size
-        force_load_font = 1;
+    // adjust font size to display size
+    force_load_font = 1;
 #endif
-        vo_osd_changed(OSDTYPE_OSD);
-    }
+    vo_osd_changed(OSDTYPE_OSD);
+
     gl->Clear(GL_COLOR_BUFFER_BIT);
     vo->want_redraw = true;
 }
@@ -482,8 +479,6 @@ static void autodetectGlExtensions(struct vo *vo)
                     && strstr(renderer, "Mesa DRI R200") ? 1 : 0;
         }
     }
-    if (p->use_osd == -1)
-        p->use_osd = gl->BindTexture != NULL;
     if (p->use_yuv == -1)
         p->use_yuv = glAutodetectYUVConversion(gl);
 
@@ -690,7 +685,7 @@ static void create_osd_texture(void *ctx, int x0, int y0, int w, int h,
 
     // initialize to 8 to avoid special-casing on alignment
     int sx = 8, sy = 8;
-    GLint scale_type = p->scaled_osd ? GL_LINEAR : GL_NEAREST;
+    GLint scale_type = GL_NEAREST;
 
     if (w <= 0 || h <= 0 || stride < w) {
         mp_msg(MSGT_VO, MSGL_V, "Invalid dimensions OSD for part!\n");
@@ -765,13 +760,12 @@ static void do_render_osd(struct vo *vo, int type)
     int draw_eosd = (type & RENDER_EOSD);
     if (!draw_osd && !draw_eosd)
         return;
-    // set special rendering parameters
-    if (!p->scaled_osd) {
-        gl->MatrixMode(GL_PROJECTION);
-        gl->PushMatrix();
-        gl->LoadIdentity();
-        gl->Ortho(0, vo->dwidth, vo->dheight, 0, -1, 1);
-    }
+
+    gl->MatrixMode(GL_PROJECTION);
+    gl->PushMatrix();
+    gl->LoadIdentity();
+    gl->Ortho(0, vo->dwidth, vo->dheight, 0, -1, 1);
+
     gl->Enable(GL_BLEND);
     if (draw_eosd) {
         gl->BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -790,8 +784,7 @@ static void do_render_osd(struct vo *vo, int type)
     }
     // set rendering parameters back to defaults
     gl->Disable(GL_BLEND);
-    if (!p->scaled_osd)
-        gl->PopMatrix();
+    gl->PopMatrix();
     gl->BindTexture(p->target, 0);
 }
 
@@ -799,14 +792,9 @@ static void draw_osd(struct vo *vo, struct osd_state *osd)
 {
     struct gl_priv *p = vo->priv;
 
-    if (!p->use_osd)
-        return;
     if (vo_osd_changed(0)) {
-        int osd_h, osd_w;
         clearOSD(vo);
-        osd_w = p->scaled_osd ? p->image_width : vo->dwidth;
-        osd_h = p->scaled_osd ? p->image_height : vo->dheight;
-        osd_draw_text_ext(osd, osd_w, osd_h, p->ass_border_x,
+        osd_draw_text_ext(osd, vo->dwidth, vo->dheight, p->ass_border_x,
                           p->ass_border_y, p->ass_border_x,
                           p->ass_border_y, p->image_width,
                           p->image_height, create_osd_texture, vo);
@@ -1025,9 +1013,8 @@ static int query_format(struct vo *vo, uint32_t format)
 
     int depth;
     int caps = VFCAP_CSP_SUPPORTED | VFCAP_CSP_SUPPORTED_BY_HW | VFCAP_FLIP |
-               VFCAP_HWSCALE_UP | VFCAP_HWSCALE_DOWN | VFCAP_ACCEPT_STRIDE;
-    if (p->use_osd)
-        caps |= VFCAP_OSD | VFCAP_EOSD | (p->scaled_osd ? 0 : VFCAP_EOSD_UNSCALED);
+               VFCAP_HWSCALE_UP | VFCAP_HWSCALE_DOWN | VFCAP_ACCEPT_STRIDE |
+               VFCAP_OSD | VFCAP_EOSD | VFCAP_EOSD_UNSCALED;
     if (format == IMGFMT_RGB24 || format == IMGFMT_RGBA)
         return caps;
     if (p->use_yuv && mp_get_chroma_shift(format, NULL, NULL, &depth) &&
@@ -1069,7 +1056,6 @@ static int preinit_internal(struct vo *vo, const char *arg, int allow_sw,
 
     *p = (struct gl_priv) {
         .many_fmts = 1,
-        .use_osd = -1,
         .use_yuv = -1,
         .colorspace = MP_CSP_DETAILS_DEFAULTS,
         .filter_strength = 0.5,
@@ -1092,8 +1078,6 @@ static int preinit_internal(struct vo *vo, const char *arg, int allow_sw,
 
     const opt_t subopts[] = {
         {"manyfmts",     OPT_ARG_BOOL, &p->many_fmts,    NULL},
-        {"osd",          OPT_ARG_BOOL, &p->use_osd,      NULL},
-        {"scaled-osd",   OPT_ARG_BOOL, &p->scaled_osd,   NULL},
         {"ycbcr",        OPT_ARG_BOOL, &p->use_ycbcr,    NULL},
         {"slice-height", OPT_ARG_INT,  &p->slice_height, int_non_neg},
         {"rectangle",    OPT_ARG_INT,  &p->use_rectangle,int_non_neg},
@@ -1129,10 +1113,6 @@ static int preinit_internal(struct vo *vo, const char *arg, int allow_sw,
                "    Disable extended color formats for OpenGL 1.2 and later\n"
                "  slice-height=<0-...>\n"
                "    Slice size for texture transfer, 0 for whole image\n"
-               "  noosd\n"
-               "    Do not use OpenGL OSD code\n"
-               "  scaled-osd\n"
-               "    Render OSD at movie resolution and scale it\n"
                "  rectangle=<0,1,2>\n"
                "    0: use power-of-two textures\n"
                "    1: use texture_rectangle\n"
@@ -1274,10 +1254,7 @@ static int control(struct vo *vo, uint32_t request, void *data)
         r->w = vo->dwidth;
         r->h = vo->dheight;
         r->mt = r->mb = r->ml = r->mr = 0;
-        if (p->scaled_osd) {
-            r->w = p->image_width;
-            r->h = p->image_height;
-        } else if (aspect_scaling()) {
+        if (aspect_scaling()) {
             r->ml = r->mr = p->ass_border_x;
             r->mt = r->mb = p->ass_border_y;
         }
