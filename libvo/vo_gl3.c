@@ -26,6 +26,7 @@
 #include <string.h>
 #include <math.h>
 #include <stdbool.h>
+#include <assert.h>
 
 #include "config.h"
 #include "talloc.h"
@@ -57,6 +58,23 @@ struct vertex_eosd {
     float x, y;
     uint8_t color[4];
     float u, v;
+};
+
+struct texplane {
+    // (this can be false even for plane 1+2 if the format is planar RGB)
+    bool is_chroma;
+    // chroma shifts
+    // e.g. get the plane's width in pixels with (priv->src_width >> shift_x)
+    int shift_x, shift_y;
+    // GL state
+    GLuint gl_texture;
+    // temporary locking during uploading the frame (e.g. for draw_slice)
+    int gl_buffer;
+    int buffer_size;
+    void *buffer_ptr;
+    // value used to clear the image with memset (YUV chroma planes do not use
+    // the value 0 for this)
+    uint8_t clear_val;
 };
 
 struct gl_priv {
@@ -106,17 +124,19 @@ struct gl_priv {
     int use_glFinish;
     int swap_interval;
     GLenum target;
-    GLint texfmt;
+
+    // per pixel (full pixel when packed, each component when planar)
+    int plane_bytes;
+    int plane_bits;
+
+    GLint gl_internal_format;
     GLenum gl_format;
     GLenum gl_type;
-    GLuint buffer;
-    GLuint buffer_uv[2];
-    int buffersize;
-    int buffersize_uv;
-    void *bufferptr;
-    void *bufferptr_uv[2];
+
+    int plane_count;
+    struct texplane planes[3];
+
     GLuint fragprog;
-    GLuint default_texs[22];
     char *custom_prog;
     char *custom_tex;
     int custom_tlin;
@@ -397,30 +417,25 @@ static void uninitGl(struct vo *vo)
     struct gl_priv *p = vo->priv;
     GL *gl = p->gl;
 
-    int i = 0;
     if (gl->DeletePrograms && p->fragprog)
         gl->DeletePrograms(1, &p->fragprog);
     p->fragprog = 0;
-    while (p->default_texs[i] != 0)
-        i++;
-    if (i)
-        gl->DeleteTextures(i, p->default_texs);
-    p->default_texs[0] = 0;
+    for (int n = 0; n < 3; n++) {
+        struct texplane *plane = &p->planes[n];
+        if (plane->gl_texture)
+            gl->DeleteTextures(1, &plane->gl_texture);
+        plane->gl_texture = 0;
+        if (gl->DeleteBuffers && plane->gl_buffer)
+            gl->DeleteBuffers(1, &plane->gl_buffer);
+        plane->gl_buffer = 0;
+        plane->buffer_ptr = NULL;
+        plane->buffer_size = 0;
+    }
     clearOSD(vo);
     if (p->eosd_texture)
         gl->DeleteTextures(1, &p->eosd_texture);
     eosd_packer_reinit(p->eosd, 0, 0);
     p->eosd_texture = 0;
-    if (gl->DeleteBuffers && p->buffer)
-        gl->DeleteBuffers(1, &p->buffer);
-    p->buffer = 0;
-    p->buffersize = 0;
-    p->bufferptr = NULL;
-    if (gl->DeleteBuffers && p->buffer_uv[0])
-        gl->DeleteBuffers(2, p->buffer_uv);
-    p->buffer_uv[0] = p->buffer_uv[1] = 0;
-    p->buffersize_uv = 0;
-    p->bufferptr_uv[0] = p->bufferptr_uv[1] = 0;
     p->err_shown = 0;
 }
 
@@ -518,7 +533,6 @@ static int initGl(struct vo *vo, uint32_t d_width, uint32_t d_height)
     struct gl_priv *p = vo->priv;
     GL *gl = p->gl;
 
-    GLint scale_type = get_scale_type(vo, 0);
     autodetectGlExtensions(vo);
     p->target = p->use_rectangle == 1 ? GL_TEXTURE_RECTANGLE : GL_TEXTURE_2D;
     p->yuvconvtype = SET_YUV_CONVERSION(p->use_yuv) |
@@ -539,44 +553,26 @@ static int initGl(struct vo *vo, uint32_t d_width, uint32_t d_height)
     mp_msg(MSGT_VO, MSGL_V, "[gl] Creating %dx%d texture...\n",
            p->texture_width, p->texture_height);
 
-    glCreateClearTex(gl, p->target, p->texfmt, p->gl_format,
-                     p->gl_type, scale_type,
-                     p->texture_width, p->texture_height, 0);
+    for (int n = 0; n < p->plane_count; n++) {
+        struct texplane *plane = &p->planes[n];
 
-    if (p->mipmap_gen)
-        gl->TexParameteri(p->target, GL_GENERATE_MIPMAP, GL_TRUE);
+        gl->ActiveTexture(GL_TEXTURE0 + n);
+        gl->GenTextures(1, &plane->gl_texture);
+        gl->BindTexture(p->target, plane->gl_texture);
 
-    if (p->is_yuv) {
-        int i;
-        int xs, ys, depth;
-        scale_type = get_scale_type(vo, 1);
-        mp_get_chroma_shift(p->image_format, &xs, &ys, &depth);
-        int clear = get_chroma_clear_val(depth);
-        gl->GenTextures(21, p->default_texs);
-        p->default_texs[21] = 0;
-        for (i = 0; i < 7; i++) {
-            gl->ActiveTexture(GL_TEXTURE1 + i);
-            gl->BindTexture(GL_TEXTURE_2D, p->default_texs[i]);
-            gl->BindTexture(GL_TEXTURE_RECTANGLE, p->default_texs[i + 7]);
-            gl->BindTexture(GL_TEXTURE_3D, p->default_texs[i + 14]);
-        }
-        gl->ActiveTexture(GL_TEXTURE1);
-        glCreateClearTex(gl, p->target, p->texfmt, p->gl_format,
+        GLint scale_type = get_scale_type(vo, plane->is_chroma);
+
+        glCreateClearTex(gl, p->target, p->gl_internal_format, p->gl_format,
                          p->gl_type, scale_type,
-                         p->texture_width >> xs, p->texture_height >> ys,
-                         clear);
+                         p->texture_width >> plane->shift_x,
+                         p->texture_height >> plane->shift_y,
+                         plane->clear_val);
+
         if (p->mipmap_gen)
             gl->TexParameteri(p->target, GL_GENERATE_MIPMAP, GL_TRUE);
-        gl->ActiveTexture(GL_TEXTURE2);
-        glCreateClearTex(gl, p->target, p->texfmt, p->gl_format,
-                         p->gl_type, scale_type,
-                         p->texture_width >> xs, p->texture_height >> ys,
-                         clear);
-        if (p->mipmap_gen)
-            gl->TexParameteri(p->target, GL_GENERATE_MIPMAP, GL_TRUE);
-        gl->ActiveTexture(GL_TEXTURE0);
-        gl->BindTexture(p->target, 0);
     }
+    gl->ActiveTexture(GL_TEXTURE0);
+
     if (p->is_yuv || p->custom_prog) {
         if ((MASK_NOT_COMBINERS & (1 << p->use_yuv)) || p->custom_prog) {
             if (!gl->GenPrograms || !gl->BindProgram)
@@ -620,16 +616,35 @@ static int config(struct vo *vo, uint32_t width, uint32_t height,
 {
     struct gl_priv *p = vo->priv;
 
-    int xs, ys;
+    int xs, ys, depth;
     p->image_height = height;
     p->image_width = width;
     p->image_format = format;
     p->image_d_width = d_width;
     p->image_d_height = d_height;
-    p->is_yuv = mp_get_chroma_shift(p->image_format, &xs, &ys, NULL) > 0;
+    p->is_yuv = mp_get_chroma_shift(p->image_format, &xs, &ys, &depth) > 0;
     p->is_yuv |= (xs << 8) | (ys << 16);
-    glFindFormat(format, p->have_texture_rg, NULL, &p->texfmt, &p->gl_format,
-                 &p->gl_type);
+    glFindFormat(format, p->have_texture_rg, NULL, &p->gl_internal_format,
+                 &p->gl_format, &p->gl_type);
+
+    if (!p->is_yuv) {
+        // xxx mp_image_setfmt calculates this as well
+        depth = glFmt2bpp(p->gl_format, p->gl_type) * 8;
+    }
+
+    p->plane_bits = depth;
+    p->plane_bytes = (depth + 7) / 8;
+
+    p->plane_count = p->is_yuv ? 3 : 1;
+
+    for (int n = 0; n < p->plane_count; n++) {
+        struct texplane *plane = &p->planes[n];
+
+        plane->is_chroma = n > 0;
+        plane->shift_x = n > 0 ? xs : 0;
+        plane->shift_y = n > 0 ? ys : 0;
+        plane->clear_val = n > 0 ? get_chroma_clear_val(p->plane_bits) : 0;
+    }
 
     p->vo_flipped = !!(flags & VOFLAG_FLIPPING);
 
@@ -808,6 +823,8 @@ static void do_render(struct vo *vo)
 //  Enable(GL_TEXTURE_2D);
 //  BindTexture(GL_TEXTURE_2D, texture_id);
 
+    gl->BindTexture(p->target, p->planes[0].gl_texture);
+
     gl->Color3f(1, 1, 1);
     if (p->is_yuv || p->custom_prog)
         glEnableYUVConversion(gl, p->target, p->yuvconvtype);
@@ -864,19 +881,16 @@ static int draw_slice(struct vo *vo, uint8_t *src[], int stride[], int w, int h,
     GL *gl = p->gl;
 
     p->mpi_flipped = stride[0] < 0;
-    glUploadTex(gl, p->target, p->gl_format, p->gl_type, src[0], stride[0],
-                x, y, w, h, p->slice_height);
-    if (p->is_yuv) {
-        int xs, ys;
-        mp_get_chroma_shift(p->image_format, &xs, &ys, NULL);
-        gl->ActiveTexture(GL_TEXTURE1);
-        glUploadTex(gl, p->target, p->gl_format, p->gl_type, src[1], stride[1],
+
+    for (int n = 0; n < p->plane_count; n++) {
+        gl->ActiveTexture(GL_TEXTURE0 + n);
+        gl->BindTexture(p->target, p->planes[n].gl_texture);
+        int xs = p->planes[n].shift_x, ys = p->planes[n].shift_y;
+        glUploadTex(gl, p->target, p->gl_format, p->gl_type, src[n], stride[n],
                     x >> xs, y >> ys, w >> xs, h >> ys, p->slice_height);
-        gl->ActiveTexture(GL_TEXTURE2);
-        glUploadTex(gl, p->target, p->gl_format, p->gl_type, src[2], stride[2],
-                    x >> xs, y >> ys, w >> xs, h >> ys, p->slice_height);
-        gl->ActiveTexture(GL_TEXTURE0);
     }
+    gl->ActiveTexture(GL_TEXTURE0);
+
     return 0;
 }
 
@@ -885,7 +899,8 @@ static uint32_t get_image(struct vo *vo, mp_image_t *mpi)
     struct gl_priv *p = vo->priv;
     GL *gl = p->gl;
 
-    int needed_size;
+    assert(mpi->num_planes == p->plane_count);
+
     if (!gl->GenBuffers || !gl->BindBuffer || !gl->BufferData || !gl->MapBuffer) {
         if (!p->err_shown)
             mp_msg(MSGT_VO, MSGL_ERR, "[gl] extensions missing for dr\n"
@@ -902,63 +917,24 @@ static uint32_t get_image(struct vo *vo, mp_image_t *mpi)
         mpi->width = p->texture_width;
         mpi->height = p->texture_height;
     }
-    mpi->stride[0] = mpi->width * mpi->bpp / 8;
-    needed_size = mpi->stride[0] * mpi->height;
-    if (!p->buffer)
-        gl->GenBuffers(1, &p->buffer);
-    gl->BindBuffer(GL_PIXEL_UNPACK_BUFFER, p->buffer);
-    if (needed_size > p->buffersize) {
-        p->buffersize = needed_size;
-        gl->BufferData(GL_PIXEL_UNPACK_BUFFER, p->buffersize,
-                        NULL, GL_DYNAMIC_DRAW);
-    }
-    if (!p->bufferptr)
-        p->bufferptr = gl->MapBuffer(GL_PIXEL_UNPACK_BUFFER, GL_WRITE_ONLY);
-    mpi->planes[0] = p->bufferptr;
-    gl->BindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-    if (!mpi->planes[0]) {
-        if (!p->err_shown)
-            mp_msg(MSGT_VO, MSGL_ERR, "[gl] could not acquire buffer for dr\n"
-                   "Expect a _major_ speed penalty\n");
-        p->err_shown = 1;
-        return VO_FALSE;
-    }
-    if (p->is_yuv) {
-        // planar YUV
-        int xs, ys, component_bits;
-        mp_get_chroma_shift(p->image_format, &xs, &ys, &component_bits);
-        int bp = (component_bits + 7) / 8;
-        mpi->flags |= MP_IMGFLAG_COMMON_STRIDE | MP_IMGFLAG_COMMON_PLANE;
-        mpi->stride[0] = mpi->width * bp;
-        mpi->planes[1] = mpi->planes[0] + mpi->stride[0] * mpi->height;
-        mpi->stride[1] = (mpi->width >> xs) * bp;
-        mpi->planes[2] = mpi->planes[1] + mpi->stride[1] * (mpi->height >> ys);
-        mpi->stride[2] = (mpi->width >> xs) * bp;
-        if (p->ati_hack) {
-            mpi->flags &= ~MP_IMGFLAG_COMMON_PLANE;
-            if (!p->buffer_uv[0])
-                gl->GenBuffers(2, p->buffer_uv);
-            int buffer_size = mpi->stride[1] * mpi->height;
-            if (buffer_size > p->buffersize_uv) {
-                gl->BindBuffer(GL_PIXEL_UNPACK_BUFFER, p->buffer_uv[0]);
-                gl->BufferData(GL_PIXEL_UNPACK_BUFFER, buffer_size, NULL,
-                               GL_DYNAMIC_DRAW);
-                gl->BindBuffer(GL_PIXEL_UNPACK_BUFFER, p->buffer_uv[1]);
-                gl->BufferData(GL_PIXEL_UNPACK_BUFFER, buffer_size, NULL,
-                               GL_DYNAMIC_DRAW);
-                p->buffersize_uv = buffer_size;
-            }
-            if (!p->bufferptr_uv[0]) {
-                gl->BindBuffer(GL_PIXEL_UNPACK_BUFFER, p->buffer_uv[0]);
-                p->bufferptr_uv[0] = gl->MapBuffer(GL_PIXEL_UNPACK_BUFFER,
-                                                   GL_WRITE_ONLY);
-                gl->BindBuffer(GL_PIXEL_UNPACK_BUFFER, p->buffer_uv[1]);
-                p->bufferptr_uv[1] = gl->MapBuffer(GL_PIXEL_UNPACK_BUFFER,
-                                                   GL_WRITE_ONLY);
-            }
-            mpi->planes[1] = p->bufferptr_uv[0];
-            mpi->planes[2] = p->bufferptr_uv[1];
+    mpi->flags &= ~MP_IMGFLAG_COMMON_PLANE;
+    for (int n = 0; n < p->plane_count; n++) {
+        struct texplane *plane = &p->planes[n];
+        int w = mpi->width >> plane->shift_x, h = mpi->height >> plane->shift_y;
+        mpi->stride[n] = w * p->plane_bytes;
+        int needed_size = mpi->stride[n] * h;
+        if (!plane->gl_buffer)
+            gl->GenBuffers(1, &plane->gl_buffer);
+        gl->BindBuffer(GL_PIXEL_UNPACK_BUFFER, plane->gl_buffer);
+        if (needed_size > plane->buffer_size) {
+            plane->buffer_size = needed_size;
+            gl->BufferData(GL_PIXEL_UNPACK_BUFFER, plane->buffer_size,
+                           NULL, GL_DYNAMIC_DRAW);
         }
+        if (!plane->buffer_ptr)
+            plane->buffer_ptr = gl->MapBuffer(GL_PIXEL_UNPACK_BUFFER, GL_WRITE_ONLY);
+        mpi->planes[n] = plane->buffer_ptr;
+        gl->BindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
     }
     mpi->flags |= MP_IMGFLAG_DIRECT;
     return VO_TRUE;
@@ -983,10 +959,9 @@ static uint32_t draw_image(struct vo *vo, mp_image_t *mpi)
 {
     struct gl_priv *p = vo->priv;
     GL *gl = p->gl;
+    int n;
 
     int slice = p->slice_height;
-    int stride[3];
-    unsigned char *planes[3];
     mp_image_t mpi2 = *mpi;
     int w = mpi->w, h = mpi->h;
     if (mpi->flags & MP_IMGFLAG_DRAW_CALLBACK)
@@ -995,90 +970,49 @@ static uint32_t draw_image(struct vo *vo, mp_image_t *mpi)
     mpi2.type = MP_IMGTYPE_TEMP;
     mpi2.width = mpi2.w;
     mpi2.height = mpi2.h;
-    if (p->force_pbo && !(mpi->flags & MP_IMGFLAG_DIRECT) && !p->bufferptr
+    if (p->force_pbo && !(mpi->flags & MP_IMGFLAG_DIRECT) && !p->planes[0].buffer_ptr
         && get_image(vo, &mpi2) == VO_TRUE)
     {
-        int bp = mpi->bpp / 8;
-        int xs, ys, component_bits;
-        mp_get_chroma_shift(p->image_format, &xs, &ys, &component_bits);
-        if (p->is_yuv)
-            bp = (component_bits + 7) / 8;
-        memcpy_pic(mpi2.planes[0], mpi->planes[0], mpi->w * bp, mpi->h,
-                   mpi2.stride[0], mpi->stride[0]);
-        int uv_bytes = (mpi->w >> xs) * bp;
-        if (p->is_yuv) {
-            memcpy_pic(mpi2.planes[1], mpi->planes[1], uv_bytes, mpi->h >> ys,
-                       mpi2.stride[1], mpi->stride[1]);
-            memcpy_pic(mpi2.planes[2], mpi->planes[2], uv_bytes, mpi->h >> ys,
-                       mpi2.stride[2], mpi->stride[2]);
-        }
-        if (p->ati_hack) {
-            // since we have to do a full upload we need to clear the borders
-            clear_border(vo, mpi2.planes[0], mpi->w * bp, mpi2.stride[0],
-                         mpi->h, mpi2.height, 0);
-            if (p->is_yuv) {
-                int clear = get_chroma_clear_val(component_bits);
-                clear_border(vo, mpi2.planes[1], uv_bytes, mpi2.stride[1],
-                             mpi->h >> ys, mpi2.height >> ys, clear);
-                clear_border(vo, mpi2.planes[2], uv_bytes, mpi2.stride[2],
-                             mpi->h >> ys, mpi2.height >> ys, clear);
+        for (n = 0; n < p->plane_count; n++) {
+            struct texplane *plane = &p->planes[n];
+            int xs = plane->shift_x, ys = plane->shift_y;
+            int line_bytes = (mpi->w >> xs) * p->plane_bytes;
+            memcpy_pic(mpi2.planes[n], mpi->planes[n], line_bytes, mpi->h >> ys,
+                       mpi2.stride[n], mpi->stride[n]);
+            if (p->ati_hack) {
+                // since we have to do a full upload we need to clear the borders
+                clear_border(vo, mpi2.planes[n], line_bytes, mpi2.stride[n],
+                             mpi->h >> ys, mpi2.height >> ys, plane->clear_val);
             }
         }
         mpi = &mpi2;
     }
-    stride[0] = mpi->stride[0];
-    stride[1] = mpi->stride[1];
-    stride[2] = mpi->stride[2];
-    planes[0] = mpi->planes[0];
-    planes[1] = mpi->planes[1];
-    planes[2] = mpi->planes[2];
-    p->mpi_flipped = stride[0] < 0;
+    p->mpi_flipped = mpi->stride[0] < 0;
     if (mpi->flags & MP_IMGFLAG_DIRECT) {
-        intptr_t base = (intptr_t)planes[0];
         if (p->ati_hack) {
             w = p->texture_width;
             h = p->texture_height;
         }
-        if (p->mpi_flipped)
-            base += (mpi->h - 1) * stride[0];
-        planes[0] -= base;
-        planes[1] -= base;
-        planes[2] -= base;
-        gl->BindBuffer(GL_PIXEL_UNPACK_BUFFER, p->buffer);
-        gl->UnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
-        p->bufferptr = NULL;
-        if (!(mpi->flags & MP_IMGFLAG_COMMON_PLANE))
-            planes[0] = planes[1] = planes[2] = NULL;
         slice = 0; // always "upload" full texture
     }
-    glUploadTex(gl, p->target, p->gl_format, p->gl_type, planes[0],
-                stride[0], mpi->x, mpi->y, w, h, slice);
-    if (p->is_yuv) {
-        int xs, ys;
-        mp_get_chroma_shift(p->image_format, &xs, &ys, NULL);
-        if ((mpi->flags & MP_IMGFLAG_DIRECT) && !(mpi->flags & MP_IMGFLAG_COMMON_PLANE)) {
-            gl->BindBuffer(GL_PIXEL_UNPACK_BUFFER, p->buffer_uv[0]);
+    for (n = 0; n < p->plane_count; n++) {
+        struct texplane *plane = &p->planes[n];
+        int xs = plane->shift_x, ys = plane->shift_y;
+        void *plane_ptr = mpi->planes[n];
+        if (mpi->flags & MP_IMGFLAG_DIRECT) {
+            gl->BindBuffer(GL_PIXEL_UNPACK_BUFFER, plane->gl_buffer);
             gl->UnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
-            p->bufferptr_uv[0] = NULL;
+            plane->buffer_ptr = NULL;
+            plane_ptr = NULL; // PBO offset 0
         }
-        gl->ActiveTexture(GL_TEXTURE1);
-        glUploadTex(gl, p->target, p->gl_format, p->gl_type, planes[1],
-                    stride[1], mpi->x >> xs, mpi->y >> ys, w >> xs, h >> ys,
-                    slice);
-        if ((mpi->flags & MP_IMGFLAG_DIRECT) && !(mpi->flags & MP_IMGFLAG_COMMON_PLANE)) {
-            gl->BindBuffer(GL_PIXEL_UNPACK_BUFFER, p->buffer_uv[1]);
-            gl->UnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
-            p->bufferptr_uv[1] = NULL;
-        }
-        gl->ActiveTexture(GL_TEXTURE2);
-        glUploadTex(gl, p->target, p->gl_format, p->gl_type, planes[2],
-                    stride[2], mpi->x >> xs, mpi->y >> ys, w >> xs, h >> ys,
-                    slice);
-        gl->ActiveTexture(GL_TEXTURE0);
+        gl->ActiveTexture(GL_TEXTURE0 + n);
+        gl->BindTexture(p->target, plane->gl_texture);
+        glUploadTex(gl, p->target, p->gl_format, p->gl_type, plane_ptr,
+                    mpi->stride[n], mpi->x >> xs, mpi->y >> ys, w >> xs,
+                    h >> ys, slice);
     }
-    if (mpi->flags & MP_IMGFLAG_DIRECT) {
-        gl->BindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-    }
+    gl->ActiveTexture(GL_TEXTURE0);
+    gl->BindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 skip_upload:
     if (vo_doublebuffering)
         do_render(vo);
