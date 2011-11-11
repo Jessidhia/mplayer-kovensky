@@ -148,7 +148,10 @@ struct gl_priv {
     int texture_height;
     int mpi_flipped;
     int vo_flipped;
-    int ass_border_x, ass_border_y;
+
+    struct vo_rect src_rect;    // displayed part of the source video
+    struct vo_rect dst_rect;    // video rectangle on output window
+    int border_x, border_y;     // OSD borders
 };
 
 static void resize(struct vo *vo, int x, int y)
@@ -165,26 +168,15 @@ static void resize(struct vo *vo, int x, int y)
     } else
         gl->Viewport(0, 0, x, y);
 
-    gl->MatrixMode(GL_PROJECTION);
-    gl->LoadIdentity();
-    p->ass_border_x = p->ass_border_y = 0;
-    if (aspect_scaling()) {
-        int new_w, new_h;
-        GLdouble scale_x, scale_y;
-        aspect(vo, &new_w, &new_h, A_WINZOOM);
-        panscan_calc_windowed(vo);
-        new_w += vo->panscan_x;
-        new_h += vo->panscan_y;
-        scale_x = (GLdouble)new_w / (GLdouble)x;
-        scale_y = (GLdouble)new_h / (GLdouble)y;
-        gl->Scaled(scale_x, scale_y, 1);
-        p->ass_border_x = (vo->dwidth - new_w) / 2;
-        p->ass_border_y = (vo->dheight - new_h) / 2;
-    }
-    gl->Ortho(0, p->image_width, p->image_height, 0, -1, 1);
+    struct vo_rect borders;
+    calc_src_dst_rects(vo, p->image_width, p->image_height, &p->src_rect,
+                       &p->dst_rect, &borders, NULL);
+    p->border_x = borders.left;
+    p->border_y = borders.top;
 
     gl->MatrixMode(GL_MODELVIEW);
     gl->LoadIdentity();
+    gl->Ortho(0, vo->dwidth, vo->dheight, 0, -1, 1);
 
 #ifdef CONFIG_FREETYPE
     // adjust font size to display size
@@ -759,11 +751,6 @@ static void do_render_osd(struct vo *vo, int type)
     if (!draw_osd && !draw_eosd)
         return;
 
-    gl->MatrixMode(GL_PROJECTION);
-    gl->PushMatrix();
-    gl->LoadIdentity();
-    gl->Ortho(0, vo->dwidth, vo->dheight, 0, -1, 1);
-
     gl->Enable(GL_BLEND);
     if (draw_eosd) {
         gl->BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -782,7 +769,6 @@ static void do_render_osd(struct vo *vo, int type)
     }
     // set rendering parameters back to defaults
     gl->Disable(GL_BLEND);
-    gl->PopMatrix();
     gl->BindTexture(p->target, 0);
 }
 
@@ -792,9 +778,9 @@ static void draw_osd(struct vo *vo, struct osd_state *osd)
 
     if (vo_osd_changed(0)) {
         clearOSD(vo);
-        osd_draw_text_ext(osd, vo->dwidth, vo->dheight, p->ass_border_x,
-                          p->ass_border_y, p->ass_border_x,
-                          p->ass_border_y, p->image_width,
+        osd_draw_text_ext(osd, vo->dwidth, vo->dheight, p->border_x,
+                          p->border_y, p->border_x,
+                          p->border_y, p->image_width,
                           p->image_height, create_osd_texture, vo);
     }
     if (vo_doublebuffering)
@@ -816,21 +802,30 @@ static void do_render(struct vo *vo)
         glEnableYUVConversion(gl, p->target, p->yuvconvtype);
     if (p->stereo_mode) {
         glEnable3DLeft(gl, p->stereo_mode);
-        glDrawTex(gl, 0, 0, p->image_width, p->image_height,
-                  0, 0, p->image_width >> 1, p->image_height,
+        glDrawTex(gl,
+                  p->dst_rect.left, p->dst_rect.top,
+                  p->dst_rect.width, p->dst_rect.height,
+                  p->src_rect.left / 2, p->src_rect.top,
+                  p->src_rect.width / 2, p->src_rect.height,
                   p->texture_width, p->texture_height,
                   p->use_rectangle == 1, p->is_yuv,
                   p->mpi_flipped ^ p->vo_flipped);
         glEnable3DRight(gl, p->stereo_mode);
-        glDrawTex(gl, 0, 0, p->image_width, p->image_height,
-                  p->image_width >> 1, 0, p->image_width >> 1,
-                  p->image_height, p->texture_width, p->texture_height,
+        glDrawTex(gl,
+                  p->dst_rect.left, p->dst_rect.top,
+                  p->dst_rect.width, p->dst_rect.height,
+                  p->src_rect.left / 2 + p->image_width / 2, p->src_rect.top,
+                  p->src_rect.width / 2, p->src_rect.height,
+                  p->texture_width, p->texture_height,
                   p->use_rectangle == 1, p->is_yuv,
                   p->mpi_flipped ^ p->vo_flipped);
         glDisable3D(gl, p->stereo_mode);
     } else {
-        glDrawTex(gl, 0, 0, p->image_width, p->image_height,
-                  0, 0, p->image_width, p->image_height,
+        glDrawTex(gl,
+                  p->dst_rect.left, p->dst_rect.top,
+                  p->dst_rect.width, p->dst_rect.height,
+                  p->src_rect.left, p->src_rect.top,
+                  p->src_rect.width, p->src_rect.height,
                   p->texture_width, p->texture_height,
                   p->use_rectangle == 1, p->is_yuv,
                   p->mpi_flipped ^ p->vo_flipped);
@@ -1244,8 +1239,8 @@ static int control(struct vo *vo, uint32_t request, void *data)
         r->h = vo->dheight;
         r->mt = r->mb = r->ml = r->mr = 0;
         if (aspect_scaling()) {
-            r->ml = r->mr = p->ass_border_x;
-            r->mt = r->mb = p->ass_border_y;
+            r->ml = r->mr = p->border_x;
+            r->mt = r->mb = p->border_y;
         }
         return VO_TRUE;
     }
