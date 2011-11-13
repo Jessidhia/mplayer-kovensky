@@ -54,11 +54,13 @@
 #define MASK_NOT_COMBINERS (~((1 << YUV_CONVERSION_NONE) | (1 << YUV_CONVERSION_COMBINERS)))
 #define MASK_GAMMA_SUPPORT (MASK_NOT_COMBINERS & ~(1 << YUV_CONVERSION_FRAGMENT))
 
-struct vertex_eosd {
+struct vertex {
     float x, y;
     uint8_t color[4];
     float u, v;
 };
+
+#define VERTICES_PER_QUAD 6
 
 struct texplane {
     // (this can be false even for plane 1+2 if the format is planar RGB)
@@ -83,19 +85,14 @@ struct gl_priv {
 
     //! Textures for OSD
     GLuint osdtex[MAX_OSD_PARTS];
-#ifndef FAST_OSD
     //! Alpha textures for OSD
     GLuint osdatex[MAX_OSD_PARTS];
-#endif
     GLuint eosd_texture;
     int eosd_texture_width, eosd_texture_height;
     struct eosd_packer *eosd;
-    struct vertex_eosd *eosd_va;
-    //! Display lists that draw the OSD parts
-    GLuint osdDispList[MAX_OSD_PARTS];
-#ifndef FAST_OSD
-    GLuint osdaDispList[MAX_OSD_PARTS];
-#endif
+    struct vertex *eosd_va;
+    // 2 textured quads per OSD part
+    struct vertex osd_va[MAX_OSD_PARTS * VERTICES_PER_QUAD * 2];
     //! How many parts the OSD currently consists of
     int osdtexCnt;
     int osd_color;
@@ -153,6 +150,62 @@ struct gl_priv {
     struct vo_rect dst_rect;    // video rectangle on output window
     int border_x, border_y;     // OSD borders
 };
+
+static void vertex_array_enable(GL *gl, struct vertex *va)
+{
+    size_t stride = sizeof(struct vertex);
+
+    gl->VertexPointer(2, GL_FLOAT, stride, &va[0].x);
+    gl->ColorPointer(4, GL_UNSIGNED_BYTE, stride, &va[0].color[0]);
+    gl->TexCoordPointer(2, GL_FLOAT, stride, &va[0].u);
+
+    gl->EnableClientState(GL_VERTEX_ARRAY);
+    gl->EnableClientState(GL_TEXTURE_COORD_ARRAY);
+    gl->EnableClientState(GL_COLOR_ARRAY);
+}
+
+static void vertex_array_disable(GL *gl)
+{
+    gl->DisableClientState(GL_VERTEX_ARRAY);
+    gl->DisableClientState(GL_TEXTURE_COORD_ARRAY);
+    gl->DisableClientState(GL_COLOR_ARRAY);
+}
+
+// Write a textured quad to a vertex array.
+// va = destination vertex array, VERTICES_PER_QUAD entries will be overwritten
+// x0, y0, x1, y1 = destination coordinates of the quad
+// tx0, ty0, tx1, ty1 = source texture coordinates (in pixels)
+// texture_w, texture_h = source of the texture
+// color = optional color for all vertices, NULL for opaque white
+// rectangle = the texture uses GL_TEXTURE_RECTANGLE
+static void write_quad(struct vertex *va,
+                       float x0, float y0, float x1, float y1,
+                       float tx0, float ty0, float tx1, float ty1,
+                       float texture_w, float texture_h,
+                       const uint8_t color[4],
+                       bool rectangle)
+{
+    static const uint8_t white[4] = { 255, 255, 255, 255 };
+
+    if (!color)
+        color = white;
+
+    if (!rectangle) {
+        tx0 /= texture_w;
+        ty0 /= texture_h;
+        tx1 /= texture_w;
+        ty1 /= texture_h;
+    }
+
+#define COLOR_INIT {color[0], color[1], color[2], color[3]}
+    va[0] = (struct vertex) { x0, y0, COLOR_INIT, tx0, ty0 };
+    va[1] = (struct vertex) { x0, y1, COLOR_INIT, tx0, ty1 };
+    va[2] = (struct vertex) { x1, y0, COLOR_INIT, tx1, ty0 };
+    va[3] = (struct vertex) { x1, y1, COLOR_INIT, tx1, ty1 };
+    va[4] = va[2];
+    va[5] = va[1];
+#undef COLOR_INIT
+}
 
 static void resize(struct vo *vo, int x, int y)
 {
@@ -274,17 +327,10 @@ static void clearOSD(struct vo *vo)
     struct gl_priv *p = vo->priv;
     GL *gl = p->gl;
 
-    int i;
     if (!p->osdtexCnt)
         return;
     gl->DeleteTextures(p->osdtexCnt, p->osdtex);
-#ifndef FAST_OSD
     gl->DeleteTextures(p->osdtexCnt, p->osdatex);
-    for (i = 0; i < p->osdtexCnt; i++)
-        gl->DeleteLists(p->osdaDispList[i], 1);
-#endif
-    for (i = 0; i < p->osdtexCnt; i++)
-        gl->DeleteLists(p->osdDispList[i], 1);
     p->osdtexCnt = 0;
 }
 
@@ -323,13 +369,8 @@ static void genEOSD(struct vo *vo, mp_eosd_images_t *imgs)
     // not using GL_QUADS, as it is deprecated in OpenGL 3.x and later
     p->eosd_va = talloc_realloc_size(p->eosd, p->eosd_va,
                                      p->eosd->targets_count
-                                     * sizeof(struct vertex_eosd) * 6);
-
-    float eosd_w = p->eosd_texture_width;
-    float eosd_h = p->eosd_texture_height;
-
-    if (p->use_rectangle == 1)
-        eosd_w = eosd_h = 1.0f;
+                                     * sizeof(struct vertex)
+                                     * VERTICES_PER_QUAD);
 
     for (int n = 0; n < p->eosd->targets_count; n++) {
         struct eosd_target *target = &p->eosd->targets[n];
@@ -342,24 +383,13 @@ static void genEOSD(struct vo *vo, mp_eosd_images_t *imgs)
         uint8_t color[4] = { i->color >> 24, (i->color >> 16) & 0xff,
                             (i->color >> 8) & 0xff, 255 - (i->color & 0xff) };
 
-        float x0 = target->dest.x0;
-        float y0 = target->dest.y0;
-        float x1 = target->dest.x1;
-        float y1 = target->dest.y1;
-        float tx0 = target->source.x0 / eosd_w;
-        float ty0 = target->source.y0 / eosd_h;
-        float tx1 = target->source.x1 / eosd_w;
-        float ty1 = target->source.y1 / eosd_h;
-
-#define COLOR_INIT {color[0], color[1], color[2], color[3]}
-        struct vertex_eosd *va = &p->eosd_va[n * 6];
-        va[0] = (struct vertex_eosd) { x0, y0, COLOR_INIT, tx0, ty0 };
-        va[1] = (struct vertex_eosd) { x0, y1, COLOR_INIT, tx0, ty1 };
-        va[2] = (struct vertex_eosd) { x1, y0, COLOR_INIT, tx1, ty0 };
-        va[3] = (struct vertex_eosd) { x1, y1, COLOR_INIT, tx1, ty1 };
-        va[4] = va[2];
-        va[5] = va[1];
-#undef COLOR_INIT
+        write_quad(&p->eosd_va[n * VERTICES_PER_QUAD],
+                   target->dest.x0, target->dest.y0,
+                   target->dest.x1, target->dest.y1,
+                   target->source.x0, target->source.y0,
+                   target->source.x1, target->source.y1,
+                   p->eosd_texture_width, p->eosd_texture_height,
+                   color, p->use_rectangle == 1);
     }
 
     gl->BindTexture(p->target, 0);
@@ -376,22 +406,11 @@ static void drawEOSD(struct vo *vo)
 
     gl->BindTexture(p->target, p->eosd_texture);
 
-    struct vertex_eosd *va = p->eosd_va;
-    size_t stride = sizeof(struct vertex_eosd);
+    vertex_array_enable(gl, p->eosd_va);
 
-    gl->VertexPointer(2, GL_FLOAT, stride, &va[0].x);
-    gl->ColorPointer(4, GL_UNSIGNED_BYTE, stride, &va[0].color[0]);
-    gl->TexCoordPointer(2, GL_FLOAT, stride, &va[0].u);
+    gl->DrawArrays(GL_TRIANGLES, 0, p->eosd->targets_count * VERTICES_PER_QUAD);
 
-    gl->EnableClientState(GL_VERTEX_ARRAY);
-    gl->EnableClientState(GL_TEXTURE_COORD_ARRAY);
-    gl->EnableClientState(GL_COLOR_ARRAY);
-
-    gl->DrawArrays(GL_TRIANGLES, 0, p->eosd->targets_count * 6);
-
-    gl->DisableClientState(GL_VERTEX_ARRAY);
-    gl->DisableClientState(GL_TEXTURE_COORD_ARRAY);
-    gl->DisableClientState(GL_COLOR_ARRAY);
+    vertex_array_disable(gl);
 
     gl->BindTexture(p->target, 0);
 }
@@ -696,7 +715,6 @@ static void create_osd_texture(void *ctx, int x0, int y0, int w, int h,
     glUploadTex(gl, p->target, GL_LUMINANCE, GL_UNSIGNED_BYTE, src, stride,
                 0, 0, w, h, 0);
 
-#ifndef FAST_OSD
     gl->GenTextures(1, &p->osdatex[p->osdtexCnt]);
     gl->BindTexture(p->target, p->osdatex[p->osdtexCnt]);
     glCreateClearTex(gl, p->target, GL_ALPHA, GL_ALPHA, GL_UNSIGNED_BYTE,
@@ -712,25 +730,15 @@ static void create_osd_texture(void *ctx, int x0, int y0, int w, int h,
                     0, 0, w, h, 0);
         free(tmp);
     }
-#endif
 
     gl->BindTexture(p->target, 0);
 
-    // Create a list for rendering this OSD part
-#ifndef FAST_OSD
-    p->osdaDispList[p->osdtexCnt] = gl->GenLists(1);
-    gl->NewList(p->osdaDispList[p->osdtexCnt], GL_COMPILE);
-    // render alpha
-    gl->BindTexture(p->target, p->osdatex[p->osdtexCnt]);
-    glDrawTex(gl, x0, y0, w, h, 0, 0, w, h, sx, sy, p->use_rectangle == 1, 0, 0);
-    gl->EndList();
-#endif
-    p->osdDispList[p->osdtexCnt] = gl->GenLists(1);
-    gl->NewList(p->osdDispList[p->osdtexCnt], GL_COMPILE);
-    // render OSD
-    gl->BindTexture(p->target, p->osdtex[p->osdtexCnt]);
-    glDrawTex(gl, x0, y0, w, h, 0, 0, w, h, sx, sy, p->use_rectangle == 1, 0, 0);
-    gl->EndList();
+    uint8_t color[4] = {(p->osd_color >> 16) & 0xff, (p->osd_color >> 8) & 0xff,
+                        p->osd_color & 0xff, 0xff - (p->osd_color >> 24)};
+
+    write_quad(&p->osd_va[p->osdtexCnt * VERTICES_PER_QUAD],
+               x0, y0, x0 + w, y0 + h, 0, 0, w, h,
+               sx, sy, color, p->use_rectangle == 1);
 
     p->osdtexCnt++;
 }
@@ -757,15 +765,18 @@ static void do_render_osd(struct vo *vo, int type)
         drawEOSD(vo);
     }
     if (draw_osd) {
-        gl->Color4ub((p->osd_color >> 16) & 0xff, (p->osd_color >> 8) & 0xff,
-                     p->osd_color & 0xff, 0xff - (p->osd_color >> 24));
-        // draw OSD
-#ifndef FAST_OSD
-        gl->BlendFunc(GL_ZERO, GL_ONE_MINUS_SRC_ALPHA);
-        gl->CallLists(p->osdtexCnt, GL_UNSIGNED_INT, p->osdaDispList);
-#endif
-        gl->BlendFunc(GL_SRC_ALPHA, GL_ONE);
-        gl->CallLists(p->osdtexCnt, GL_UNSIGNED_INT, p->osdDispList);
+        vertex_array_enable(gl, &p->osd_va[0]);
+        for (int n = 0; n < p->osdtexCnt; n++) {
+            gl->BlendFunc(GL_ZERO, GL_ONE_MINUS_SRC_ALPHA);
+            gl->BindTexture(p->target, p->osdatex[n]);
+            gl->DrawArrays(GL_TRIANGLES, n * VERTICES_PER_QUAD,
+                           VERTICES_PER_QUAD);
+            gl->BlendFunc(GL_SRC_ALPHA, GL_ONE);
+            gl->BindTexture(p->target, p->osdtex[n]);
+            gl->DrawArrays(GL_TRIANGLES, n * VERTICES_PER_QUAD,
+                           VERTICES_PER_QUAD);
+        }
+        vertex_array_disable(gl);
     }
     // set rendering parameters back to defaults
     gl->Disable(GL_BLEND);
@@ -792,12 +803,8 @@ static void do_render(struct vo *vo)
     struct gl_priv *p = vo->priv;
     GL *gl = p->gl;
 
-//  Enable(GL_TEXTURE_2D);
-//  BindTexture(GL_TEXTURE_2D, texture_id);
-
     gl->BindTexture(p->target, p->planes[0].gl_texture);
 
-    gl->Color3f(1, 1, 1);
     if (p->is_yuv || p->custom_prog)
         glEnableYUVConversion(gl, p->target, p->yuvconvtype);
     if (p->stereo_mode) {
