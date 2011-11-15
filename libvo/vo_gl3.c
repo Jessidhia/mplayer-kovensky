@@ -85,14 +85,11 @@ struct gl_priv {
 
     //! Textures for OSD
     GLuint osdtex[MAX_OSD_PARTS];
-    //! Alpha textures for OSD
-    GLuint osdatex[MAX_OSD_PARTS];
     GLuint eosd_texture;
     int eosd_texture_width, eosd_texture_height;
     struct eosd_packer *eosd;
     struct vertex *eosd_va;
-    // 2 textured quads per OSD part
-    struct vertex osd_va[MAX_OSD_PARTS * VERTICES_PER_QUAD * 2];
+    struct vertex osd_va[MAX_OSD_PARTS * VERTICES_PER_QUAD];
     //! How many parts the OSD currently consists of
     int osdtexCnt;
     int osd_color;
@@ -330,7 +327,6 @@ static void clearOSD(struct vo *vo)
     if (!p->osdtexCnt)
         return;
     gl->DeleteTextures(p->osdtexCnt, p->osdtex);
-    gl->DeleteTextures(p->osdtexCnt, p->osdatex);
     p->osdtexCnt = 0;
 }
 
@@ -707,27 +703,20 @@ static void create_osd_texture(void *ctx, int x0, int y0, int w, int h,
         return;
     }
 
-    // create Textures for OSD part
     gl->GenTextures(1, &p->osdtex[p->osdtexCnt]);
     gl->BindTexture(p->target, p->osdtex[p->osdtexCnt]);
-    glCreateClearTex(gl, p->target, GL_LUMINANCE, GL_LUMINANCE,
+    glCreateClearTex(gl, p->target, GL_LUMINANCE_ALPHA, GL_LUMINANCE_ALPHA,
                      GL_UNSIGNED_BYTE, scale_type, sx, sy, 0);
-    glUploadTex(gl, p->target, GL_LUMINANCE, GL_UNSIGNED_BYTE, src, stride,
-                0, 0, w, h, 0);
-
-    gl->GenTextures(1, &p->osdatex[p->osdtexCnt]);
-    gl->BindTexture(p->target, p->osdatex[p->osdtexCnt]);
-    glCreateClearTex(gl, p->target, GL_ALPHA, GL_ALPHA, GL_UNSIGNED_BYTE,
-                     scale_type, sx, sy, 0);
     {
         int i;
-        char *tmp = malloc(stride * h);
+        unsigned char *tmp = malloc(stride * h * 2);
         // convert alpha from weird MPlayer scale.
-        // in-place is not possible since it is reused for future OSDs
-        for (i = h * stride - 1; i >= 0; i--)
-            tmp[i] = -srca[i];
-        glUploadTex(gl, p->target, GL_ALPHA, GL_UNSIGNED_BYTE, tmp, stride,
-                    0, 0, w, h, 0);
+        for (i = 0; i < h * stride; i++) {
+            tmp[i*2+0] = src[i];
+            tmp[i*2+1] = -srca[i];
+        }
+        glUploadTex(gl, p->target, GL_LUMINANCE_ALPHA, GL_UNSIGNED_BYTE, tmp,
+                    stride * 2, 0, 0, w, h, 0);
         free(tmp);
     }
 
@@ -760,18 +749,13 @@ static void do_render_osd(struct vo *vo, int type)
         return;
 
     gl->Enable(GL_BLEND);
+    gl->BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     if (draw_eosd) {
-        gl->BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         drawEOSD(vo);
     }
     if (draw_osd) {
         vertex_array_enable(gl, &p->osd_va[0]);
         for (int n = 0; n < p->osdtexCnt; n++) {
-            gl->BlendFunc(GL_ZERO, GL_ONE_MINUS_SRC_ALPHA);
-            gl->BindTexture(p->target, p->osdatex[n]);
-            gl->DrawArrays(GL_TRIANGLES, n * VERTICES_PER_QUAD,
-                           VERTICES_PER_QUAD);
-            gl->BlendFunc(GL_SRC_ALPHA, GL_ONE);
             gl->BindTexture(p->target, p->osdtex[n]);
             gl->DrawArrays(GL_TRIANGLES, n * VERTICES_PER_QUAD,
                            VERTICES_PER_QUAD);

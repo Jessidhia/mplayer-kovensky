@@ -601,6 +601,8 @@ int glFmt2bpp(GLenum format, GLenum type)
         return 4 * component_size;
     case GL_RED:
         return component_size;
+    case GL_LUMINANCE_ALPHA:
+        return 2 * component_size;
     }
     return 0; // unknown
 }
