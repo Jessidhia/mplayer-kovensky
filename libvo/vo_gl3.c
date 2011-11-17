@@ -102,31 +102,20 @@ static const char frag_shader_osd[] =
 ;
 
 static const char frag_shader_video[] =
-"#if USE_RECTANGLE\n"
-"#define SAMPLER2D_VIDEO sampler2DRect\n"
-"#else\n"
-"#define SAMPLER2D_VIDEO sampler2D\n"
-"#endif\n"
-"uniform SAMPLER2D_VIDEO texture1;\n"
-"uniform SAMPLER2D_VIDEO texture2;\n"
-"uniform SAMPLER2D_VIDEO texture3;\n"
+"uniform sampler2D texture1;\n"
+"uniform sampler2D texture2;\n"
+"uniform sampler2D texture3;\n"
 "uniform mat4x3 colormatrix;\n"
 "uniform vec3 gamma;\n"
 "in vec2 texcoord;\n"
 "out vec4 out_color;\n"
 "void main() {\n"
-"#if USE_RECTANGLE\n"
-"    vec2 texcoord_y = texcoord * textureSize(texture1);\n"
-"    vec2 texcoord_uv = texcoord * textureSize(texture2);\n"
-"#else\n"
-"    vec2 texcoord_y = texcoord, texcoord_uv = texcoord;\n"
-"#endif\n"
 "#if USE_PLANAR\n"
-"    vec3 color = vec3(texture(texture1, texcoord_y).r,\n"
-"                      texture(texture2, texcoord_uv).r,\n"
-"                      texture(texture3, texcoord_uv).r);\n"
+"    vec3 color = vec3(texture(texture1, texcoord).r,\n"
+"                      texture(texture2, texcoord).r,\n"
+"                      texture(texture3, texcoord).r);\n"
 "#else\n"
-"    vec3 color = texture(texture1, texcoord_y).rgb;\n"
+"    vec3 color = texture(texture1, texcoord).rgb;\n"
 "#endif\n"
 "#if USE_COLORMATRIX\n"
 "    color = mat3(colormatrix) * color + colormatrix[3];\n"
@@ -199,7 +188,6 @@ struct gl_priv {
     int force_pbo;
     int use_glFinish;
     int swap_interval;
-    GLenum target;
 
     // per pixel (full pixel when packed, each component when planar)
     int plane_bytes;
@@ -628,9 +616,6 @@ static void autodetectGlExtensions(struct vo *vo)
         p->use_rectangle = 0;
         if (extensions) {
 //      if (strstr(extensions, "_texture_non_power_of_two"))
-            if (strstr(extensions, "_texture_rectangle"))
-                p->use_rectangle = renderer
-                    && strstr(renderer, "Mesa DRI R200") ? 1 : 0;
         }
     }
 
@@ -746,7 +731,6 @@ static void compile_shaders(struct vo *vo)
     void *tmp = talloc_new(NULL);
 
     struct config_value shader_config[] = {
-        { "USE_RECTANGLE", p->use_rectangle == 1 ? "1" : "0" },
         { "USE_PLANAR", p->is_yuv ? "1" : "0" },
         { "USE_COLORMATRIX", p->is_yuv ? "1" : "0" },
         { "USE_GAMMA_POW", p->use_gamma ? "1" : "0" },
@@ -795,7 +779,6 @@ static int initGl(struct vo *vo, uint32_t d_width, uint32_t d_height)
 #endif
 
     autodetectGlExtensions(vo);
-    p->target = p->use_rectangle == 1 ? GL_TEXTURE_RECTANGLE : GL_TEXTURE_2D;
 
     compile_shaders(vo);
 
@@ -816,18 +799,18 @@ static int initGl(struct vo *vo, uint32_t d_width, uint32_t d_height)
 
         gl->ActiveTexture(GL_TEXTURE0 + n);
         gl->GenTextures(1, &plane->gl_texture);
-        gl->BindTexture(p->target, plane->gl_texture);
+        gl->BindTexture(GL_TEXTURE_2D, plane->gl_texture);
 
         GLint scale_type = get_scale_type(vo, plane->is_chroma);
 
-        glCreateClearTex(gl, p->target, p->gl_internal_format, p->gl_format,
+        glCreateClearTex(gl, GL_TEXTURE_2D, p->gl_internal_format, p->gl_format,
                          p->gl_type, scale_type,
                          p->texture_width >> plane->shift_x,
                          p->texture_height >> plane->shift_y,
                          plane->clear_val);
 
         if (p->mipmap_gen)
-            gl->TexParameteri(p->target, GL_GENERATE_MIPMAP, GL_TRUE);
+            gl->TexParameteri(GL_TEXTURE_2D, GL_GENERATE_MIPMAP, GL_TRUE);
     }
     gl->ActiveTexture(GL_TEXTURE0);
 
@@ -1041,7 +1024,7 @@ static void do_render(struct vo *vo)
     struct vertex vb[VERTICES_PER_QUAD * 2];
     bool is_flipped = p->mpi_flipped ^ p->vo_flipped;
 
-    gl->BindTexture(p->target, p->planes[0].gl_texture);
+    gl->BindTexture(GL_TEXTURE_2D, p->planes[0].gl_texture);
 
     if (p->stereo_mode) {
         int w = p->src_rect.width;
@@ -1119,10 +1102,10 @@ static int draw_slice(struct vo *vo, uint8_t *src[], int stride[], int w, int h,
 
     for (int n = 0; n < p->plane_count; n++) {
         gl->ActiveTexture(GL_TEXTURE0 + n);
-        gl->BindTexture(p->target, p->planes[n].gl_texture);
+        gl->BindTexture(GL_TEXTURE_2D, p->planes[n].gl_texture);
         int xs = p->planes[n].shift_x, ys = p->planes[n].shift_y;
-        glUploadTex(gl, p->target, p->gl_format, p->gl_type, src[n], stride[n],
-                    x >> xs, y >> ys, w >> xs, h >> ys, 0);
+        glUploadTex(gl, GL_TEXTURE_2D, p->gl_format, p->gl_type, src[n],
+                    stride[n], x >> xs, y >> ys, w >> xs, h >> ys, 0);
     }
     gl->ActiveTexture(GL_TEXTURE0);
 
@@ -1237,8 +1220,8 @@ static uint32_t draw_image(struct vo *vo, mp_image_t *mpi)
             plane_ptr = NULL; // PBO offset 0
         }
         gl->ActiveTexture(GL_TEXTURE0 + n);
-        gl->BindTexture(p->target, plane->gl_texture);
-        glUploadTex(gl, p->target, p->gl_format, p->gl_type, plane_ptr,
+        gl->BindTexture(GL_TEXTURE_2D, plane->gl_texture);
+        glUploadTex(gl, GL_TEXTURE_2D, p->gl_format, p->gl_type, plane_ptr,
                     mpi->stride[n], mpi->x >> xs, mpi->y >> ys, w >> xs,
                     h >> ys, 0);
     }
@@ -1340,8 +1323,7 @@ static int preinit_internal(struct vo *vo, const char *arg, int allow_sw,
                "    Disable extended color formats for OpenGL 1.2 and later\n"
                "  rectangle=<0,1,2>\n"
                "    0: use power-of-two textures\n"
-               "    1: use texture_rectangle\n"
-               "    2: use texture_non_power_of_two\n"
+               "    1 and 2: use texture_non_power_of_two\n"
                "  ati-hack\n"
                "    Workaround ATI bug with PBOs\n"
                "  force-pbo\n"
@@ -1365,10 +1347,6 @@ static int preinit_internal(struct vo *vo, const char *arg, int allow_sw,
                "    as lscale but for chroma (2x slower with little visible effect).\n"
                "  filter-strength=<value>\n"
                "    set the effect strength for some lscale/cscale filters\n"
-               "  nocustomtlin\n"
-               "    use GL_NEAREST scaling for customtex texture\n"
-               "  customtrect\n"
-               "    use texture_rectangle for customtex texture\n"
                "  mipmapgen\n"
                "    generate mipmaps for the video image (use with TXB in customprog)\n"
                "  osdcolor=<0xAARRGGBB>\n"
