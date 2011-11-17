@@ -21,6 +21,9 @@
  * version 2.1 of the License, or (at your option) any later version.
  */
 
+//xxx
+#include <GL/glew.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -49,18 +52,88 @@
 //! How many parts the OSD may consist of at most
 #define MAX_OSD_PARTS 20
 
-//for gl_priv.use_yuv
-#define MASK_ALL_YUV (~(1 << YUV_CONVERSION_NONE))
-#define MASK_NOT_COMBINERS (~((1 << YUV_CONVERSION_NONE) | (1 << YUV_CONVERSION_COMBINERS)))
-#define MASK_GAMMA_SUPPORT (MASK_NOT_COMBINERS & ~(1 << YUV_CONVERSION_FRAGMENT))
-
 struct vertex {
-    float x, y;
+    float position[2];
     uint8_t color[4];
-    float u, v;
+    float texcoord[2];
 };
 
 #define VERTICES_PER_QUAD 6
+
+// header for each shader
+static const char shader_prelude[] =
+"#version 140\n"
+;
+
+static const char vertex_shader[] =
+"in vec2 vertex_position;\n"
+"in vec4 vertex_color;\n"
+"out vec4 color;\n"
+"in vec2 vertex_texcoord;\n"
+"out vec2 texcoord;\n"
+"uniform mat3 transform;\n"
+"void main() {\n"
+"    gl_Position = vec4(transform * vec3(vertex_position, 1), 1);\n"
+"    color = vertex_color;\n"
+"    texcoord = vertex_texcoord;\n"
+"}\n"
+;
+
+static const char frag_shader_eosd[] =
+"uniform sampler2D texture1;\n"
+"in vec2 texcoord;\n"
+"in vec4 color;\n"
+"out vec4 out_color;\n"
+"void main() {\n"
+"    out_color = vec4(color.rgb, texture2D(texture1, texcoord).a);\n"
+"}\n"
+;
+
+static const char frag_shader_osd[] =
+"uniform sampler2D texture1;\n"
+"in vec2 texcoord;\n"
+"out vec4 out_color;\n"
+"void main() {\n"
+"    out_color = texture2D(texture1, texcoord).rrra;\n"
+"}\n"
+;
+
+static const char frag_shader_video[] =
+"#if USE_RECTANGLE\n"
+"#define SAMPLER2D_VIDEO sampler2DRect\n"
+"#else\n"
+"#define SAMPLER2D_VIDEO sampler2D\n"
+"#endif\n"
+"uniform SAMPLER2D_VIDEO texture1;\n"
+"uniform SAMPLER2D_VIDEO texture2;\n"
+"uniform SAMPLER2D_VIDEO texture3;\n"
+"uniform mat4x3 colormatrix;\n"
+"uniform vec3 gamma;\n"
+"in vec2 texcoord;\n"
+"out vec4 out_color;\n"
+"void main() {\n"
+"#if USE_RECTANGLE\n"
+"    vec2 texcoord_y = texcoord * textureSize(texture1);\n"
+"    vec2 texcoord_uv = texcoord * textureSize(texture2);\n"
+"#else\n"
+"    vec2 texcoord_y = texcoord, texcoord_uv = texcoord;\n"
+"#endif\n"
+"#if USE_PLANAR\n"
+"    vec3 color = vec3(texture(texture1, texcoord_y).r,\n"
+"                      texture(texture2, texcoord_uv).r,\n"
+"                      texture(texture3, texcoord_uv).r);\n"
+"#else\n"
+"    vec3 color = texture(texture1, texcoord_y).rgb;\n"
+"#endif\n"
+"#if USE_COLORMATRIX\n"
+"    color = mat3(colormatrix) * color + colormatrix[3];\n"
+"#endif\n"
+"#if USE_GAMMA_POW\n"
+"    color = pow(color, gamma);\n"
+"#endif\n"
+"    out_color = vec4(color, 1);\n"
+"}\n"
+;
 
 struct texplane {
     // (this can be false even for plane 1+2 if the format is planar RGB)
@@ -79,9 +152,18 @@ struct texplane {
     uint8_t clear_val;
 };
 
+struct vertex_array {
+    GLuint program;
+    GLuint buffer;
+    GLuint vao;
+    int vertex_count;
+};
+
 struct gl_priv {
     MPGLContext *glctx;
     GL *gl;
+
+    struct vertex_array va_osd, va_eosd, va_video;
 
     //! Textures for OSD
     GLuint osdtex[MAX_OSD_PARTS];
@@ -95,13 +177,12 @@ struct gl_priv {
     int osd_color;
 
     int use_ycbcr;
-    int use_yuv;
+    int use_gamma;
     struct mp_csp_details colorspace;
     int is_yuv;
     int lscale;
     int cscale;
     float filter_strength;
-    int yuvconvtype;
     int use_rectangle;
     int err_shown;
     uint32_t image_width;
@@ -128,11 +209,6 @@ struct gl_priv {
     int plane_count;
     struct texplane planes[3];
 
-    GLuint fragprog;
-    char *custom_prog;
-    char *custom_tex;
-    int custom_tlin;
-    int custom_trect;
     int mipmap_gen;
     int stereo_mode;
 
@@ -148,60 +224,190 @@ struct gl_priv {
     int border_x, border_y;     // OSD borders
 };
 
-static void vertex_array_enable(GL *gl, struct vertex *va)
+static void gl_check_error(GL *gl, const char *info)
 {
-    size_t stride = sizeof(struct vertex);
-
-    gl->VertexPointer(2, GL_FLOAT, stride, &va[0].x);
-    gl->ColorPointer(4, GL_UNSIGNED_BYTE, stride, &va[0].color[0]);
-    gl->TexCoordPointer(2, GL_FLOAT, stride, &va[0].u);
-
-    gl->EnableClientState(GL_VERTEX_ARRAY);
-    gl->EnableClientState(GL_TEXTURE_COORD_ARRAY);
-    gl->EnableClientState(GL_COLOR_ARRAY);
+    if (glGetError() != GL_NO_ERROR) {
+        printf("error: %s\n", info);
+        abort();
+    }
 }
 
-static void vertex_array_disable(GL *gl)
+static void matrix_ortho2d(float m[3][3], float x0, float x1,
+                           float y0, float y1)
 {
-    gl->DisableClientState(GL_VERTEX_ARRAY);
-    gl->DisableClientState(GL_TEXTURE_COORD_ARRAY);
-    gl->DisableClientState(GL_COLOR_ARRAY);
+    memset(m, 0, 9 * sizeof(float));
+    m[0][0] = 2.0f / (x1 - x0);
+    m[1][1] = 2.0f / (y1 - y0);
+    m[2][0] = -(x1 + x0) / (x1 - x0);
+    m[2][1] = -(y1 + y0) / (y1 - y0);
+    m[2][2] = 1.0f;
+}
+
+static void vertex_array_init(GL *gl, struct vertex_array * va, GLuint program)
+{
+    size_t stride = sizeof(struct vertex);
+    GLint loc;
+
+    *va = (struct vertex_array) { .program = program };
+
+    glGenBuffers(1, &va->buffer);
+    glGenVertexArrays(1, &va->vao);
+
+    glBindBuffer(GL_ARRAY_BUFFER, va->buffer);
+    glBindVertexArray(va->vao);
+
+    loc = glGetAttribLocation(program, "vertex_position");
+    if (loc >= 0) {
+        glEnableVertexAttribArray(loc);
+        glVertexAttribPointer(loc, 2, GL_FLOAT, GL_FALSE, stride,
+                              (void*)offsetof(struct vertex, position));
+    }
+
+    loc = glGetAttribLocation(program, "vertex_color");
+    if (loc >= 0) {
+        glEnableVertexAttribArray(loc);
+        glVertexAttribPointer(loc, 4, GL_UNSIGNED_BYTE, GL_TRUE, stride,
+                              (void*)offsetof(struct vertex, color));
+    }
+
+    loc = glGetAttribLocation(program, "vertex_texcoord");
+    if (loc >= 0) {
+        glEnableVertexAttribArray(loc);
+        glVertexAttribPointer(loc, 2, GL_FLOAT, GL_FALSE, stride,
+                              (void*)offsetof(struct vertex, texcoord));
+    }
+
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
+}
+
+static void vertex_array_uninit(GL *gl, struct vertex_array *va)
+{
+    glDeleteVertexArrays(1, &va->vao);
+    glDeleteBuffers(1, &va->buffer);
+    *va = (struct vertex_array) {0};
+}
+
+static void vertex_array_upload(GL *gl, struct vertex_array *va,
+                                struct vertex *vb, int vertex_count)
+{
+    glBindBuffer(GL_ARRAY_BUFFER, va->buffer);
+    glBufferData(GL_ARRAY_BUFFER, vertex_count * sizeof(struct vertex), vb,
+                 GL_DYNAMIC_DRAW);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    va->vertex_count = vertex_count;
+}
+
+static void vertex_array_draw(GL *gl, struct vertex_array *va)
+{
+    glUseProgram(va->program);
+    glBindVertexArray(va->vao);
+    gl->DrawArrays(GL_TRIANGLES, 0, va->vertex_count);
+    glBindVertexArray(0);
+    glUseProgram(0);
+
+    gl_check_error(gl, "end draw");
 }
 
 // Write a textured quad to a vertex array.
 // va = destination vertex array, VERTICES_PER_QUAD entries will be overwritten
 // x0, y0, x1, y1 = destination coordinates of the quad
 // tx0, ty0, tx1, ty1 = source texture coordinates (in pixels)
-// texture_w, texture_h = source of the texture
+// texture_w, texture_h = size of the texture
 // color = optional color for all vertices, NULL for opaque white
-// rectangle = the texture uses GL_TEXTURE_RECTANGLE
+// flip = flip vertically
 static void write_quad(struct vertex *va,
                        float x0, float y0, float x1, float y1,
                        float tx0, float ty0, float tx1, float ty1,
                        float texture_w, float texture_h,
-                       const uint8_t color[4],
-                       bool rectangle)
+                       const uint8_t color[4], bool flip)
 {
     static const uint8_t white[4] = { 255, 255, 255, 255 };
 
     if (!color)
         color = white;
 
-    if (!rectangle) {
-        tx0 /= texture_w;
-        ty0 /= texture_h;
-        tx1 /= texture_w;
-        ty1 /= texture_h;
+    tx0 /= texture_w;
+    ty0 /= texture_h;
+    tx1 /= texture_w;
+    ty1 /= texture_h;
+
+    if (flip) {
+        float tmp = ty0;
+        ty0 = ty1;
+        ty1 = tmp;
     }
 
 #define COLOR_INIT {color[0], color[1], color[2], color[3]}
-    va[0] = (struct vertex) { x0, y0, COLOR_INIT, tx0, ty0 };
-    va[1] = (struct vertex) { x0, y1, COLOR_INIT, tx0, ty1 };
-    va[2] = (struct vertex) { x1, y0, COLOR_INIT, tx1, ty0 };
-    va[3] = (struct vertex) { x1, y1, COLOR_INIT, tx1, ty1 };
+    va[0] = (struct vertex) { {x0, y0}, COLOR_INIT, {tx0, ty0} };
+    va[1] = (struct vertex) { {x0, y1}, COLOR_INIT, {tx0, ty1} };
+    va[2] = (struct vertex) { {x1, y0}, COLOR_INIT, {tx1, ty0} };
+    va[3] = (struct vertex) { {x1, y1}, COLOR_INIT, {tx1, ty1} };
     va[4] = va[2];
     va[5] = va[1];
 #undef COLOR_INIT
+}
+
+static void update_uniforms(struct vo *vo, GLuint program)
+{
+    struct gl_priv *p = vo->priv;
+    GL *gl = p->gl;
+    GLuint loc;
+
+    if (program == 0)
+        return;
+
+    glUseProgram(program);
+
+    loc = glGetUniformLocation(program, "transform");
+    if (loc >= 0) {
+        float matrix[3][3];
+        matrix_ortho2d(matrix, 0, vo->dwidth, vo->dheight, 0);
+        glUniformMatrix3fv(loc, 1, GL_FALSE, &matrix[0][0]);
+    }
+
+    loc = glGetUniformLocation(program, "colormatrix");
+    if (loc >= 0) {
+        struct mp_csp_params cparams = {
+            .colorspace = p->colorspace,
+            .input_shift = -p->plane_bits & 7,
+        };
+        mp_csp_copy_equalizer_values(&cparams, &p->video_eq);
+        float yuv2rgb[3][4];
+        mp_get_yuv2rgb_coeffs(&cparams, yuv2rgb);
+        glUniformMatrix4x3fv(loc, 1, GL_TRUE, &yuv2rgb[0][0]);
+    }
+
+    loc = glGetUniformLocation(program, "gamma");
+    if (loc >= 0) {
+        struct mp_csp_params cparams = {{0}};
+        mp_csp_copy_equalizer_values(&cparams, &p->video_eq);
+        glUniform3f(loc, 1.0 / cparams.rgamma, 1.0 / cparams.ggamma,
+                    1.0 / cparams.bgamma);
+    }
+
+    loc = glGetUniformLocation(program, "texture1");
+    if (loc >= 0)
+        glUniform1i(loc, 0);
+    loc = glGetUniformLocation(program, "texture2");
+    if (loc >= 0)
+        glUniform1i(loc, 1);
+    loc = glGetUniformLocation(program, "texture3");
+    if (loc >= 0)
+        glUniform1i(loc, 2);
+
+    glUseProgram(0);
+
+    gl_check_error(gl, "update_uniforms");
+}
+
+static void update_all_uniforms(struct vo *vo)
+{
+    struct gl_priv *p = vo->priv;
+
+    update_uniforms(vo, p->va_osd.program);
+    update_uniforms(vo, p->va_eosd.program);
+    update_uniforms(vo, p->va_video.program);
 }
 
 static void resize(struct vo *vo, int x, int y)
@@ -224,9 +430,7 @@ static void resize(struct vo *vo, int x, int y)
     p->border_x = borders.left;
     p->border_y = borders.top;
 
-    gl->MatrixMode(GL_MODELVIEW);
-    gl->LoadIdentity();
-    gl->Ortho(0, vo->dwidth, vo->dheight, 0, -1, 1);
+    update_all_uniforms(vo);
 
 #ifdef CONFIG_FREETYPE
     // adjust font size to display size
@@ -255,65 +459,6 @@ static void texSize(struct vo *vo, int w, int h, int *texw, int *texh)
     }
     if (p->ati_hack)
         *texw = (*texw + 511) & ~511;
-}
-
-//! maximum size of custom fragment program
-#define MAX_CUSTOM_PROG_SIZE (1024 * 1024)
-static void update_yuvconv(struct vo *vo)
-{
-    struct gl_priv *p = vo->priv;
-    GL *gl = p->gl;
-
-    int xs, ys, depth;
-    struct mp_csp_params cparams = { .colorspace = p->colorspace };
-    mp_csp_copy_equalizer_values(&cparams, &p->video_eq);
-    gl_conversion_params_t params = {
-        p->target, p->yuvconvtype, cparams,
-        p->texture_width, p->texture_height, 0, 0, p->filter_strength
-    };
-    mp_get_chroma_shift(p->image_format, &xs, &ys, &depth);
-    params.chrom_texw = params.texw >> xs;
-    params.chrom_texh = params.texh >> ys;
-    params.csp_params.input_shift = -depth & 7;
-    glSetupYUVConversion(gl, &params);
-    if (p->custom_prog) {
-        FILE *f = fopen(p->custom_prog, "rb");
-        if (!f) {
-            mp_msg(MSGT_VO, MSGL_WARN,
-                   "[gl] Could not read customprog %s\n", p->custom_prog);
-        } else {
-            char *prog = calloc(1, MAX_CUSTOM_PROG_SIZE + 1);
-            fread(prog, 1, MAX_CUSTOM_PROG_SIZE, f);
-            fclose(f);
-            loadGPUProgram(gl, GL_FRAGMENT_PROGRAM, prog);
-            free(prog);
-        }
-        gl->ProgramEnvParameter4f(GL_FRAGMENT_PROGRAM, 0,
-                                  1.0 / p->texture_width,
-                                  1.0 / p->texture_height,
-                                  p->texture_width, p->texture_height);
-    }
-    if (p->custom_tex) {
-        FILE *f = fopen(p->custom_tex, "rb");
-        if (!f) {
-            mp_msg(MSGT_VO, MSGL_WARN,
-                   "[gl] Could not read customtex %s\n", p->custom_tex);
-        } else {
-            int width, height, maxval;
-            gl->ActiveTexture(GL_TEXTURE3);
-            if (glCreatePPMTex(gl, p->custom_trect ? GL_TEXTURE_RECTANGLE : GL_TEXTURE_2D,
-                               0, p->custom_tlin ? GL_LINEAR : GL_NEAREST,
-                               f, &width, &height, &maxval)) {
-                gl->ProgramEnvParameter4f(GL_FRAGMENT_PROGRAM, 1,
-                                          1.0 / width, 1.0 / height,
-                                          width, height);
-            } else
-                mp_msg(MSGT_VO, MSGL_WARN,
-                       "[gl] Error parsing customtex %s\n", p->custom_tex);
-            fclose(f);
-            gl->ActiveTexture(GL_TEXTURE0);
-        }
-    }
 }
 
 /**
@@ -350,15 +495,15 @@ static void genEOSD(struct vo *vo, mp_eosd_images_t *imgs)
         need_allocate = true;
     }
 
-    gl->BindTexture(p->target, p->eosd_texture);
+    gl->BindTexture(GL_TEXTURE_2D, p->eosd_texture);
 
     if (need_allocate) {
         texSize(vo, p->eosd->surface.w, p->eosd->surface.h,
                 &p->eosd_texture_width, &p->eosd_texture_height);
         // xxx it doesn't need to be cleared, that's a waste of time
-        glCreateClearTex(gl, p->target, GL_ALPHA, GL_ALPHA, GL_UNSIGNED_BYTE,
-                         GL_NEAREST, p->eosd_texture_width,
-                         p->eosd_texture_height, 0);
+        glCreateClearTex(gl, GL_TEXTURE_2D, GL_ALPHA, GL_ALPHA,
+                         GL_UNSIGNED_BYTE, GL_NEAREST,
+                         p->eosd_texture_width, p->eosd_texture_height, 0);
     }
 
     // 2 triangles primitives per quad = 6 vertices per quad
@@ -372,7 +517,7 @@ static void genEOSD(struct vo *vo, mp_eosd_images_t *imgs)
         struct eosd_target *target = &p->eosd->targets[n];
         ASS_Image *i = target->ass_img;
 
-        glUploadTex(gl, p->target, GL_ALPHA, GL_UNSIGNED_BYTE, i->bitmap,
+        glUploadTex(gl, GL_TEXTURE_2D, GL_ALPHA, GL_UNSIGNED_BYTE, i->bitmap,
                     i->stride, target->source.x0, target->source.y0,
                     i->w, i->h, 0);
 
@@ -385,10 +530,13 @@ static void genEOSD(struct vo *vo, mp_eosd_images_t *imgs)
                    target->source.x0, target->source.y0,
                    target->source.x1, target->source.y1,
                    p->eosd_texture_width, p->eosd_texture_height,
-                   color, p->use_rectangle == 1);
+                   color, false);
     }
 
-    gl->BindTexture(p->target, 0);
+    gl->BindTexture(GL_TEXTURE_2D, 0);
+
+    vertex_array_upload(gl, &p->va_eosd, p->eosd_va,
+                        p->eosd->targets_count * VERTICES_PER_QUAD);
 }
 
 // Note: relies on state being setup, like projection matrix and blending
@@ -400,15 +548,9 @@ static void drawEOSD(struct vo *vo)
     if (p->eosd->targets_count == 0)
         return;
 
-    gl->BindTexture(p->target, p->eosd_texture);
-
-    vertex_array_enable(gl, p->eosd_va);
-
-    gl->DrawArrays(GL_TRIANGLES, 0, p->eosd->targets_count * VERTICES_PER_QUAD);
-
-    vertex_array_disable(gl);
-
-    gl->BindTexture(p->target, 0);
+    gl->BindTexture(GL_TEXTURE_2D, p->eosd_texture);
+    vertex_array_draw(gl, &p->va_eosd);
+    gl->BindTexture(GL_TEXTURE_2D, 0);
 }
 
 /**
@@ -419,9 +561,16 @@ static void uninitGl(struct vo *vo)
     struct gl_priv *p = vo->priv;
     GL *gl = p->gl;
 
-    if (gl->DeletePrograms && p->fragprog)
-        gl->DeletePrograms(1, &p->fragprog);
-    p->fragprog = 0;
+    if (!glDeleteProgram)
+        return;
+
+    glDeleteProgram(p->va_osd.program);
+    glDeleteProgram(p->va_eosd.program);
+    glDeleteProgram(p->va_video.program);
+    vertex_array_uninit(gl, &p->va_osd);
+    vertex_array_uninit(gl, &p->va_eosd);
+    vertex_array_uninit(gl, &p->va_video);
+
     for (int n = 0; n < 3; n++) {
         struct texplane *plane = &p->planes[n];
         if (plane->gl_texture)
@@ -484,19 +633,12 @@ static void autodetectGlExtensions(struct vo *vo)
                     && strstr(renderer, "Mesa DRI R200") ? 1 : 0;
         }
     }
-    if (p->use_yuv == -1)
-        p->use_yuv = glAutodetectYUVConversion(gl);
 
     int eq_caps = 0;
-    int yuv_mask = (1 << p->use_yuv);
-    if (!(yuv_mask & MASK_NOT_COMBINERS)) {
-        // combiners
-        eq_caps = (1 << MP_CSP_EQ_HUE) | (1 << MP_CSP_EQ_SATURATION);
-    } else if (yuv_mask & MASK_ALL_YUV) {
-        eq_caps = MP_CSP_EQ_CAPS_COLORMATRIX;
-        if (yuv_mask & MASK_GAMMA_SUPPORT)
-            eq_caps |= MP_CSP_EQ_CAPS_GAMMA;
-    }
+    if (p->is_yuv)
+        eq_caps |= MP_CSP_EQ_CAPS_COLORMATRIX;
+    if (p->use_gamma)
+        eq_caps |= MP_CSP_EQ_CAPS_GAMMA;
     p->video_eq.capabilities = eq_caps;
 
     if (is_ati && (p->lscale == 1 || p->lscale == 2 || p->cscale == 1 || p->cscale == 2))
@@ -504,8 +646,8 @@ static void autodetectGlExtensions(struct vo *vo)
                " ATI cards.\n"
                "Tell _them_ to fix GL_REPEAT if you have issues.\n");
     mp_msg(MSGT_VO, MSGL_V, "[gl] Settings after autodetection: ati-hack = %i, "
-           "force-pbo = %i, rectangle = %i, yuv = %i\n",
-           p->ati_hack, p->force_pbo, p->use_rectangle, p->use_yuv);
+           "force-pbo = %i, rectangle = %i\n",
+           p->ati_hack, p->force_pbo, p->use_rectangle);
 }
 
 static GLint get_scale_type(struct vo *vo, int chroma)
@@ -524,6 +666,109 @@ static int get_chroma_clear_val(int bit_depth)
     return 1 << (bit_depth - 1 & 7);
 }
 
+static GLuint create_shader(GL *gl, GLenum type, const char *header,
+                            const char *source)
+{
+    GLuint shader = glCreateShader(type);
+    glShaderSource(shader, 2, (const char*[]) { header, source }, NULL);
+    glCompileShader(shader);
+    GLint status;
+    glGetShaderiv(shader, GL_COMPILE_STATUS, &status);
+    GLint log_length;
+    glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &log_length);
+
+    if (!status || log_length > 0) {
+        GLchar *log = calloc(1, log_length + 1);
+        glGetShaderInfoLog(shader, log_length, NULL, log);
+        mp_msg(MSGT_VO, status ? MSGL_V : MSGL_ERR,
+               "[gl] shader compile log (error=%d): %s\n", status, log);
+        free(log);
+    }
+
+    return shader;
+}
+
+static void prog_create_shader(GL *gl, GLuint program, GLenum type,
+                               const char *header, const char *source)
+{
+    GLuint shader = create_shader(gl, type, header, source);
+    glAttachShader(program, shader);
+    glDeleteShader(shader);
+}
+
+static void link_shader(GL *gl, GLuint program)
+{
+    glLinkProgram(program);
+    GLint status;
+    glGetProgramiv(program, GL_LINK_STATUS, &status);
+    GLint log_length;
+    glGetProgramiv(program, GL_INFO_LOG_LENGTH, &log_length);
+
+    if (!status || log_length > 0) {
+        GLchar *log = calloc(1, log_length + 1);
+        glGetProgramInfoLog(program, log_length, NULL, log);
+        mp_msg(MSGT_VO, status ? MSGL_V : MSGL_ERR,
+               "[gl] shader link log (error=%d): %s\n", status, log);
+        free(log);
+    }
+}
+
+static GLuint create_program(GL *gl, const char *header, const char *vertex,
+                             const char *frag)
+{
+    GLuint prog = glCreateProgram();
+    prog_create_shader(gl, prog, GL_VERTEX_SHADER, header, vertex);
+    prog_create_shader(gl, prog, GL_FRAGMENT_SHADER, header, frag);
+    link_shader(gl, prog);
+    return prog;
+}
+
+struct config_value {
+    const char *name;
+    const char *value;
+};
+
+static char *shader_header(void *talloc_ctx, struct config_value *config)
+{
+    char *res = talloc_strdup(talloc_ctx, shader_prelude);
+    while (config->name) {
+        res = talloc_asprintf_append(res, "#define %s %s\n", config->name,
+                                     config->value);
+        config++;
+    }
+    return res;
+}
+
+static void compile_shaders(struct vo *vo)
+{
+    struct gl_priv *p = vo->priv;
+    GL *gl = p->gl;
+    void *tmp = talloc_new(NULL);
+
+    struct config_value shader_config[] = {
+        { "USE_RECTANGLE", p->use_rectangle == 1 ? "1" : "0" },
+        { "USE_PLANAR", p->is_yuv ? "1" : "0" },
+        { "USE_COLORMATRIX", p->is_yuv ? "1" : "0" },
+        { "USE_GAMMA_POW", p->use_gamma ? "1" : "0" },
+        {0}
+    };
+
+    char *pre = shader_header(tmp, shader_config);
+
+    vertex_array_init(gl, &p->va_eosd,
+                      create_program(gl, pre, vertex_shader, frag_shader_eosd));
+
+    vertex_array_init(gl, &p->va_osd,
+                      create_program(gl, pre, vertex_shader, frag_shader_osd));
+
+    vertex_array_init(gl, &p->va_video,
+                      create_program(gl, pre, vertex_shader, frag_shader_video));
+
+    gl_check_error(gl, "shader compilation");
+
+    talloc_free(tmp);
+}
+
 /**
  * \brief Initialize a (new or reused) OpenGL context.
  * set global gl-related variables to their default values
@@ -533,11 +778,24 @@ static int initGl(struct vo *vo, uint32_t d_width, uint32_t d_height)
     struct gl_priv *p = vo->priv;
     GL *gl = p->gl;
 
+    // NOTE: needs a GL context
+    GLenum err = glewInit();
+    if (err != GLEW_OK) {
+        printf("glew error: %s\n", glewGetErrorString(err));
+        abort();
+        return 0;
+    }
+
+    if (!glewIsSupported("GL_VERSION_3_3")) {
+        printf("OpenGL 3.3 not available\n");
+        abort();
+        return 0;
+    }
+
     autodetectGlExtensions(vo);
     p->target = p->use_rectangle == 1 ? GL_TEXTURE_RECTANGLE : GL_TEXTURE_2D;
-    p->yuvconvtype = SET_YUV_CONVERSION(p->use_yuv) |
-                     SET_YUV_LUM_SCALER(p->lscale) |
-                     SET_YUV_CHROM_SCALER(p->cscale);
+
+    compile_shaders(vo);
 
     texSize(vo, p->image_width, p->image_height,
             &p->texture_width, &p->texture_height);
@@ -546,9 +804,7 @@ static int initGl(struct vo *vo, uint32_t d_width, uint32_t d_height)
     gl->Disable(GL_DEPTH_TEST);
     gl->DepthMask(GL_FALSE);
     gl->Disable(GL_CULL_FACE);
-    gl->Enable(p->target);
     gl->DrawBuffer(vo_doublebuffering ? GL_BACK : GL_FRONT);
-    gl->TexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
 
     mp_msg(MSGT_VO, MSGL_V, "[gl] Creating %dx%d texture...\n",
            p->texture_width, p->texture_height);
@@ -572,19 +828,6 @@ static int initGl(struct vo *vo, uint32_t d_width, uint32_t d_height)
             gl->TexParameteri(p->target, GL_GENERATE_MIPMAP, GL_TRUE);
     }
     gl->ActiveTexture(GL_TEXTURE0);
-
-    if (p->is_yuv || p->custom_prog) {
-        if ((MASK_NOT_COMBINERS & (1 << p->use_yuv)) || p->custom_prog) {
-            if (!gl->GenPrograms || !gl->BindProgram)
-                mp_msg(MSGT_VO, MSGL_ERR,
-                       "[gl] fragment program functions missing!\n");
-            else {
-                gl->GenPrograms(1, &p->fragprog);
-                gl->BindProgram(GL_FRAGMENT_PROGRAM, p->fragprog);
-            }
-        }
-        update_yuvconv(vo);
-    }
 
     GLint max_texture_size;
     gl->GetIntegerv(GL_MAX_TEXTURE_SIZE, &max_texture_size);
@@ -623,7 +866,6 @@ static int config(struct vo *vo, uint32_t width, uint32_t height,
     p->image_d_width = d_width;
     p->image_d_height = d_height;
     p->is_yuv = mp_get_chroma_shift(p->image_format, &xs, &ys, &depth) > 0;
-    p->is_yuv |= (xs << 8) | (ys << 16);
     glFindFormat(format, p->have_texture_rg, NULL, &p->gl_internal_format,
                  &p->gl_format, &p->gl_type);
 
@@ -704,8 +946,8 @@ static void create_osd_texture(void *ctx, int x0, int y0, int w, int h,
     }
 
     gl->GenTextures(1, &p->osdtex[p->osdtexCnt]);
-    gl->BindTexture(p->target, p->osdtex[p->osdtexCnt]);
-    glCreateClearTex(gl, p->target, GL_LUMINANCE_ALPHA, GL_LUMINANCE_ALPHA,
+    gl->BindTexture(GL_TEXTURE_2D, p->osdtex[p->osdtexCnt]);
+    glCreateClearTex(gl, GL_TEXTURE_2D, GL_LUMINANCE_ALPHA, GL_LUMINANCE_ALPHA,
                      GL_UNSIGNED_BYTE, scale_type, sx, sy, 0);
     {
         int i;
@@ -715,19 +957,19 @@ static void create_osd_texture(void *ctx, int x0, int y0, int w, int h,
             tmp[i*2+0] = src[i];
             tmp[i*2+1] = -srca[i];
         }
-        glUploadTex(gl, p->target, GL_LUMINANCE_ALPHA, GL_UNSIGNED_BYTE, tmp,
-                    stride * 2, 0, 0, w, h, 0);
+        glUploadTex(gl, GL_TEXTURE_2D, GL_LUMINANCE_ALPHA, GL_UNSIGNED_BYTE,
+                    tmp, stride * 2, 0, 0, w, h, 0);
         free(tmp);
     }
 
-    gl->BindTexture(p->target, 0);
+    gl->BindTexture(GL_TEXTURE_2D, 0);
 
     uint8_t color[4] = {(p->osd_color >> 16) & 0xff, (p->osd_color >> 8) & 0xff,
                         p->osd_color & 0xff, 0xff - (p->osd_color >> 24)};
 
     write_quad(&p->osd_va[p->osdtexCnt * VERTICES_PER_QUAD],
                x0, y0, x0 + w, y0 + h, 0, 0, w, h,
-               sx, sy, color, p->use_rectangle == 1);
+               sx, sy, color, false);
 
     p->osdtexCnt++;
 }
@@ -754,22 +996,27 @@ static void do_render_osd(struct vo *vo, int type)
         drawEOSD(vo);
     }
     if (draw_osd) {
-        vertex_array_enable(gl, &p->osd_va[0]);
+        glUseProgram(p->va_osd.program);
+        glBindVertexArray(p->va_osd.vao);
+
         for (int n = 0; n < p->osdtexCnt; n++) {
-            gl->BindTexture(p->target, p->osdtex[n]);
+            gl->BindTexture(GL_TEXTURE_2D, p->osdtex[n]);
             gl->DrawArrays(GL_TRIANGLES, n * VERTICES_PER_QUAD,
                            VERTICES_PER_QUAD);
         }
-        vertex_array_disable(gl);
+
+        glBindVertexArray(0);
+        glUseProgram(0);
     }
     // set rendering parameters back to defaults
     gl->Disable(GL_BLEND);
-    gl->BindTexture(p->target, 0);
+    gl->BindTexture(GL_TEXTURE_2D, 0);
 }
 
 static void draw_osd(struct vo *vo, struct osd_state *osd)
 {
     struct gl_priv *p = vo->priv;
+    GL *gl = p->gl;
 
     if (vo_osd_changed(0)) {
         clearOSD(vo);
@@ -777,6 +1024,8 @@ static void draw_osd(struct vo *vo, struct osd_state *osd)
                           p->border_y, p->border_x,
                           p->border_y, p->image_width,
                           p->image_height, create_osd_texture, vo);
+        vertex_array_upload(gl, &p->va_osd, &p->osd_va[0],
+                            p->osdtexCnt * VERTICES_PER_QUAD);
     }
     if (vo_doublebuffering)
         do_render_osd(vo, RENDER_OSD);
@@ -786,43 +1035,54 @@ static void do_render(struct vo *vo)
 {
     struct gl_priv *p = vo->priv;
     GL *gl = p->gl;
+    struct vertex vb[VERTICES_PER_QUAD * 2];
+    bool is_flipped = p->mpi_flipped ^ p->vo_flipped;
 
     gl->BindTexture(p->target, p->planes[0].gl_texture);
 
-    if (p->is_yuv || p->custom_prog)
-        glEnableYUVConversion(gl, p->target, p->yuvconvtype);
     if (p->stereo_mode) {
+        int w = p->src_rect.width;
+        int imgw = p->image_width;
+        write_quad(vb,
+                   p->dst_rect.left, p->dst_rect.top,
+                   p->dst_rect.right, p->dst_rect.bottom,
+                   p->src_rect.left / 2, p->src_rect.top,
+                   p->src_rect.left / 2 + w / 2, p->src_rect.bottom,
+                   p->texture_width, p->texture_height,
+                   NULL, is_flipped);
+        write_quad(vb + VERTICES_PER_QUAD,
+                   p->dst_rect.left, p->dst_rect.top,
+                   p->dst_rect.right, p->dst_rect.bottom,
+                   p->src_rect.left / 2 + imgw / 2, p->src_rect.top,
+                   p->src_rect.left / 2 + imgw / 2 + w / 2, p->src_rect.bottom,
+                   p->texture_width, p->texture_height,
+                   NULL, is_flipped);
+
+        vertex_array_upload(gl, &p->va_video, vb, VERTICES_PER_QUAD * 2);
+
+        glUseProgram(p->va_video.program);
+        glBindVertexArray(p->va_video.vao);
+
         glEnable3DLeft(gl, p->stereo_mode);
-        glDrawTex(gl,
-                  p->dst_rect.left, p->dst_rect.top,
-                  p->dst_rect.width, p->dst_rect.height,
-                  p->src_rect.left / 2, p->src_rect.top,
-                  p->src_rect.width / 2, p->src_rect.height,
-                  p->texture_width, p->texture_height,
-                  p->use_rectangle == 1, p->is_yuv,
-                  p->mpi_flipped ^ p->vo_flipped);
+        gl->DrawArrays(GL_TRIANGLES, 0, VERTICES_PER_QUAD);
         glEnable3DRight(gl, p->stereo_mode);
-        glDrawTex(gl,
-                  p->dst_rect.left, p->dst_rect.top,
-                  p->dst_rect.width, p->dst_rect.height,
-                  p->src_rect.left / 2 + p->image_width / 2, p->src_rect.top,
-                  p->src_rect.width / 2, p->src_rect.height,
-                  p->texture_width, p->texture_height,
-                  p->use_rectangle == 1, p->is_yuv,
-                  p->mpi_flipped ^ p->vo_flipped);
+        gl->DrawArrays(GL_TRIANGLES, VERTICES_PER_QUAD, VERTICES_PER_QUAD);
         glDisable3D(gl, p->stereo_mode);
+
+        glBindVertexArray(0);
+        glUseProgram(0);
     } else {
-        glDrawTex(gl,
-                  p->dst_rect.left, p->dst_rect.top,
-                  p->dst_rect.width, p->dst_rect.height,
-                  p->src_rect.left, p->src_rect.top,
-                  p->src_rect.width, p->src_rect.height,
-                  p->texture_width, p->texture_height,
-                  p->use_rectangle == 1, p->is_yuv,
-                  p->mpi_flipped ^ p->vo_flipped);
+        write_quad(vb,
+                   p->dst_rect.left, p->dst_rect.top,
+                   p->dst_rect.right, p->dst_rect.bottom,
+                   p->src_rect.left, p->src_rect.top,
+                   p->src_rect.right, p->src_rect.bottom,
+                   p->texture_width, p->texture_height,
+                   NULL, is_flipped);
+
+        vertex_array_upload(gl, &p->va_video, vb, VERTICES_PER_QUAD);
+        vertex_array_draw(gl, &p->va_video);
     }
-    if (p->is_yuv || p->custom_prog)
-        glDisableYUVConversion(gl, p->target, p->yuvconvtype);
 }
 
 static void flip_page(struct vo *vo)
@@ -997,14 +1257,9 @@ static int query_format(struct vo *vo, uint32_t format)
                VFCAP_OSD | VFCAP_EOSD | VFCAP_EOSD_UNSCALED;
     if (format == IMGFMT_RGB24 || format == IMGFMT_RGBA)
         return caps;
-    if (p->use_yuv && mp_get_chroma_shift(format, NULL, NULL, &depth) &&
-        (depth == 8 || depth == 16 || glYUVLargeRange(p->use_yuv)) &&
+    if (mp_get_chroma_shift(format, NULL, NULL, &depth) &&
         (IMGFMT_IS_YUVP16_NE(format) || !IMGFMT_IS_YUVP16(format)))
         return caps;
-    // HACK, otherwise we get only b&w with some filters (e.g. -vf eq)
-    // ideally MPlayer should be fixed instead not to use Y800 when it has the choice
-    if (!p->use_yuv && (format == IMGFMT_Y8 || format == IMGFMT_Y800))
-        return 0;
     if (!p->use_ycbcr && (format == IMGFMT_UYVY || format == IMGFMT_YVYU))
         return 0;
     if (p->many_fmts &&
@@ -1019,10 +1274,6 @@ static void uninit(struct vo *vo)
 
     if (p->glctx)
         uninitGl(vo);
-    free(p->custom_prog);
-    p->custom_prog = NULL;
-    free(p->custom_tex);
-    p->custom_tex = NULL;
     uninit_mpglcontext(p->glctx);
     p->glctx = NULL;
     p->gl = NULL;
@@ -1036,16 +1287,12 @@ static int preinit_internal(struct vo *vo, const char *arg, int allow_sw,
 
     *p = (struct gl_priv) {
         .many_fmts = 1,
-        .use_yuv = -1,
         .colorspace = MP_CSP_DETAILS_DEFAULTS,
         .filter_strength = 0.5,
         .use_rectangle = -1,
         .ati_hack = -1,
         .force_pbo = -1,
         .swap_interval = 1,
-        .custom_prog = NULL,
-        .custom_tex = NULL,
-        .custom_tlin = 1,
         .osd_color = 0xffffff,
     };
 
@@ -1055,26 +1302,24 @@ static int preinit_internal(struct vo *vo, const char *arg, int allow_sw,
     int user_colorspace = 0;
     int levelconv = -1;
     int aspect = -1;
+    int yuv = -1;
 
     const opt_t subopts[] = {
         {"manyfmts",     OPT_ARG_BOOL, &p->many_fmts,    NULL},
         {"ycbcr",        OPT_ARG_BOOL, &p->use_ycbcr,    NULL},
         {"rectangle",    OPT_ARG_INT,  &p->use_rectangle,int_non_neg},
-        {"yuv",          OPT_ARG_INT,  &p->use_yuv,      int_non_neg},
-        {"lscale",       OPT_ARG_INT,  &p->lscale,       int_non_neg},
-        {"cscale",       OPT_ARG_INT,  &p->cscale,       int_non_neg},
         {"filter-strength", OPT_ARG_FLOAT, &p->filter_strength, NULL},
         {"ati-hack",     OPT_ARG_BOOL, &p->ati_hack,     NULL},
         {"force-pbo",    OPT_ARG_BOOL, &p->force_pbo,    NULL},
         {"glfinish",     OPT_ARG_BOOL, &p->use_glFinish, NULL},
         {"swapinterval", OPT_ARG_INT,  &p->swap_interval,NULL},
-        {"customprog",   OPT_ARG_MSTRZ,&p->custom_prog,  NULL},
-        {"customtex",    OPT_ARG_MSTRZ,&p->custom_tex,   NULL},
-        {"customtlin",   OPT_ARG_BOOL, &p->custom_tlin,  NULL},
-        {"customtrect",  OPT_ARG_BOOL, &p->custom_trect, NULL},
         {"mipmapgen",    OPT_ARG_BOOL, &p->mipmap_gen,   NULL},
         {"osdcolor",     OPT_ARG_INT,  &p->osd_color,    NULL},
         {"stereo",       OPT_ARG_INT,  &p->stereo_mode,  NULL},
+        // Legacy.
+        {"yuv",          OPT_ARG_INT,  &yuv,             int_non_neg},
+        {"lscale",       OPT_ARG_INT,  &p->lscale,       int_non_neg},
+        {"cscale",       OPT_ARG_INT,  &p->cscale,       int_non_neg},
         // Removed options.
         // They are only parsed to notify the user about the replacements.
         {"aspect",       OPT_ARG_BOOL, &aspect,          NULL},
@@ -1106,14 +1351,6 @@ static int preinit_internal(struct vo *vo, const char *arg, int allow_sw,
                "    Requires GLX_SGI_swap_control support to work.\n"
                "  ycbcr\n"
                "    also try to use the GL_MESA_ycbcr_texture extension\n"
-               "  yuv=<n>\n"
-               "    0: use software YUV to RGB conversion.\n"
-               "    1: deprecated, will use yuv=2 (used to be nVidia register combiners).\n"
-               "    2: use fragment program.\n"
-               "    3: use fragment program with gamma correction.\n"
-               "    4: use fragment program with gamma correction via lookup.\n"
-               "    5: use ATI-specific method (for older cards).\n"
-               "    6: use lookup via 3D texture.\n"
                "  lscale=<n>\n"
                "    0: use standard bilinear scaling for luma.\n"
                "    1: use improved bicubic scaling for luma.\n"
@@ -1125,10 +1362,6 @@ static int preinit_internal(struct vo *vo, const char *arg, int allow_sw,
                "    as lscale but for chroma (2x slower with little visible effect).\n"
                "  filter-strength=<value>\n"
                "    set the effect strength for some lscale/cscale filters\n"
-               "  customprog=<filename>\n"
-               "    use a custom YUV conversion program\n"
-               "  customtex=<filename>\n"
-               "    use a custom YUV conversion lookup texture\n"
                "  nocustomtlin\n"
                "    use GL_NEAREST scaling for customtex texture\n"
                "  customtrect\n"
@@ -1156,24 +1389,20 @@ static int preinit_internal(struct vo *vo, const char *arg, int allow_sw,
                "removed. Use --noaspect instead.\n");
         return -1;
     }
-    if (p->use_yuv == 1) {
-        mp_msg(MSGT_VO, MSGL_WARN, "[gl] yuv=1 (nVidia register combiners) have"
-               " been removed, using yuv=2 instead.\n");
-        p->use_yuv = 2;
-    }
+
+    // The new shader code is a bit differently organized, so the old config
+    // parameters don't translate well to the new ones, but try anyway.
+
+    // these had gamma controls, although only one used pow() in the shader
+    if (yuv == 3 || yuv == 4 || yuv == 6)
+        p->use_gamma = 1;
+
     p->glctx = init_mpglcontext(gltype, vo);
     if (!p->glctx)
         goto err_out;
     p->gl = p->glctx->gl;
 
-    if (p->glctx->type == GLTYPE_SDL && p->use_yuv == -1) {
-        // Apparently it's not possible to implement VOFLAG_HIDDEN on SDL 1.2,
-        // so don't do autodetection. Use a sufficiently useful and safe YUV
-        // conversion mode.
-        p->use_yuv = YUV_CONVERSION_FRAGMENT;
-    }
-
-    if (p->use_yuv == -1 || !allow_sw) {
+    if (!allow_sw) {
         if (create_window(vo, 320, 200, VOFLAG_HIDDEN) < 0)
             goto err_out;
         if (p->glctx->setGlWindow(p->glctx) == SET_WINDOW_FAILED)
@@ -1255,28 +1484,23 @@ static int control(struct vo *vo, uint32_t request, void *data)
     case VOCTRL_SET_PANSCAN:
         resize(vo, vo->dwidth, vo->dheight);
         return VO_TRUE;
-    case VOCTRL_GET_EQUALIZER:
-        if (p->is_yuv) {
-            struct voctrl_get_equalizer_args *args = data;
-            return mp_csp_equalizer_get(&p->video_eq, args->name, args->valueptr)
-                   >= 0 ? VO_TRUE : VO_NOTIMPL;
-        }
-        break;
-    case VOCTRL_SET_EQUALIZER:
-        if (p->is_yuv) {
-            struct voctrl_set_equalizer_args *args = data;
-            if (mp_csp_equalizer_set(&p->video_eq, args->name, args->value) < 0)
-                return VO_NOTIMPL;
-            update_yuvconv(vo);
-            vo->want_redraw = true;
-            return VO_TRUE;
-        }
-        break;
+    case VOCTRL_GET_EQUALIZER: {
+        struct voctrl_get_equalizer_args *args = data;
+        return mp_csp_equalizer_get(&p->video_eq, args->name, args->valueptr)
+                >= 0 ? VO_TRUE : VO_NOTIMPL;
+    }
+    case VOCTRL_SET_EQUALIZER: {
+        struct voctrl_set_equalizer_args *args = data;
+        if (mp_csp_equalizer_set(&p->video_eq, args->name, args->value) < 0)
+            return VO_NOTIMPL;
+        update_all_uniforms(vo);
+        vo->want_redraw = true;
+        return VO_TRUE;
+    }
     case VOCTRL_SET_YUV_COLORSPACE: {
-        bool supports_csp = (1 << p->use_yuv) & MASK_NOT_COMBINERS;
-        if (vo->config_count && supports_csp) {
+        if (p->is_yuv) {
             p->colorspace = *(struct mp_csp_details *)data;
-            update_yuvconv(vo);
+            update_all_uniforms(vo);
             vo->want_redraw = true;
         }
         return VO_TRUE;
