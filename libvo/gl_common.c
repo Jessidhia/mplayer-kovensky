@@ -302,6 +302,8 @@ typedef struct {
 #define DEF_EXT_FUNCS(...) __VA_ARGS__
 #define DEF_EXT_DESC(name, ext, funcnames) \
     {offsetof(GL, name), ext, {DEF_EXT_FUNCS funcnames}}
+#define DEF_GL3_DESC(name) \
+    {offsetof(GL, name), NULL, {"gl" # name, "gl" # name "ARB"}, NULL}
 
 static const extfunc_desc_t extfuncs[] = {
     // these aren't extension functions but we query them anyway to allow
@@ -366,6 +368,7 @@ static const extfunc_desc_t extfuncs[] = {
     DEF_FUNC_DESC(DrawArrays),
     DEF_FUNC_DESC(EnableClientState),
     DEF_FUNC_DESC(DisableClientState),
+    DEF_FUNC_DESC(GetError),
 
     DEF_EXT_DESC(GenBuffers, NULL,
                  ("glGenBuffers", "glGenBuffersARB")),
@@ -414,6 +417,34 @@ static const extfunc_desc_t extfuncs[] = {
                   "wglSwapInterval", "wglSwapIntervalEXT")),
     DEF_EXT_DESC(TexImage3D, NULL,
                  ("glTexImage3D")),
+
+    DEF_GL3_DESC(GenVertexArrays),
+    DEF_GL3_DESC(BindVertexArray),
+    DEF_GL3_DESC(GetAttribLocation),
+    DEF_GL3_DESC(EnableVertexAttribArray),
+    DEF_GL3_DESC(DisableVertexAttribArray),
+    DEF_GL3_DESC(VertexAttribPointer),
+    DEF_GL3_DESC(DeleteVertexArrays),
+    DEF_GL3_DESC(UseProgram),
+    DEF_GL3_DESC(GetUniformLocation),
+    DEF_GL3_DESC(CompileShader),
+    DEF_GL3_DESC(CreateProgram),
+    DEF_GL3_DESC(CreateShader),
+    DEF_GL3_DESC(ShaderSource),
+    DEF_GL3_DESC(LinkProgram),
+    DEF_GL3_DESC(AttachShader),
+    DEF_GL3_DESC(DeleteShader),
+    DEF_GL3_DESC(DeleteProgram),
+    DEF_GL3_DESC(GetShaderInfoLog),
+    DEF_GL3_DESC(GetShaderiv),
+    DEF_GL3_DESC(GetProgramInfoLog),
+    DEF_GL3_DESC(Uniform3f),
+    DEF_GL3_DESC(Uniform1i),
+    DEF_GL3_DESC(UniformMatrix3fv),
+    DEF_GL3_DESC(UniformMatrix4x3fv),
+
+    DEF_EXT_DESC(GetProgramiv_new, NULL, ("glGetProgramiv")),
+
     {-1}
 };
 

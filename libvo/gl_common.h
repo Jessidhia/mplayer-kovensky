@@ -469,6 +469,7 @@ struct GL {
     void (GLAPIENTRY *DrawArrays)(GLenum, GLint, GLsizei);
     void (GLAPIENTRY *EnableClientState)(GLenum);
     void (GLAPIENTRY *DisableClientState)(GLenum);
+    GLenum (GLAPIENTRY *GetError)(void);
 
 
     // OpenGL extension functions
@@ -501,6 +502,45 @@ struct GL {
     void (GLAPIENTRY *TexImage3D)(GLenum, GLint, GLenum, GLsizei, GLsizei,
                                   GLsizei, GLint, GLenum, GLenum,
                                   const GLvoid *);
+
+
+    // GL 3, possibly in GL 2.x as well in form of extensions
+    void (GLAPIENTRY *GenVertexArrays)(GLsizei, GLuint *);
+    void (GLAPIENTRY *BindVertexArray)(GLuint);
+    GLint (GLAPIENTRY *GetAttribLocation)(GLuint, const GLchar *);
+    void (GLAPIENTRY *EnableVertexAttribArray)(GLuint);
+    void (GLAPIENTRY *DisableVertexAttribArray)(GLuint);
+    void (GLAPIENTRY *VertexAttribPointer)(GLuint, GLint, GLenum, GLboolean,
+                                           GLsizei, const GLvoid *);
+    void (GLAPIENTRY *DeleteVertexArrays)(GLsizei, const GLuint *);
+    void (GLAPIENTRY *UseProgram)(GLuint);
+    GLint (GLAPIENTRY *GetUniformLocation)(GLuint, const GLchar *);
+    void (GLAPIENTRY *CompileShader)(GLuint);
+    GLuint (GLAPIENTRY *CreateProgram)(void);
+    GLuint (GLAPIENTRY *CreateShader)(GLenum);
+    void (GLAPIENTRY *ShaderSource)(GLuint, GLsizei, const GLchar **,
+                                    const GLint *);
+    void (GLAPIENTRY *LinkProgram)(GLuint);
+    void (GLAPIENTRY *AttachShader)(GLuint, GLuint);
+    void (GLAPIENTRY *DeleteShader)(GLuint);
+    void (GLAPIENTRY *DeleteProgram)(GLuint);
+    void (GLAPIENTRY *GetShaderInfoLog)(GLuint, GLsizei, GLsizei *, GLchar *);
+    void (GLAPIENTRY *GetShaderiv)(GLuint, GLenum, GLint *);
+    void (GLAPIENTRY *GetProgramInfoLog)(GLuint, GLsizei, GLsizei *, GLchar *);
+
+    void (GLAPIENTRY *Uniform3f)(GLint, GLfloat, GLfloat, GLfloat);
+    void (GLAPIENTRY *Uniform1i)(GLint, GLint);
+    void (GLAPIENTRY *UniformMatrix3fv)(GLint, GLsizei, GLboolean,
+                                        const GLfloat *);
+    void (GLAPIENTRY *UniformMatrix4x3fv)(GLint, GLsizei, GLboolean,
+                                          const GLfloat *);
+
+    // GetProgramiv is mapped to glGetProgramivARB, which is for ARB (non-GLSL)
+    // shaders, and is different from glGetProgramiv.
+    // This actually maps to glGetProgramiv.
+    // Not changing GetProgramiv yet, so a new name is needed.
+    void (GLAPIENTRY *GetProgramiv_new)(GLenum, GLenum, GLint *);
+
 };
 
 #endif /* MPLAYER_GL_COMMON_H */

@@ -22,7 +22,10 @@
  */
 
 //xxx
+//#define USE_GLEW
+#ifdef USE_GLEW
 #include <GL/glew.h>
+#endif
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -226,7 +229,7 @@ struct gl_priv {
 
 static void gl_check_error(GL *gl, const char *info)
 {
-    if (glGetError() != GL_NO_ERROR) {
+    if (gl->GetError() != GL_NO_ERROR) {
         printf("error: %s\n", info);
         abort();
     }
@@ -250,61 +253,61 @@ static void vertex_array_init(GL *gl, struct vertex_array * va, GLuint program)
 
     *va = (struct vertex_array) { .program = program };
 
-    glGenBuffers(1, &va->buffer);
-    glGenVertexArrays(1, &va->vao);
+    gl->GenBuffers(1, &va->buffer);
+    gl->GenVertexArrays(1, &va->vao);
 
-    glBindBuffer(GL_ARRAY_BUFFER, va->buffer);
-    glBindVertexArray(va->vao);
+    gl->BindBuffer(GL_ARRAY_BUFFER, va->buffer);
+    gl->BindVertexArray(va->vao);
 
-    loc = glGetAttribLocation(program, "vertex_position");
+    loc = gl->GetAttribLocation(program, "vertex_position");
     if (loc >= 0) {
-        glEnableVertexAttribArray(loc);
-        glVertexAttribPointer(loc, 2, GL_FLOAT, GL_FALSE, stride,
-                              (void*)offsetof(struct vertex, position));
+        gl->EnableVertexAttribArray(loc);
+        gl->VertexAttribPointer(loc, 2, GL_FLOAT, GL_FALSE, stride,
+                                (void*)offsetof(struct vertex, position));
     }
 
-    loc = glGetAttribLocation(program, "vertex_color");
+    loc = gl->GetAttribLocation(program, "vertex_color");
     if (loc >= 0) {
-        glEnableVertexAttribArray(loc);
-        glVertexAttribPointer(loc, 4, GL_UNSIGNED_BYTE, GL_TRUE, stride,
-                              (void*)offsetof(struct vertex, color));
+        gl->EnableVertexAttribArray(loc);
+        gl->VertexAttribPointer(loc, 4, GL_UNSIGNED_BYTE, GL_TRUE, stride,
+                                (void*)offsetof(struct vertex, color));
     }
 
-    loc = glGetAttribLocation(program, "vertex_texcoord");
+    loc = gl->GetAttribLocation(program, "vertex_texcoord");
     if (loc >= 0) {
-        glEnableVertexAttribArray(loc);
-        glVertexAttribPointer(loc, 2, GL_FLOAT, GL_FALSE, stride,
-                              (void*)offsetof(struct vertex, texcoord));
+        gl->EnableVertexAttribArray(loc);
+        gl->VertexAttribPointer(loc, 2, GL_FLOAT, GL_FALSE, stride,
+                                (void*)offsetof(struct vertex, texcoord));
     }
 
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-    glBindVertexArray(0);
+    gl->BindBuffer(GL_ARRAY_BUFFER, 0);
+    gl->BindVertexArray(0);
 }
 
 static void vertex_array_uninit(GL *gl, struct vertex_array *va)
 {
-    glDeleteVertexArrays(1, &va->vao);
-    glDeleteBuffers(1, &va->buffer);
+    gl->DeleteVertexArrays(1, &va->vao);
+    gl->DeleteBuffers(1, &va->buffer);
     *va = (struct vertex_array) {0};
 }
 
 static void vertex_array_upload(GL *gl, struct vertex_array *va,
                                 struct vertex *vb, int vertex_count)
 {
-    glBindBuffer(GL_ARRAY_BUFFER, va->buffer);
-    glBufferData(GL_ARRAY_BUFFER, vertex_count * sizeof(struct vertex), vb,
-                 GL_DYNAMIC_DRAW);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    gl->BindBuffer(GL_ARRAY_BUFFER, va->buffer);
+    gl->BufferData(GL_ARRAY_BUFFER, vertex_count * sizeof(struct vertex), vb,
+                   GL_DYNAMIC_DRAW);
+    gl->BindBuffer(GL_ARRAY_BUFFER, 0);
     va->vertex_count = vertex_count;
 }
 
 static void vertex_array_draw(GL *gl, struct vertex_array *va)
 {
-    glUseProgram(va->program);
-    glBindVertexArray(va->vao);
+    gl->UseProgram(va->program);
+    gl->BindVertexArray(va->vao);
     gl->DrawArrays(GL_TRIANGLES, 0, va->vertex_count);
-    glBindVertexArray(0);
-    glUseProgram(0);
+    gl->BindVertexArray(0);
+    gl->UseProgram(0);
 
     gl_check_error(gl, "end draw");
 }
@@ -357,16 +360,16 @@ static void update_uniforms(struct vo *vo, GLuint program)
     if (program == 0)
         return;
 
-    glUseProgram(program);
+    gl->UseProgram(program);
 
-    loc = glGetUniformLocation(program, "transform");
+    loc = gl->GetUniformLocation(program, "transform");
     if (loc >= 0) {
         float matrix[3][3];
         matrix_ortho2d(matrix, 0, vo->dwidth, vo->dheight, 0);
-        glUniformMatrix3fv(loc, 1, GL_FALSE, &matrix[0][0]);
+        gl->UniformMatrix3fv(loc, 1, GL_FALSE, &matrix[0][0]);
     }
 
-    loc = glGetUniformLocation(program, "colormatrix");
+    loc = gl->GetUniformLocation(program, "colormatrix");
     if (loc >= 0) {
         struct mp_csp_params cparams = {
             .colorspace = p->colorspace,
@@ -375,28 +378,28 @@ static void update_uniforms(struct vo *vo, GLuint program)
         mp_csp_copy_equalizer_values(&cparams, &p->video_eq);
         float yuv2rgb[3][4];
         mp_get_yuv2rgb_coeffs(&cparams, yuv2rgb);
-        glUniformMatrix4x3fv(loc, 1, GL_TRUE, &yuv2rgb[0][0]);
+        gl->UniformMatrix4x3fv(loc, 1, GL_TRUE, &yuv2rgb[0][0]);
     }
 
-    loc = glGetUniformLocation(program, "gamma");
+    loc = gl->GetUniformLocation(program, "gamma");
     if (loc >= 0) {
         struct mp_csp_params cparams = {{0}};
         mp_csp_copy_equalizer_values(&cparams, &p->video_eq);
-        glUniform3f(loc, 1.0 / cparams.rgamma, 1.0 / cparams.ggamma,
-                    1.0 / cparams.bgamma);
+        gl->Uniform3f(loc, 1.0 / cparams.rgamma, 1.0 / cparams.ggamma,
+                      1.0 / cparams.bgamma);
     }
 
-    loc = glGetUniformLocation(program, "texture1");
+    loc = gl->GetUniformLocation(program, "texture1");
     if (loc >= 0)
-        glUniform1i(loc, 0);
-    loc = glGetUniformLocation(program, "texture2");
+        gl->Uniform1i(loc, 0);
+    loc = gl->GetUniformLocation(program, "texture2");
     if (loc >= 0)
-        glUniform1i(loc, 1);
-    loc = glGetUniformLocation(program, "texture3");
+        gl->Uniform1i(loc, 1);
+    loc = gl->GetUniformLocation(program, "texture3");
     if (loc >= 0)
-        glUniform1i(loc, 2);
+        gl->Uniform1i(loc, 2);
 
-    glUseProgram(0);
+    gl->UseProgram(0);
 
     gl_check_error(gl, "update_uniforms");
 }
@@ -561,12 +564,9 @@ static void uninitGl(struct vo *vo)
     struct gl_priv *p = vo->priv;
     GL *gl = p->gl;
 
-    if (!glDeleteProgram)
-        return;
-
-    glDeleteProgram(p->va_osd.program);
-    glDeleteProgram(p->va_eosd.program);
-    glDeleteProgram(p->va_video.program);
+    gl->DeleteProgram(p->va_osd.program);
+    gl->DeleteProgram(p->va_eosd.program);
+    gl->DeleteProgram(p->va_video.program);
     vertex_array_uninit(gl, &p->va_osd);
     vertex_array_uninit(gl, &p->va_eosd);
     vertex_array_uninit(gl, &p->va_video);
@@ -669,17 +669,17 @@ static int get_chroma_clear_val(int bit_depth)
 static GLuint create_shader(GL *gl, GLenum type, const char *header,
                             const char *source)
 {
-    GLuint shader = glCreateShader(type);
-    glShaderSource(shader, 2, (const char*[]) { header, source }, NULL);
-    glCompileShader(shader);
+    GLuint shader = gl->CreateShader(type);
+    gl->ShaderSource(shader, 2, (const char*[]) { header, source }, NULL);
+    gl->CompileShader(shader);
     GLint status;
-    glGetShaderiv(shader, GL_COMPILE_STATUS, &status);
+    gl->GetShaderiv(shader, GL_COMPILE_STATUS, &status);
     GLint log_length;
-    glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &log_length);
+    gl->GetShaderiv(shader, GL_INFO_LOG_LENGTH, &log_length);
 
     if (!status || log_length > 0) {
         GLchar *log = calloc(1, log_length + 1);
-        glGetShaderInfoLog(shader, log_length, NULL, log);
+        gl->GetShaderInfoLog(shader, log_length, NULL, log);
         mp_msg(MSGT_VO, status ? MSGL_V : MSGL_ERR,
                "[gl] shader compile log (error=%d): %s\n", status, log);
         free(log);
@@ -692,21 +692,21 @@ static void prog_create_shader(GL *gl, GLuint program, GLenum type,
                                const char *header, const char *source)
 {
     GLuint shader = create_shader(gl, type, header, source);
-    glAttachShader(program, shader);
-    glDeleteShader(shader);
+    gl->AttachShader(program, shader);
+    gl->DeleteShader(shader);
 }
 
 static void link_shader(GL *gl, GLuint program)
 {
-    glLinkProgram(program);
+    gl->LinkProgram(program);
     GLint status;
-    glGetProgramiv(program, GL_LINK_STATUS, &status);
+    gl->GetProgramiv_new(program, GL_LINK_STATUS, &status);
     GLint log_length;
-    glGetProgramiv(program, GL_INFO_LOG_LENGTH, &log_length);
+    gl->GetProgramiv_new(program, GL_INFO_LOG_LENGTH, &log_length);
 
     if (!status || log_length > 0) {
         GLchar *log = calloc(1, log_length + 1);
-        glGetProgramInfoLog(program, log_length, NULL, log);
+        gl->GetProgramInfoLog(program, log_length, NULL, log);
         mp_msg(MSGT_VO, status ? MSGL_V : MSGL_ERR,
                "[gl] shader link log (error=%d): %s\n", status, log);
         free(log);
@@ -716,7 +716,7 @@ static void link_shader(GL *gl, GLuint program)
 static GLuint create_program(GL *gl, const char *header, const char *vertex,
                              const char *frag)
 {
-    GLuint prog = glCreateProgram();
+    GLuint prog = gl->CreateProgram();
     prog_create_shader(gl, prog, GL_VERTEX_SHADER, header, vertex);
     prog_create_shader(gl, prog, GL_FRAGMENT_SHADER, header, frag);
     link_shader(gl, prog);
@@ -778,6 +778,7 @@ static int initGl(struct vo *vo, uint32_t d_width, uint32_t d_height)
     struct gl_priv *p = vo->priv;
     GL *gl = p->gl;
 
+#ifdef USE_GLEW
     // NOTE: needs a GL context
     GLenum err = glewInit();
     if (err != GLEW_OK) {
@@ -791,6 +792,7 @@ static int initGl(struct vo *vo, uint32_t d_width, uint32_t d_height)
         abort();
         return 0;
     }
+#endif
 
     autodetectGlExtensions(vo);
     p->target = p->use_rectangle == 1 ? GL_TEXTURE_RECTANGLE : GL_TEXTURE_2D;
@@ -897,6 +899,7 @@ static int config(struct vo *vo, uint32_t width, uint32_t height,
         uninitGl(vo);
     if (p->glctx->setGlWindow(p->glctx) == SET_WINDOW_FAILED)
         return -1;
+    gl_check_error(p->gl, "init");
     initGl(vo, vo->dwidth, vo->dheight);
 
     return 0;
@@ -996,8 +999,8 @@ static void do_render_osd(struct vo *vo, int type)
         drawEOSD(vo);
     }
     if (draw_osd) {
-        glUseProgram(p->va_osd.program);
-        glBindVertexArray(p->va_osd.vao);
+        gl->UseProgram(p->va_osd.program);
+        gl->BindVertexArray(p->va_osd.vao);
 
         for (int n = 0; n < p->osdtexCnt; n++) {
             gl->BindTexture(GL_TEXTURE_2D, p->osdtex[n]);
@@ -1005,8 +1008,8 @@ static void do_render_osd(struct vo *vo, int type)
                            VERTICES_PER_QUAD);
         }
 
-        glBindVertexArray(0);
-        glUseProgram(0);
+        gl->BindVertexArray(0);
+        gl->UseProgram(0);
     }
     // set rendering parameters back to defaults
     gl->Disable(GL_BLEND);
@@ -1060,8 +1063,8 @@ static void do_render(struct vo *vo)
 
         vertex_array_upload(gl, &p->va_video, vb, VERTICES_PER_QUAD * 2);
 
-        glUseProgram(p->va_video.program);
-        glBindVertexArray(p->va_video.vao);
+        gl->UseProgram(p->va_video.program);
+        gl->BindVertexArray(p->va_video.vao);
 
         glEnable3DLeft(gl, p->stereo_mode);
         gl->DrawArrays(GL_TRIANGLES, 0, VERTICES_PER_QUAD);
@@ -1069,8 +1072,8 @@ static void do_render(struct vo *vo)
         gl->DrawArrays(GL_TRIANGLES, VERTICES_PER_QUAD, VERTICES_PER_QUAD);
         glDisable3D(gl, p->stereo_mode);
 
-        glBindVertexArray(0);
-        glUseProgram(0);
+        gl->BindVertexArray(0);
+        gl->UseProgram(0);
     } else {
         write_quad(vb,
                    p->dst_rect.left, p->dst_rect.top,
