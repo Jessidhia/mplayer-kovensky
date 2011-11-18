@@ -107,15 +107,90 @@ static const char frag_shader_video[] =
 "uniform sampler2D texture3;\n"
 "uniform mat4x3 colormatrix;\n"
 "uniform vec3 gamma;\n"
+"uniform float filter_strength;\n"
 "in vec2 texcoord;\n"
 "out vec4 out_color;\n"
+"vec4 sample_bilinear(sampler2D tex, vec2 texcoord) {\n"
+"    return texture(tex, texcoord);\n"
+"}\n"
+"vec4 calcweights(float s) {\n"
+"    vec4 t = vec4(-0.5, 0.1666, 0.3333, -0.3333) * s + vec4(1, 0, -0.5, 0.5);\n"
+"    t = t * s + vec4(0, 0, -0.5, 0.5);\n"
+"    t = t * s + vec4(-0.6666, 0, 0.8333, 0.1666);\n"
+"    vec2 a = vec2(1 / t.z, 1 / t.w);\n"
+"    t.xy = t.xy * a + vec2(1, 1);\n"
+"    t.x = t.x + s;\n"
+"    t.y = t.y - s;\n"
+"    return t;\n"
+"}\n"
+"vec4 sample_bicubic(sampler2D tex, vec2 texcoord) {\n"
+"    vec2 texsize = textureSize(tex, 0);\n"
+"    vec2 pt = 1 / texsize;\n"
+"    vec2 fcoord = fract(texcoord * texsize + vec2(0.5, 0.5));\n"
+"    vec4 cdelta;\n"
+"    vec4 parmx = calcweights(fcoord.x);\n"
+"    cdelta.xz = parmx.rg * vec2(-pt.x, pt.x);\n"
+"    vec4 parmy = calcweights(fcoord.y);\n"
+"    cdelta.yw = parmy.rg * vec2(-pt.y, pt.y);\n"
+"    vec4 coord1 = texcoord.xyxy + cdelta.xyxw;\n"
+"    vec4 coord2 = texcoord.xyxy + cdelta.zyzw;\n"
+"    vec4 ar = texture(tex, coord1.xy);\n"
+"    vec4 ag = texture(tex, coord1.zw);\n"
+"    vec4 br = texture(tex, coord2.xy);\n"
+"    vec4 bg = texture(tex, coord2.zw);\n"
+"    vec4 ab = mix(ag, ar, parmy.b);\n"
+"    vec4 aa = mix(bg, br, parmy.b);\n"
+"    return mix(aa, ab, parmx.b);\n"
+"}\n"
+"vec4 sample_unsharp(sampler2D tex, vec2 texcoord) {\n"
+"    vec2 texsize = textureSize(tex, 0);\n"
+"    vec2 pt = 1 / texsize;\n"
+"    vec4 dcoord = vec4(0.5, 0.5, 0.5, -0.5) * pt.xyxy;\n"
+"    vec4 coord1 = texcoord.xyxy + dcoord;\n"
+"    vec4 coord2 = texcoord.xyxy - dcoord;\n"
+"    vec4 ar = texture(tex, texcoord);\n"
+"    vec4 br = texture(tex, coord1.xy);\n"
+"    vec4 bg = texture(tex, coord1.zw);\n"
+"    br = br + bg;\n"
+"    vec4 bb = texture(tex, coord2.xy);\n"
+"    bg = texture(tex, coord2.zw);\n"
+"    br = br * 0.25 + bg * 0.25 + bb * 0.25;\n"
+"    br = ar - br;\n"
+"    return br * filter_strength + ar;\n"
+"}\n"
+"vec4 sample_unsharp2(sampler2D tex, vec2 texcoord) {\n"
+"    vec2 texsize = textureSize(tex, 0);\n"
+"    vec2 pt = 1 / texsize;\n"
+"    vec4 dcoord1 = vec4(1.2, 1.2, 1.2, -1.2) * pt.xyxy;\n"
+"    vec4 dcoord2 = vec4(1.5, 0, 0, 1.5) * pt.xyxy;\n"
+"    vec4 coord1 = texcoord.xyxy + dcoord1;\n"
+"    vec4 coord2 = texcoord.xyxy - dcoord1;\n"
+"    vec4 ar = texture(tex, texcoord);\n"
+"    vec4 br = texture(tex, coord1.xy);\n"
+"    vec4 bg = texture(tex, coord1.zw);\n"
+"    br = br + bg;\n"
+"    vec4 bb = texture(tex, coord2.xy);\n"
+"    bg = texture(tex, coord2.zw);\n"
+"    br = br + bb;\n"
+"    vec4 ba = br + bg;\n"
+"    coord1 = texcoord.xyxy + dcoord2;\n"
+"    coord2 = texcoord.xyxy - dcoord2;\n"
+"    br = texture(tex, coord1.xy);\n"
+"    bg = texture(tex, coord1.zw);\n"
+"    br = br + bg;\n"
+"    bb = texture(tex, coord2.xy);\n"
+"    bg = texture(tex, coord2.zw);\n"
+"    br = br * -0.1171875 + bg * -0.1171875 + bb * -0.1171875 + ba * -0.09765625;\n"
+"    br = ar * 0.859375 + br;\n"
+"    return br * filter_strength + ar;\n"
+"}\n"
 "void main() {\n"
 "#if USE_PLANAR\n"
-"    vec3 color = vec3(texture(texture1, texcoord).r,\n"
-"                      texture(texture2, texcoord).r,\n"
-"                      texture(texture3, texcoord).r);\n"
+"    vec3 color = vec3(SAMPLE_L(texture1, texcoord).r,\n"
+"                      SAMPLE_C(texture2, texcoord).r,\n"
+"                      SAMPLE_C(texture3, texcoord).r);\n"
 "#else\n"
-"    vec3 color = texture(texture1, texcoord).rgb;\n"
+"    vec3 color = SAMPLE_L(texture1, texcoord).rgb;\n"
 "#endif\n"
 "#if USE_COLORMATRIX\n"
 "    color = mat3(colormatrix) * color + colormatrix[3];\n"
@@ -387,6 +462,10 @@ static void update_uniforms(struct vo *vo, GLuint program)
     if (loc >= 0)
         gl->Uniform1i(loc, 2);
 
+    loc = gl->GetUniformLocation(program, "filter_strength");
+    if (loc >= 0)
+        gl->Uniform1f(loc, p->filter_strength);
+
     gl->UseProgram(0);
 
     gl_check_error(gl, "update_uniforms");
@@ -651,6 +730,22 @@ static int get_chroma_clear_val(int bit_depth)
     return 1 << (bit_depth - 1 & 7);
 }
 
+static const char *select_scaler(int s)
+{
+    switch (s) {
+    case 1:  // was bicubic scaling with lookup texture
+    case 2:  // was like 1, but linear in Y direction (for performance)
+    case 3:
+        return "sample_bicubic";
+    case 4:
+        return "sample_unsharp";
+    case 5:
+        return "sample_unsharp2";
+    default:
+        return "sample_bilinear";
+    }
+}
+
 static GLuint create_shader(GL *gl, GLenum type, const char *header,
                             const char *source)
 {
@@ -734,6 +829,8 @@ static void compile_shaders(struct vo *vo)
         { "USE_PLANAR", p->is_yuv ? "1" : "0" },
         { "USE_COLORMATRIX", p->is_yuv ? "1" : "0" },
         { "USE_GAMMA_POW", p->use_gamma ? "1" : "0" },
+        { "SAMPLE_L", select_scaler(p->lscale) },
+        { "SAMPLE_C", select_scaler(p->cscale) },
         {0}
     };
 

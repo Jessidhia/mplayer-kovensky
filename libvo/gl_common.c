@@ -438,6 +438,7 @@ static const extfunc_desc_t extfuncs[] = {
     DEF_GL3_DESC(GetShaderInfoLog),
     DEF_GL3_DESC(GetShaderiv),
     DEF_GL3_DESC(GetProgramInfoLog),
+    DEF_GL3_DESC(Uniform1f),
     DEF_GL3_DESC(Uniform3f),
     DEF_GL3_DESC(Uniform1i),
     DEF_GL3_DESC(UniformMatrix3fv),

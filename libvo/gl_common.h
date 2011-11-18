@@ -528,6 +528,7 @@ struct GL {
     void (GLAPIENTRY *GetShaderiv)(GLuint, GLenum, GLint *);
     void (GLAPIENTRY *GetProgramInfoLog)(GLuint, GLsizei, GLsizei *, GLchar *);
 
+    void (GLAPIENTRY *Uniform1f)(GLint, GLfloat);
     void (GLAPIENTRY *Uniform3f)(GLint, GLfloat, GLfloat, GLfloat);
     void (GLAPIENTRY *Uniform1i)(GLint, GLint);
     void (GLAPIENTRY *UniformMatrix3fv)(GLint, GLsizei, GLboolean,
