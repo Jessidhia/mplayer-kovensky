@@ -613,10 +613,10 @@ static void autodetectGlExtensions(struct vo *vo)
     }
     p->have_texture_rg = extensions && strstr(extensions, "GL_ARB_texture_rg");
     if (p->use_rectangle == -1) {
-        p->use_rectangle = 0;
-        if (extensions) {
-//      if (strstr(extensions, "_texture_non_power_of_two"))
-        }
+        // ATI tends to have issues with non-power-of-2, even if the extension
+        // is reported as supported. It's not clear under which circumstances
+        // or with which drivers there are actually problems.
+        p->use_rectangle = !is_ati;
     }
 
     int eq_caps = 0;
