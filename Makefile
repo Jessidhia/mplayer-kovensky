@@ -454,7 +454,7 @@ SRCS_MPLAYER-$(ESD)          += libao2/ao_esd.c
 SRCS_MPLAYER-$(FBDEV)        += libvo/vo_fbdev.c libvo/vo_fbdev2.c
 SRCS_MPLAYER-$(GGI)          += libvo/vo_ggi.c
 SRCS_MPLAYER-$(GIF)          += libvo/vo_gif89a.c
-SRCS_MPLAYER-$(GL)           += libvo/gl_common.c libvo/vo_gl.c \
+SRCS_MPLAYER-$(GL)           += libvo/gl_common.c libvo/vo_gl.c libvo/vo_gl3.c \
                                 pnm_loader.c
 SRCS_MPLAYER-$(GL_COCOA)     += libvo/cocoa_common.m
 SRCS_MPLAYER-$(GL_SDL)       += libvo/sdl_common.c
