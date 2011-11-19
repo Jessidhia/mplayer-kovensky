@@ -127,62 +127,52 @@ static const char frag_shader_video[] =
 "    vec2 texsize = textureSize(tex, 0);\n"
 "    vec2 pt = 1 / texsize;\n"
 "    vec2 fcoord = fract(texcoord * texsize + vec2(0.5, 0.5));\n"
-"    vec4 cdelta;\n"
 "    vec4 parmx = calcweights(fcoord.x);\n"
-"    cdelta.xz = parmx.rg * vec2(-pt.x, pt.x);\n"
 "    vec4 parmy = calcweights(fcoord.y);\n"
+"    vec4 cdelta;\n"
+"    cdelta.xz = parmx.rg * vec2(-pt.x, pt.x);\n"
 "    cdelta.yw = parmy.rg * vec2(-pt.y, pt.y);\n"
-"    vec4 coord1 = texcoord.xyxy + cdelta.xyxw;\n"
-"    vec4 coord2 = texcoord.xyxy + cdelta.zyzw;\n"
-"    vec4 ar = texture(tex, coord1.xy);\n"
-"    vec4 ag = texture(tex, coord1.zw);\n"
-"    vec4 br = texture(tex, coord2.xy);\n"
-"    vec4 bg = texture(tex, coord2.zw);\n"
+"    // first y-interpolation\n"
+"    vec4 ar = texture(tex, texcoord + cdelta.xy);\n"
+"    vec4 ag = texture(tex, texcoord + cdelta.xw);\n"
+"    // second y-interpolation\n"
+"    vec4 br = texture(tex, texcoord + cdelta.zy);\n"
+"    vec4 bg = texture(tex, texcoord + cdelta.zw);\n"
 "    vec4 ab = mix(ag, ar, parmy.b);\n"
 "    vec4 aa = mix(bg, br, parmy.b);\n"
+"    // x-interpolation\n"
 "    return mix(aa, ab, parmx.b);\n"
 "}\n"
-"vec4 sample_unsharp(sampler2D tex, vec2 texcoord) {\n"
+"vec4 sample_unsharp3x3(sampler2D tex, vec2 texcoord) {\n"
 "    vec2 texsize = textureSize(tex, 0);\n"
 "    vec2 pt = 1 / texsize;\n"
-"    vec4 dcoord = vec4(0.5, 0.5, 0.5, -0.5) * pt.xyxy;\n"
-"    vec4 coord1 = texcoord.xyxy + dcoord;\n"
-"    vec4 coord2 = texcoord.xyxy - dcoord;\n"
-"    vec4 ar = texture(tex, texcoord);\n"
-"    vec4 br = texture(tex, coord1.xy);\n"
-"    vec4 bg = texture(tex, coord1.zw);\n"
-"    br = br + bg;\n"
-"    vec4 bb = texture(tex, coord2.xy);\n"
-"    bg = texture(tex, coord2.zw);\n"
-"    br = br * 0.25 + bg * 0.25 + bb * 0.25;\n"
-"    br = ar - br;\n"
-"    return br * filter_strength + ar;\n"
+"    vec2 st = pt * 0.5;\n"
+"    vec4 p = texture(tex, texcoord);\n"
+"    vec4 p11 = texture(tex, texcoord + st * vec2(+1, +1));\n"
+"    vec4 p12 = texture(tex, texcoord + st * vec2(+1, -1));\n"
+"    vec4 p21 = texture(tex, texcoord + st * vec2(-1, +1));\n"
+"    vec4 p22 = texture(tex, texcoord + st * vec2(-1, -1));\n"
+"    vec4 avg = (p11 + p12 + p21 + p22) * 0.25;\n"
+"    return p + (p - avg) * filter_strength;\n"
 "}\n"
 "vec4 sample_unsharp2(sampler2D tex, vec2 texcoord) {\n"
 "    vec2 texsize = textureSize(tex, 0);\n"
 "    vec2 pt = 1 / texsize;\n"
-"    vec4 dcoord1 = vec4(1.2, 1.2, 1.2, -1.2) * pt.xyxy;\n"
-"    vec4 dcoord2 = vec4(1.5, 0, 0, 1.5) * pt.xyxy;\n"
-"    vec4 coord1 = texcoord.xyxy + dcoord1;\n"
-"    vec4 coord2 = texcoord.xyxy - dcoord1;\n"
+"    vec2 st1 = pt * 1.2;\n"
 "    vec4 ar = texture(tex, texcoord);\n"
-"    vec4 br = texture(tex, coord1.xy);\n"
-"    vec4 bg = texture(tex, coord1.zw);\n"
-"    br = br + bg;\n"
-"    vec4 bb = texture(tex, coord2.xy);\n"
-"    bg = texture(tex, coord2.zw);\n"
-"    br = br + bb;\n"
-"    vec4 ba = br + bg;\n"
-"    coord1 = texcoord.xyxy + dcoord2;\n"
-"    coord2 = texcoord.xyxy - dcoord2;\n"
-"    br = texture(tex, coord1.xy);\n"
-"    bg = texture(tex, coord1.zw);\n"
-"    br = br + bg;\n"
-"    bb = texture(tex, coord2.xy);\n"
-"    bg = texture(tex, coord2.zw);\n"
-"    br = br * -0.1171875 + bg * -0.1171875 + bb * -0.1171875 + ba * -0.09765625;\n"
-"    br = ar * 0.859375 + br;\n"
-"    return br * filter_strength + ar;\n"
+"    vec4 pa11 = texture(tex, texcoord + st1 * vec2(+1, +1));\n"
+"    vec4 pa12 = texture(tex, texcoord + st1 * vec2(+1, -1));\n"
+"    vec4 pa21 = texture(tex, texcoord + st1 * vec2(-1, +1));\n"
+"    vec4 pa22 = texture(tex, texcoord + st1 * vec2(-1, -1));\n"
+"    vec4 sum1 = pa11 + pa12 + pa21 + pa22;\n"
+"    vec2 st2 = pt * 1.5;\n"
+"    vec4 pb11 = texture(tex, texcoord + st2 * vec2(+1, 0));\n"
+"    vec4 pb12 = texture(tex, texcoord + st2 * vec2(0, +1));\n"
+"    vec4 pb21 = texture(tex, texcoord + st2 * vec2(-1, 0));\n"
+"    vec4 pb22 = texture(tex, texcoord + st2 * vec2(0, -1));\n"
+"    vec4 sum2 = pb11 + pb12 + pb21 + pb22;\n"
+"    vec4 t = ar * 0.859375 + sum2 * -0.1171875 + sum1 * -0.09765625;\n"
+"    return t * filter_strength + ar;\n"
 "}\n"
 "void main() {\n"
 "#if USE_PLANAR\n"
@@ -290,13 +280,6 @@ struct gl_priv {
     int border_x, border_y;     // OSD borders
 };
 
-static void gl_check_error(GL *gl, const char *info)
-{
-    if (gl->GetError() != GL_NO_ERROR) {
-        printf("error: %s\n", info);
-        abort();
-    }
-}
 
 static void matrix_ortho2d(float m[3][3], float x0, float x1,
                            float y0, float y1)
@@ -372,7 +355,7 @@ static void vertex_array_draw(GL *gl, struct vertex_array *va)
     gl->BindVertexArray(0);
     gl->UseProgram(0);
 
-    gl_check_error(gl, "end draw");
+    glCheckError(gl, "after rendering");
 }
 
 // Write a textured quad to a vertex array.
@@ -468,7 +451,7 @@ static void update_uniforms(struct vo *vo, GLuint program)
 
     gl->UseProgram(0);
 
-    gl_check_error(gl, "update_uniforms");
+    glCheckError(gl, "update_uniforms()");
 }
 
 static void update_all_uniforms(struct vo *vo)
@@ -738,7 +721,7 @@ static const char *select_scaler(int s)
     case 3:
         return "sample_bicubic";
     case 4:
-        return "sample_unsharp";
+        return "sample_unsharp3x3";
     case 5:
         return "sample_unsharp2";
     default:
@@ -761,7 +744,7 @@ static GLuint create_shader(GL *gl, GLenum type, const char *header,
         GLchar *log = calloc(1, log_length + 1);
         gl->GetShaderInfoLog(shader, log_length, NULL, log);
         mp_msg(MSGT_VO, status ? MSGL_V : MSGL_ERR,
-               "[gl] shader compile log (error=%d): %s\n", status, log);
+               "[gl] shader compile log (status=%d): %s\n", status, log);
         free(log);
     }
 
@@ -788,7 +771,7 @@ static void link_shader(GL *gl, GLuint program)
         GLchar *log = calloc(1, log_length + 1);
         gl->GetProgramInfoLog(program, log_length, NULL, log);
         mp_msg(MSGT_VO, status ? MSGL_V : MSGL_ERR,
-               "[gl] shader link log (error=%d): %s\n", status, log);
+               "[gl] shader link log (status=%d): %s\n", status, log);
         free(log);
     }
 }
@@ -834,6 +817,12 @@ static void compile_shaders(struct vo *vo)
         {0}
     };
 
+    mp_msg(MSGT_VO, MSGL_V, "[gl] shader config:\n");
+    for (int n = 0; shader_config[n].name; n++) {
+        mp_msg(MSGT_VO, MSGL_V, "  %s=%s\n", shader_config[n].name,
+               shader_config[n].value);
+    }
+
     char *pre = shader_header(tmp, shader_config);
 
     vertex_array_init(gl, &p->va_eosd,
@@ -845,7 +834,7 @@ static void compile_shaders(struct vo *vo)
     vertex_array_init(gl, &p->va_video,
                       create_program(gl, pre, vertex_shader, frag_shader_video));
 
-    gl_check_error(gl, "shader compilation");
+    glCheckError(gl, "shader compilation");
 
     talloc_free(tmp);
 }
@@ -921,6 +910,9 @@ static int initGl(struct vo *vo, uint32_t d_width, uint32_t d_height)
     gl->Clear(GL_COLOR_BUFFER_BIT);
     if (gl->SwapInterval && p->swap_interval >= 0)
         gl->SwapInterval(p->swap_interval);
+
+    glCheckError(gl, "after initGl");
+
     return 1;
 }
 
@@ -979,7 +971,7 @@ static int config(struct vo *vo, uint32_t width, uint32_t height,
         uninitGl(vo);
     if (p->glctx->setGlWindow(p->glctx) == SET_WINDOW_FAILED)
         return -1;
-    gl_check_error(p->gl, "init");
+    glCheckError(p->gl, "before initGl");
     initGl(vo, vo->dwidth, vo->dheight);
 
     return 0;

@@ -265,6 +265,7 @@ void glDrawTex(GL *gl, GLfloat x, GLfloat y, GLfloat w, GLfloat h,
                GLfloat tx, GLfloat ty, GLfloat tw, GLfloat th,
                int sx, int sy, int rect_tex, int is_yv12, int flip);
 int loadGPUProgram(GL *gl, GLenum target, char *prog);
+void glCheckError(GL *gl, const char *info);
 
 /** \addtogroup glconversion
  * \{ */
@@ -538,7 +539,7 @@ struct GL {
 
     // GetProgramiv is mapped to glGetProgramivARB, which is for ARB (non-GLSL)
     // shaders, and is different from glGetProgramiv.
-    // This actually maps to glGetProgramiv.
+    // GetProgramiv_new actually maps to glGetProgramiv.
     // Not changing GetProgramiv yet, so a new name is needed.
     void (GLAPIENTRY *GetProgramiv_new)(GLenum, GLenum, GLint *);
 

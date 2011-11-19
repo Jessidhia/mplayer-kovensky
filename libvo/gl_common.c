@@ -48,6 +48,31 @@
 
 //! \defgroup glgeneral OpenGL general helper functions
 
+// GLU has this as gluErrorString (we don't use GLU, as it is legacy-OpenGL)
+static const char *gl_error_to_string(GLenum error)
+{
+    switch (error) {
+    case GL_INVALID_ENUM: return "INVALID_ENUM";
+    case GL_INVALID_VALUE: return "INVALID_VALUE";
+    case GL_INVALID_OPERATION: return "INVALID_OPERATION";
+    case GL_INVALID_FRAMEBUFFER_OPERATION:
+        return "INVALID_FRAMEBUFFER_OPERATION";
+    case GL_OUT_OF_MEMORY: return "OUT_OF_MEMORY";
+    default: return "unknown";
+    }
+}
+
+void glCheckError(GL *gl, const char *info)
+{
+    for (;;) {
+        GLenum error = gl->GetError();
+        if (error == GL_NO_ERROR)
+            break;
+        mp_msg(MSGT_VO, MSGL_ERR, "[gl] %s: OpenGL error %s.\n", info,
+               gl_error_to_string(error));
+    }
+}
+
 //! \defgroup glcontext OpenGL context management helper functions
 
 //! \defgroup gltexture OpenGL texture handling helper functions
