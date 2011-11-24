@@ -113,6 +113,12 @@ static const char frag_shader_video[] =
 "vec4 sample_bilinear(sampler2D tex, vec2 texcoord) {\n"
 "    return texture(tex, texcoord);\n"
 "}\n"
+"// Explanation how to do bicubic scaling with only 4 texel fetches is done:\n"
+"//   http://www.mate.tue.nl/mate/pdfs/10318.pdf\n"
+"//   'Efficient GPU-Based Texture Interpolation using Uniform B-Splines'\n"
+"// Explanation why cubic scaling always blurs, even with unit scaling:\n"
+"//   http://bigwww.epfl.ch/preprints/ruijters1001p.pdf\n"
+"//   'GPU Prefilter for Accurate Cubic B-spline Interpolation'\n"
 "vec4 calcweights(float s) {\n"
 "    vec4 t = vec4(-0.5, 0.1666, 0.3333, -0.3333) * s + vec4(1, 0, -0.5, 0.5);\n"
 "    t = t * s + vec4(0, 0, -0.5, 0.5);\n"
@@ -148,31 +154,28 @@ static const char frag_shader_video[] =
 "    vec2 pt = 1 / texsize;\n"
 "    vec2 st = pt * 0.5;\n"
 "    vec4 p = texture(tex, texcoord);\n"
-"    vec4 p11 = texture(tex, texcoord + st * vec2(+1, +1));\n"
-"    vec4 p12 = texture(tex, texcoord + st * vec2(+1, -1));\n"
-"    vec4 p21 = texture(tex, texcoord + st * vec2(-1, +1));\n"
-"    vec4 p22 = texture(tex, texcoord + st * vec2(-1, -1));\n"
-"    vec4 avg = (p11 + p12 + p21 + p22) * 0.25;\n"
-"    return p + (p - avg) * filter_strength;\n"
+"    vec4 sum = texture(tex, texcoord + st * vec2(+1, +1))\n"
+"             + texture(tex, texcoord + st * vec2(+1, -1))\n"
+"             + texture(tex, texcoord + st * vec2(-1, +1))\n"
+"             + texture(tex, texcoord + st * vec2(-1, -1));\n"
+"    return p + (p - 0.25 * sum) * filter_strength;\n"
 "}\n"
-"vec4 sample_unsharp2(sampler2D tex, vec2 texcoord) {\n"
+"vec4 sample_unsharp5x5(sampler2D tex, vec2 texcoord) {\n"
 "    vec2 texsize = textureSize(tex, 0);\n"
 "    vec2 pt = 1 / texsize;\n"
 "    vec2 st1 = pt * 1.2;\n"
-"    vec4 ar = texture(tex, texcoord);\n"
-"    vec4 pa11 = texture(tex, texcoord + st1 * vec2(+1, +1));\n"
-"    vec4 pa12 = texture(tex, texcoord + st1 * vec2(+1, -1));\n"
-"    vec4 pa21 = texture(tex, texcoord + st1 * vec2(-1, +1));\n"
-"    vec4 pa22 = texture(tex, texcoord + st1 * vec2(-1, -1));\n"
-"    vec4 sum1 = pa11 + pa12 + pa21 + pa22;\n"
+"    vec4 c = texture(tex, texcoord);\n"
+"    vec4 sum1 = texture(tex, texcoord + st1 * vec2(+1, +1))\n"
+"              + texture(tex, texcoord + st1 * vec2(+1, -1))\n"
+"              + texture(tex, texcoord + st1 * vec2(-1, +1))\n"
+"              + texture(tex, texcoord + st1 * vec2(-1, -1));\n"
 "    vec2 st2 = pt * 1.5;\n"
-"    vec4 pb11 = texture(tex, texcoord + st2 * vec2(+1, 0));\n"
-"    vec4 pb12 = texture(tex, texcoord + st2 * vec2(0, +1));\n"
-"    vec4 pb21 = texture(tex, texcoord + st2 * vec2(-1, 0));\n"
-"    vec4 pb22 = texture(tex, texcoord + st2 * vec2(0, -1));\n"
-"    vec4 sum2 = pb11 + pb12 + pb21 + pb22;\n"
-"    vec4 t = ar * 0.859375 + sum2 * -0.1171875 + sum1 * -0.09765625;\n"
-"    return t * filter_strength + ar;\n"
+"    vec4 sum2 = texture(tex, texcoord + st2 * vec2(+1,  0))\n"
+"              + texture(tex, texcoord + st2 * vec2( 0, +1))\n"
+"              + texture(tex, texcoord + st2 * vec2(-1,  0))\n"
+"              + texture(tex, texcoord + st2 * vec2( 0, -1));\n"
+"    vec4 t = c * 0.859375 + sum2 * -0.1171875 + sum1 * -0.09765625;\n"
+"    return t * filter_strength + c;\n"
 "}\n"
 "void main() {\n"
 "#if USE_PLANAR\n"
@@ -715,7 +718,7 @@ static int get_chroma_clear_val(int bit_depth)
 
 static const char *select_scaler(int s)
 {
-    switch (s) {
+    switch (s & 63) {
     case 1:  // was bicubic scaling with lookup texture
     case 2:  // was like 1, but linear in Y direction (for performance)
     case 3:
@@ -723,7 +726,7 @@ static const char *select_scaler(int s)
     case 4:
         return "sample_unsharp3x3";
     case 5:
-        return "sample_unsharp2";
+        return "sample_unsharp5x5";
     default:
         return "sample_bilinear";
     }
@@ -740,7 +743,7 @@ static GLuint create_shader(GL *gl, GLenum type, const char *header,
     GLint log_length;
     gl->GetShaderiv(shader, GL_INFO_LOG_LENGTH, &log_length);
 
-    if (!status || log_length > 0) {
+    if (!status || log_length > 1) {
         GLchar *log = calloc(1, log_length + 1);
         gl->GetShaderInfoLog(shader, log_length, NULL, log);
         mp_msg(MSGT_VO, status ? MSGL_V : MSGL_ERR,
@@ -767,7 +770,7 @@ static void link_shader(GL *gl, GLuint program)
     GLint log_length;
     gl->GetProgramiv_new(program, GL_INFO_LOG_LENGTH, &log_length);
 
-    if (!status || log_length > 0) {
+    if (!status || log_length > 1) {
         GLchar *log = calloc(1, log_length + 1);
         gl->GetProgramInfoLog(program, log_length, NULL, log);
         mp_msg(MSGT_VO, status ? MSGL_V : MSGL_ERR,
@@ -1427,9 +1430,7 @@ static int preinit_internal(struct vo *vo, const char *arg, int allow_sw,
                "    also try to use the GL_MESA_ycbcr_texture extension\n"
                "  lscale=<n>\n"
                "    0: use standard bilinear scaling for luma.\n"
-               "    1: use improved bicubic scaling for luma.\n"
-               "    2: use cubic in X, linear in Y direction scaling for luma.\n"
-               "    3: as 1 but without using a lookup texture.\n"
+               "    3: bicubic filter (without lookup texture).\n"
                "    4: experimental unsharp masking (sharpening).\n"
                "    5: experimental unsharp masking (sharpening) with larger radius.\n"
                "  cscale=<n>\n"
