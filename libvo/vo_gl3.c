@@ -55,6 +55,9 @@
 //! How many parts the OSD may consist of at most
 #define MAX_OSD_PARTS 20
 
+// Pixel width of 1D lookup textures.
+#define LOOKUP_TEXTURE_SIZE 256
+
 struct vertex {
     float position[2];
     uint8_t color[4];
@@ -105,6 +108,7 @@ static const char frag_shader_video[] =
 "uniform sampler2D texture1;\n"
 "uniform sampler2D texture2;\n"
 "uniform sampler2D texture3;\n"
+"uniform sampler1D lanczos2_weights;\n"
 "uniform mat4x3 colormatrix;\n"
 "uniform vec3 gamma;\n"
 "uniform float filter_strength;\n"
@@ -189,6 +193,19 @@ static const char frag_shader_video[] =
 "    return conv4tap(tex, base - pt, pt,\n"
 "                    lanczos_weights4(fcoord.x),\n"
 "                    lanczos_weights4(fcoord.y));\n"
+"}\n"
+"float[4] lanczos_weights4_lookup(float f) {\n"
+"    vec4 c = texture(lanczos2_weights, f);\n"
+"    return float[4](c.r, c.g, c.b, c.a);\n"
+"}\n"
+"vec4 sample_lanczos4x4_lookup(sampler2D tex, vec2 texcoord) {\n"
+"    vec2 texsize = textureSize(tex, 0);\n"
+"    vec2 pt = 1 / texsize;\n"
+"    vec2 fcoord = fract(texcoord * texsize - 0.5);\n"
+"    vec2 base = texcoord - fcoord * pt;\n"
+"    return conv4tap(tex, base - pt, pt,\n"
+"                    lanczos_weights4_lookup(fcoord.x),\n"
+"                    lanczos_weights4_lookup(fcoord.y));\n"
 "}\n"
 "vec4 sample_unsharp3x3(sampler2D tex, vec2 texcoord) {\n"
 "    vec2 texsize = textureSize(tex, 0);\n"
@@ -277,6 +294,9 @@ struct gl_priv {
     int osdtexCnt;
     int osd_color;
 
+    // 1D lookup textures for scalers
+    int lookup_texture_lanczos2;
+
     int use_ycbcr;
     int use_gamma;
     struct mp_csp_details colorspace;
@@ -324,6 +344,41 @@ struct gl_priv {
     int border_x, border_y;     // OSD borders
 };
 
+
+static double lanczos_L(double a, double x)
+{
+    float pix = M_PI * x;
+    if (x < -a || x > a)
+        return 0;
+    if (x == 0)
+        return 1;
+    return a * sin(pix) * sin(pix / a) / (pix * pix);
+}
+
+// Calculate the Lanczos filtering kernel for N sample points.
+// N = number of samples, which is a * 2
+// The weights will be stored in out_w[0] to out_w[a * 2 - 1]
+// f = x0 - abs(x0)
+static void lanczos_weights(float *out_w, int a, float f)
+{
+    double sum = 0;
+    for (int n = 0; n < a * 2; n++) {
+        float x = f - (n - a + 1);
+        double w = lanczos_L(a, x);
+        out_w[n] = w;
+        sum += w;
+    }
+    //normalize
+    for (int n = 0; n < a * 2; n++)
+        out_w[n] /= sum;
+}
+
+static void lookup_texture_lanczos2(float (*out_tex)[4], int count)
+{
+    for (int n = 0; n < count; n++) {
+        lanczos_weights(&out_tex[n][0], 2, n / (float)(count - 1));
+    }
+}
 
 static void matrix_ortho2d(float m[3][3], float x0, float x1,
                            float y0, float y1)
@@ -488,6 +543,26 @@ static void update_uniforms(struct vo *vo, GLuint program)
     loc = gl->GetUniformLocation(program, "texture3");
     if (loc >= 0)
         gl->Uniform1i(loc, 2);
+
+    loc = gl->GetUniformLocation(program, "lanczos2_weights");
+    if (loc >= 0) {
+        int unit = 3;
+        gl->Uniform1i(loc, unit);
+        if (!p->lookup_texture_lanczos2) {
+            gl->ActiveTexture(GL_TEXTURE0 + unit);
+            gl->GenTextures(1, &p->lookup_texture_lanczos2);
+            gl->BindTexture(GL_TEXTURE_1D, p->lookup_texture_lanczos2);
+            float tex[LOOKUP_TEXTURE_SIZE][4];
+            lookup_texture_lanczos2(tex, LOOKUP_TEXTURE_SIZE);
+            gl->TexImage1D(GL_TEXTURE_1D, 0, GL_RGBA16F, LOOKUP_TEXTURE_SIZE, 0,
+                           GL_RGBA, GL_FLOAT, tex);
+            gl->TexParameterf(GL_TEXTURE_1D, GL_TEXTURE_PRIORITY, 1.0);
+            gl->TexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            gl->TexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            gl->TexParameteri(GL_TEXTURE_1D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            gl->ActiveTexture(GL_TEXTURE0);
+        }
+    }
 
     loc = gl->GetUniformLocation(program, "filter_strength");
     if (loc >= 0)
@@ -665,6 +740,9 @@ static void uninitGl(struct vo *vo)
     vertex_array_uninit(gl, &p->va_eosd);
     vertex_array_uninit(gl, &p->va_video);
 
+    gl->DeleteTextures(1, &p->lookup_texture_lanczos2);
+    p->lookup_texture_lanczos2 = 0;
+
     for (int n = 0; n < 3; n++) {
         struct texplane *plane = &p->planes[n];
         if (plane->gl_texture)
@@ -770,6 +848,8 @@ static const char *select_scaler(int s)
         return "sample_unsharp5x5";
     case 6:
         return "sample_lanczos4x4";
+    case 7:
+        return "sample_lanczos4x4_lookup";
     default:
         return "sample_bilinear";
     }
@@ -1477,6 +1557,7 @@ static int preinit_internal(struct vo *vo, const char *arg, int allow_sw,
                "    4: experimental unsharp masking (sharpening).\n"
                "    5: experimental unsharp masking (sharpening) with larger radius.\n"
                "    6: Lanczos2 (without lookup texture - extremely slow).\n"
+               "    7: like 6, but with lookup texture.\n"
                "  cscale=<n>\n"
                "    as lscale but for chroma (2x slower with little visible effect).\n"
                "  filter-strength=<value>\n"
