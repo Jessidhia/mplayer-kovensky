@@ -619,6 +619,11 @@ talloc-host.o: talloc.c talloc.h
 text2header$(EXESUF): text2header.c bstr-host.o talloc-host.o
 	$(HOST_CC) $(HOST_CFLAGS) -o $@ $^
 
+libvo/vo_gl3_shaders.h: text2header$(EXESUF) libvo/vo_gl3_shaders.glsl
+	./$^ --sections $@
+
+libvo/vo_gl3.c: libvo/vo_gl3_shaders.h
+
 # ./configure must be rerun if it changed
 config.mak: configure
 	@echo "############################################################"
