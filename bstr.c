@@ -17,7 +17,6 @@
  */
 
 #include <string.h>
-#include <libavutil/avutil.h>
 #include <assert.h>
 #include <ctype.h>
 #include <stdarg.h>
@@ -25,6 +24,9 @@
 #include "talloc.h"
 
 #include "bstr.h"
+
+#define FFMAX(a,b) ((a) > (b) ? (a) : (b))
+#define FFMIN(a,b) ((a) > (b) ? (b) : (a))
 
 int bstrcmp(struct bstr str1, struct bstr str2)
 {
