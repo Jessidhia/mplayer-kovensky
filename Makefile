@@ -608,6 +608,17 @@ codec-cfg$(EXESUF): codec-cfg.c codec-cfg.h
 codecs.conf.h: codec-cfg$(EXESUF) etc/codecs.conf
 	./$^ > $@
 
+HOST_CFLAGS = -std=gnu99 -O -I.
+
+bstr-host.o: bstr.c bstr.h talloc.h
+	$(HOST_CC) $(HOST_CFLAGS) -c -o $@ $<
+
+talloc-host.o: talloc.c talloc.h
+	$(HOST_CC) $(HOST_CFLAGS) -c -o $@ $<
+
+text2header$(EXESUF): text2header.c bstr-host.o talloc-host.o
+	$(HOST_CC) $(HOST_CFLAGS) -o $@ $^
+
 # ./configure must be rerun if it changed
 config.mak: configure
 	@echo "############################################################"
