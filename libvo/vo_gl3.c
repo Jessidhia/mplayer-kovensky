@@ -112,6 +112,8 @@ struct gl_priv {
 
     // 1D lookup textures for scalers
     int lookup_texture_lanczos2;
+    // 2D
+    int lookup_texture_lanczos3;
 
     int use_ycbcr;
     int use_gamma;
@@ -193,6 +195,13 @@ static void lookup_texture_lanczos2(float (*out_tex)[4], int count)
 {
     for (int n = 0; n < count; n++) {
         lanczos_weights(&out_tex[n][0], 2, n / (float)(count - 1));
+    }
+}
+
+static void lookup_texture_lanczos3(float (*out_tex)[6], int count)
+{
+    for (int n = 0; n < count; n++) {
+        lanczos_weights(&out_tex[n][0], 3, n / (float)(count - 1));
     }
 }
 
@@ -316,7 +325,7 @@ static void update_uniforms(struct vo *vo, GLuint program)
 {
     struct gl_priv *p = vo->priv;
     GL *gl = p->gl;
-    GLuint loc;
+    GLint loc;
 
     if (program == 0)
         return;
@@ -360,7 +369,7 @@ static void update_uniforms(struct vo *vo, GLuint program)
     if (loc >= 0)
         gl->Uniform1i(loc, 2);
 
-    loc = gl->GetUniformLocation(program, "lanczos2_weights");
+    loc = gl->GetUniformLocation(program, "texture_lanczos2_weights");
     if (loc >= 0) {
         int unit = 3;
         gl->Uniform1i(loc, unit);
@@ -370,12 +379,38 @@ static void update_uniforms(struct vo *vo, GLuint program)
             gl->BindTexture(GL_TEXTURE_1D, p->lookup_texture_lanczos2);
             float tex[LOOKUP_TEXTURE_SIZE][4];
             lookup_texture_lanczos2(tex, LOOKUP_TEXTURE_SIZE);
+            gl->PixelStorei(GL_UNPACK_ALIGNMENT, 0);
+            gl->PixelStorei(GL_UNPACK_ROW_LENGTH, 0);
             gl->TexImage1D(GL_TEXTURE_1D, 0, GL_RGBA16F, LOOKUP_TEXTURE_SIZE, 0,
                            GL_RGBA, GL_FLOAT, tex);
             gl->TexParameterf(GL_TEXTURE_1D, GL_TEXTURE_PRIORITY, 1.0);
             gl->TexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
             gl->TexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
             gl->TexParameteri(GL_TEXTURE_1D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            gl->ActiveTexture(GL_TEXTURE0);
+        }
+    }
+
+    loc = gl->GetUniformLocation(program, "texture_lanczos3_weights");
+    if (loc >= 0) {
+        int unit = 4;
+        gl->Uniform1i(loc, unit);
+        if (!p->lookup_texture_lanczos3) {
+            gl->ActiveTexture(GL_TEXTURE0 + unit);
+            gl->GenTextures(1, &p->lookup_texture_lanczos3);
+            gl->BindTexture(GL_TEXTURE_2D, p->lookup_texture_lanczos3);
+            float tex[LOOKUP_TEXTURE_SIZE][6];
+            lookup_texture_lanczos3(tex, LOOKUP_TEXTURE_SIZE);
+            gl->PixelStorei(GL_UNPACK_ALIGNMENT, 0);
+            gl->PixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+            // 6 coefficients stored in 2 pixels (at x=0 and x=1)
+            gl->TexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, 2, LOOKUP_TEXTURE_SIZE,
+                           0, GL_RGB, GL_FLOAT, tex);
+            gl->TexParameterf(GL_TEXTURE_2D, GL_TEXTURE_PRIORITY, 1.0);
+            gl->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            gl->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            gl->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            gl->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
             gl->ActiveTexture(GL_TEXTURE0);
         }
     }
@@ -559,6 +594,9 @@ static void uninitGl(struct vo *vo)
     gl->DeleteTextures(1, &p->lookup_texture_lanczos2);
     p->lookup_texture_lanczos2 = 0;
 
+    gl->DeleteTextures(1, &p->lookup_texture_lanczos3);
+    p->lookup_texture_lanczos3 = 0;
+
     for (int n = 0; n < 3; n++) {
         struct texplane *plane = &p->planes[n];
         if (plane->gl_texture)
@@ -663,9 +701,11 @@ static const char *select_scaler(int s)
     case 5:
         return "sample_unsharp5x5";
     case 6:
-        return "sample_lanczos4x4";
+        return "sample_lanczos2_nolookup";
     case 7:
-        return "sample_lanczos4x4_lookup";
+        return "sample_lanczos2";
+    case 8:
+        return "sample_lanczos3";
     default:
         return "sample_bilinear";
     }
