@@ -1304,6 +1304,52 @@ skip_upload:
     return VO_TRUE;
 }
 
+static mp_image_t *get_screenshot(struct vo *vo)
+{
+    struct gl_priv *p = vo->priv;
+    GL *gl = p->gl;
+
+    mp_image_t *image = alloc_mpi(p->texture_width, p->texture_height,
+                                  p->image_format);
+    assert(image->num_planes == p->plane_count);
+
+    for (int n = 0; n < p->plane_count; n++) {
+        gl->ActiveTexture(GL_TEXTURE0 + n);
+        gl->BindTexture(GL_TEXTURE_2D, p->planes[n].gl_texture);
+        glDownloadTex(gl, GL_TEXTURE_2D, p->gl_format, p->gl_type,
+                      image->planes[n], image->stride[n]);
+    }
+    gl->ActiveTexture(GL_TEXTURE0);
+
+    image->width = p->image_width;
+    image->height = p->image_height;
+
+    image->w = p->image_d_width;
+    image->h = p->image_d_height;
+
+    return image;
+}
+
+static mp_image_t *get_window_screenshot(struct vo *vo)
+{
+    struct gl_priv *p = vo->priv;
+    GL *gl = p->gl;
+
+    GLint vp[4]; //x, y, w, h
+    gl->GetIntegerv(GL_VIEWPORT, vp);
+    mp_image_t *image = alloc_mpi(vp[2], vp[3], IMGFMT_RGB24);
+    gl->PixelStorei(GL_PACK_ALIGNMENT, 4);
+    gl->PixelStorei(GL_PACK_ROW_LENGTH, 0);
+    gl->ReadBuffer(GL_FRONT);
+    //flip image while reading
+    for (int y = 0; y < vp[3]; y++) {
+        gl->ReadPixels(vp[0], vp[1] + vp[3] - y - 1, vp[2], 1,
+                       GL_RGB, GL_UNSIGNED_BYTE,
+                       image->planes[0] + y * image->stride[0]);
+    }
+    return image;
+}
+
 static int query_format(struct vo *vo, uint32_t format)
 {
     struct gl_priv *p = vo->priv;
@@ -1565,6 +1611,14 @@ static int control(struct vo *vo, uint32_t request, void *data)
             break;
         p->glctx->update_xinerama_info(vo);
         return VO_TRUE;
+    case VOCTRL_SCREENSHOT: {
+        struct voctrl_screenshot_args *args = data;
+        if (args->full_window)
+            args->out_image = get_window_screenshot(vo);
+        else
+            args->out_image = get_screenshot(vo);
+        return true;
+    }
     case VOCTRL_REDRAW_FRAME:
         if (vo_doublebuffering)
             do_render(vo);
