@@ -66,7 +66,7 @@ uniform sampler2D texture3;
 uniform sampler1D texture_lanczos2_weights;
 uniform sampler2D texture_lanczos3_weights;
 uniform mat4x3 colormatrix;
-uniform vec3 gamma;
+uniform vec3 inv_gamma;
 uniform float filter_strength;
 
 in vec2 texcoord;
@@ -244,7 +244,7 @@ void main() {
     color = mat3(colormatrix) * color + colormatrix[3];
 #endif
 #if USE_GAMMA_POW
-    color = pow(color, gamma);
+    color = pow(color, inv_gamma);
 #endif
     out_color = vec4(color, 1);
 }

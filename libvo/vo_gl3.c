@@ -332,6 +332,12 @@ static void update_uniforms(struct vo *vo, GLuint program)
 
     gl->UseProgram(program);
 
+    struct mp_csp_params cparams = {
+        .colorspace = p->colorspace,
+        .input_shift = -p->plane_bits & 7,
+    };
+    mp_csp_copy_equalizer_values(&cparams, &p->video_eq);
+
     loc = gl->GetUniformLocation(program, "transform");
     if (loc >= 0) {
         float matrix[3][3];
@@ -341,20 +347,13 @@ static void update_uniforms(struct vo *vo, GLuint program)
 
     loc = gl->GetUniformLocation(program, "colormatrix");
     if (loc >= 0) {
-        struct mp_csp_params cparams = {
-            .colorspace = p->colorspace,
-            .input_shift = -p->plane_bits & 7,
-        };
-        mp_csp_copy_equalizer_values(&cparams, &p->video_eq);
         float yuv2rgb[3][4];
         mp_get_yuv2rgb_coeffs(&cparams, yuv2rgb);
         gl->UniformMatrix4x3fv(loc, 1, GL_TRUE, &yuv2rgb[0][0]);
     }
 
-    loc = gl->GetUniformLocation(program, "gamma");
+    loc = gl->GetUniformLocation(program, "inv_gamma");
     if (loc >= 0) {
-        struct mp_csp_params cparams = {{0}};
-        mp_csp_copy_equalizer_values(&cparams, &p->video_eq);
         gl->Uniform3f(loc, 1.0 / cparams.rgamma, 1.0 / cparams.ggamma,
                       1.0 / cparams.bgamma);
     }
@@ -379,7 +378,7 @@ static void update_uniforms(struct vo *vo, GLuint program)
             gl->BindTexture(GL_TEXTURE_1D, p->lookup_texture_lanczos2);
             float tex[LOOKUP_TEXTURE_SIZE][4];
             lookup_texture_lanczos2(tex, LOOKUP_TEXTURE_SIZE);
-            gl->PixelStorei(GL_UNPACK_ALIGNMENT, 0);
+            gl->PixelStorei(GL_UNPACK_ALIGNMENT, 4);
             gl->PixelStorei(GL_UNPACK_ROW_LENGTH, 0);
             gl->TexImage1D(GL_TEXTURE_1D, 0, GL_RGBA16F, LOOKUP_TEXTURE_SIZE, 0,
                            GL_RGBA, GL_FLOAT, tex);
@@ -401,7 +400,7 @@ static void update_uniforms(struct vo *vo, GLuint program)
             gl->BindTexture(GL_TEXTURE_2D, p->lookup_texture_lanczos3);
             float tex[LOOKUP_TEXTURE_SIZE][6];
             lookup_texture_lanczos3(tex, LOOKUP_TEXTURE_SIZE);
-            gl->PixelStorei(GL_UNPACK_ALIGNMENT, 0);
+            gl->PixelStorei(GL_UNPACK_ALIGNMENT, 4);
             gl->PixelStorei(GL_UNPACK_ROW_LENGTH, 0);
             // 6 coefficients stored in 2 pixels (at x=0 and x=1)
             gl->TexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, 2, LOOKUP_TEXTURE_SIZE,
@@ -723,11 +722,11 @@ static GLuint create_shader(GL *gl, GLenum type, const char *header,
     gl->GetShaderiv(shader, GL_INFO_LOG_LENGTH, &log_length);
 
     if (!status || log_length > 1) {
-        GLchar *log = calloc(1, log_length + 1);
+        GLchar *log = talloc_zero_size(NULL, log_length + 1);
         gl->GetShaderInfoLog(shader, log_length, NULL, log);
         mp_msg(MSGT_VO, status ? MSGL_V : MSGL_ERR,
                "[gl] shader compile log (status=%d): %s\n", status, log);
-        free(log);
+        talloc_free(log);
     }
 
     return shader;
@@ -750,11 +749,11 @@ static void link_shader(GL *gl, GLuint program)
     gl->GetProgramiv_new(program, GL_INFO_LOG_LENGTH, &log_length);
 
     if (!status || log_length > 1) {
-        GLchar *log = calloc(1, log_length + 1);
+        GLchar *log = talloc_zero_size(NULL, log_length + 1);
         gl->GetProgramInfoLog(program, log_length, NULL, log);
         mp_msg(MSGT_VO, status ? MSGL_V : MSGL_ERR,
                "[gl] shader link log (status=%d): %s\n", status, log);
-        free(log);
+        talloc_free(log);
     }
 }
 
@@ -1358,8 +1357,6 @@ static int query_format(struct vo *vo, uint32_t format)
     int caps = VFCAP_CSP_SUPPORTED | VFCAP_CSP_SUPPORTED_BY_HW | VFCAP_FLIP |
                VFCAP_HWSCALE_UP | VFCAP_HWSCALE_DOWN | VFCAP_ACCEPT_STRIDE |
                VFCAP_OSD | VFCAP_EOSD | VFCAP_EOSD_UNSCALED;
-    if (format == IMGFMT_RGB24 || format == IMGFMT_RGBA)
-        return caps;
     if (mp_get_chroma_shift(format, NULL, NULL, &depth) &&
         (IMGFMT_IS_YUVP16_NE(format) || !IMGFMT_IS_YUVP16(format)))
         return caps;
@@ -1408,6 +1405,7 @@ static int preinit_internal(struct vo *vo, const char *arg, int allow_sw,
     int yuv = -1;
 
     const opt_t subopts[] = {
+        {"gamma",        OPT_ARG_BOOL, &p->use_gamma,    NULL},
         {"manyfmts",     OPT_ARG_BOOL, &p->many_fmts,    NULL},
         {"ycbcr",        OPT_ARG_BOOL, &p->use_ycbcr,    NULL},
         {"rectangle",    OPT_ARG_INT,  &p->use_rectangle,int_non_neg},
@@ -1436,6 +1434,8 @@ static int preinit_internal(struct vo *vo, const char *arg, int allow_sw,
                "\n-vo gl command line help:\n"
                "Example: mplayer -vo gl:yuv=2\n"
                "\nOptions:\n"
+               "  gamma\n"
+               "    Enable gamma control.\n"
                "  nomanyfmts\n"
                "    Disable extended color formats for OpenGL 1.2 and later\n"
                "  rectangle=<0,1,2>\n"
@@ -1465,7 +1465,7 @@ static int preinit_internal(struct vo *vo, const char *arg, int allow_sw,
                "  filter-strength=<value>\n"
                "    set the effect strength for some lscale/cscale filters\n"
                "  mipmapgen\n"
-               "    generate mipmaps for the video image (use with TXB in customprog)\n"
+               "    generate mipmaps for the video image (helps with downscaling)\n"
                "  osdcolor=<0xAARRGGBB>\n"
                "    use the given color for the OSD\n"
                "  stereo=<n>\n"
