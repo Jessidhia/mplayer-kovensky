@@ -513,6 +513,7 @@ SRCS_MPLAYER = command.c \
                libao2/audio_out.c \
                libvo/aspect.c \
                libvo/csputils.c \
+               libvo/filter_kernels.c \
                libvo/geometry.c \
                libvo/old_vo_wrapper.c \
                libvo/spuenc.c \

@@ -48,6 +48,7 @@
 #include "eosd_packer.h"
 
 #include "gl_common.h"
+#include "filter_kernels.h"
 #include "aspect.h"
 #include "fastmemcpy.h"
 #include "sub/ass_mp.h"
@@ -60,6 +61,43 @@
 
 // Pixel width of 1D lookup textures.
 #define LOOKUP_TEXTURE_SIZE 256
+
+typedef struct string2 {
+    const char *a, *b;
+} string2;
+
+// Map command line lscale/cscale arguments to shader filter routines.
+// Note that there are convolution filters additional to this list; the filters
+// listed here are called "fixed" to distinguish them from filter-based ones.
+static const string2 fixed_scale_filters[] = {
+    {"bilinear", "sample_bilinear"},
+    {"bicubic_fast", "sample_bicubic"},
+    {"sharpen3", "sample_unsharp3"},
+    {"sharpen5", "sample_unsharp5"},
+    {"lanczos2_slow", "sample_lanczos2_nolookup"},
+    {"0", "sample_bilinear"},
+    {"1", "sample_bicubic"}, // was bicubic scaling with lookup texture
+    {"2", "sample_bicubic"}, // was like 1, but linear in Y direction (faster)
+    {"3", "sample_bicubic"},
+    {"4", "sample_unsharp3"},
+    {"5", "sample_unsharp5"},
+    {0}
+};
+
+struct convolution_filters {
+    const char *shader_fn;
+    bool use_2d;
+    GLint internal_format;
+    GLenum format;
+};
+
+// indexed with filter_kernel->size
+struct convolution_filters convolution_filters[] = {
+    [2] = {"sample_convolution2", false, GL_RG16F,   GL_RG},
+    [4] = {"sample_convolution4", false, GL_RGBA16F, GL_RGBA},
+    [6] = {"sample_convolution6", true,  GL_RGB16F,  GL_RGB},
+    [8] = {"sample_convolution8", true,  GL_RGBA16F, GL_RGBA},
+};
 
 struct vertex {
     float position[2];
@@ -93,6 +131,16 @@ struct vertex_array {
     int vertex_count;
 };
 
+struct scaler {
+    int id;
+    char *name;
+    const char *shader_fn;
+    struct filter_kernel *kernel;
+    GLuint gl_lut;
+    int texunit;
+    const char *lut_name;
+};
+
 struct gl_priv {
     MPGLContext *glctx;
     GL *gl;
@@ -112,17 +160,10 @@ struct gl_priv {
     int osdtexCnt;
     int osd_color;
 
-    // 1D lookup textures for scalers
-    int lookup_texture_lanczos2;
-    // 2D
-    int lookup_texture_lanczos3;
-
     int use_ycbcr;
     int use_gamma;
     struct mp_csp_details colorspace;
     int is_yuv;
-    int lscale;
-    int cscale;
     float filter_strength;
     int use_rectangle;
     uint32_t image_width;
@@ -145,6 +186,9 @@ struct gl_priv {
     int plane_count;
     struct texplane planes[3];
 
+    // state for luma and chroma scalers
+    struct scaler scalers[2];
+
     int mipmap_gen;
     int stereo_mode;
 
@@ -161,48 +205,6 @@ struct gl_priv {
 };
 
 
-static double lanczos_L(double a, double x)
-{
-    float pix = M_PI * x;
-    if (x < -a || x > a)
-        return 0;
-    if (x == 0)
-        return 1;
-    return a * sin(pix) * sin(pix / a) / (pix * pix);
-}
-
-// Calculate the Lanczos filtering kernel for N sample points.
-// N = number of samples, which is a * 2
-// The weights will be stored in out_w[0] to out_w[a * 2 - 1]
-// f = x0 - abs(x0)
-static void lanczos_weights(float *out_w, int a, float f)
-{
-    double sum = 0;
-    for (int n = 0; n < a * 2; n++) {
-        float x = f - (n - a + 1);
-        double w = lanczos_L(a, x);
-        out_w[n] = w;
-        sum += w;
-    }
-    //normalize
-    for (int n = 0; n < a * 2; n++)
-        out_w[n] /= sum;
-}
-
-static void lookup_texture_lanczos2(float (*out_tex)[4], int count)
-{
-    for (int n = 0; n < count; n++) {
-        lanczos_weights(&out_tex[n][0], 2, n / (float)(count - 1));
-    }
-}
-
-static void lookup_texture_lanczos3(float (*out_tex)[6], int count)
-{
-    for (int n = 0; n < count; n++) {
-        lanczos_weights(&out_tex[n][0], 3, n / (float)(count - 1));
-    }
-}
-
 static void matrix_ortho2d(float m[3][3], float x0, float x1,
                            float y0, float y1)
 {
@@ -212,6 +214,25 @@ static void matrix_ortho2d(float m[3][3], float x0, float x1,
     m[2][0] = -(x1 + x0) / (x1 - x0);
     m[2][1] = -(y1 + y0) / (y1 - y0);
     m[2][2] = 1.0f;
+}
+
+// Return the shader routine for the given scaler, or NULL if not found.
+static char *find_fixed_scaler(const char *name)
+{
+    for (const string2 *entry = &fixed_scale_filters[0]; entry->a; entry++) {
+        if (strcmp(entry->a, name) == 0)
+            return (char *)entry->b;
+    }
+    return NULL;
+}
+
+static bool can_use_filter_kernel(struct filter_kernel *kernel)
+{
+    if (!kernel)
+        return false;
+    if (kernel->size >= sizeof(convolution_filters) / sizeof(convolution_filters[0]))
+        return false;
+    return !!convolution_filters[kernel->size].shader_fn;
 }
 
 static void vertex_array_init(GL *gl, struct vertex_array * va, GLuint program)
@@ -319,6 +340,56 @@ static void write_quad(struct vertex *va,
 #undef COLOR_INIT
 }
 
+static void scaler_texture(struct vo *vo, GLuint program, struct scaler *scaler)
+{
+    struct gl_priv *p = vo->priv;
+    GL *gl = p->gl;
+
+    if (!scaler->kernel)
+        return;
+
+    int size = scaler->kernel->size;
+    struct convolution_filters *entry = &convolution_filters[size];
+
+    GLint loc = gl->GetUniformLocation(program, scaler->lut_name);
+    if (loc < 0)
+        return;
+
+    gl->Uniform1i(loc, scaler->texunit);
+
+    gl->ActiveTexture(GL_TEXTURE0 + scaler->texunit);
+    GLenum target = entry->use_2d ? GL_TEXTURE_2D : GL_TEXTURE_1D;
+
+    if (scaler->gl_lut) {
+        gl->BindTexture(target, scaler->gl_lut);
+    } else {
+        gl->GenTextures(1, &scaler->gl_lut);
+        gl->BindTexture(target, scaler->gl_lut);
+        gl->PixelStorei(GL_UNPACK_ALIGNMENT, 4);
+        gl->PixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+
+        float *weights = talloc_array(NULL, float, LOOKUP_TEXTURE_SIZE * size);
+        mp_compute_lut(scaler->kernel, LOOKUP_TEXTURE_SIZE, weights);
+        if (entry->use_2d) {
+            gl->TexImage2D(GL_TEXTURE_2D, 0, entry->internal_format, 2,
+                           LOOKUP_TEXTURE_SIZE, 0, entry->format, GL_FLOAT,
+                           weights);
+        } else {
+            gl->TexImage1D(GL_TEXTURE_1D, 0, entry->internal_format,
+                           LOOKUP_TEXTURE_SIZE, 0, entry->format, GL_FLOAT,
+                           weights);
+        }
+        talloc_free(weights);
+
+        gl->TexParameteri(target, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        gl->TexParameteri(target, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        gl->TexParameteri(target, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        gl->TexParameteri(target, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    }
+
+    gl->ActiveTexture(GL_TEXTURE0);
+}
+
 static void update_uniforms(struct vo *vo, GLuint program)
 {
     struct gl_priv *p = vo->priv;
@@ -366,49 +437,8 @@ static void update_uniforms(struct vo *vo, GLuint program)
     if (loc >= 0)
         gl->Uniform1i(loc, 2);
 
-    loc = gl->GetUniformLocation(program, "texture_lanczos2_weights");
-    if (loc >= 0) {
-        int unit = 3;
-        gl->Uniform1i(loc, unit);
-        if (!p->lookup_texture_lanczos2) {
-            gl->ActiveTexture(GL_TEXTURE0 + unit);
-            gl->GenTextures(1, &p->lookup_texture_lanczos2);
-            gl->BindTexture(GL_TEXTURE_1D, p->lookup_texture_lanczos2);
-            float tex[LOOKUP_TEXTURE_SIZE][4];
-            lookup_texture_lanczos2(tex, LOOKUP_TEXTURE_SIZE);
-            gl->PixelStorei(GL_UNPACK_ALIGNMENT, 4);
-            gl->PixelStorei(GL_UNPACK_ROW_LENGTH, 0);
-            gl->TexImage1D(GL_TEXTURE_1D, 0, GL_RGBA16F, LOOKUP_TEXTURE_SIZE, 0,
-                           GL_RGBA, GL_FLOAT, tex);
-            gl->TexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-            gl->TexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-            gl->TexParameteri(GL_TEXTURE_1D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-            gl->ActiveTexture(GL_TEXTURE0);
-        }
-    }
-
-    loc = gl->GetUniformLocation(program, "texture_lanczos3_weights");
-    if (loc >= 0) {
-        int unit = 4;
-        gl->Uniform1i(loc, unit);
-        if (!p->lookup_texture_lanczos3) {
-            gl->ActiveTexture(GL_TEXTURE0 + unit);
-            gl->GenTextures(1, &p->lookup_texture_lanczos3);
-            gl->BindTexture(GL_TEXTURE_2D, p->lookup_texture_lanczos3);
-            float tex[LOOKUP_TEXTURE_SIZE][6];
-            lookup_texture_lanczos3(tex, LOOKUP_TEXTURE_SIZE);
-            gl->PixelStorei(GL_UNPACK_ALIGNMENT, 4);
-            gl->PixelStorei(GL_UNPACK_ROW_LENGTH, 0);
-            // 6 coefficients stored in 2 pixels (at x=0 and x=1)
-            gl->TexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, 2, LOOKUP_TEXTURE_SIZE,
-                           0, GL_RGB, GL_FLOAT, tex);
-            gl->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-            gl->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-            gl->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-            gl->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-            gl->ActiveTexture(GL_TEXTURE0);
-        }
-    }
+    scaler_texture(vo, program, &p->scalers[0]);
+    scaler_texture(vo, program, &p->scalers[1]);
 
     loc = gl->GetUniformLocation(program, "filter_strength");
     if (loc >= 0)
@@ -583,11 +613,10 @@ static void uninitVideo(struct vo *vo)
     vertex_array_uninit(gl, &p->va_eosd);
     vertex_array_uninit(gl, &p->va_video);
 
-    gl->DeleteTextures(1, &p->lookup_texture_lanczos2);
-    p->lookup_texture_lanczos2 = 0;
-
-    gl->DeleteTextures(1, &p->lookup_texture_lanczos3);
-    p->lookup_texture_lanczos3 = 0;
+    for (int n = 0; n < 2; n++) {
+        gl->DeleteTextures(1, &p->scalers->gl_lut);
+        p->scalers->gl_lut = 0;
+    }
 
     for (int n = 0; n < 3; n++) {
         struct texplane *plane = &p->planes[n];
@@ -621,7 +650,7 @@ static GLint get_scale_type(struct vo *vo, int chroma)
 {
     struct gl_priv *p = vo->priv;
 
-    int nearest = (chroma ? p->cscale : p->lscale) & 64;
+    int nearest = 0;
     if (nearest)
         return p->mipmap_gen ? GL_NEAREST_MIPMAP_NEAREST : GL_NEAREST;
     return p->mipmap_gen ? GL_LINEAR_MIPMAP_NEAREST : GL_LINEAR;
@@ -631,28 +660,6 @@ static GLint get_scale_type(struct vo *vo, int chroma)
 static int get_chroma_clear_val(int bit_depth)
 {
     return 1 << (bit_depth - 1 & 7);
-}
-
-static const char *select_scaler(int s)
-{
-    switch (s & 63) {
-    case 1:  // was bicubic scaling with lookup texture
-    case 2:  // was like 1, but linear in Y direction (for performance)
-    case 3:
-        return "sample_bicubic";
-    case 4:
-        return "sample_unsharp3x3";
-    case 5:
-        return "sample_unsharp5x5";
-    case 6:
-        return "sample_lanczos2_nolookup";
-    case 7:
-        return "sample_lanczos2";
-    case 8:
-        return "sample_lanczos3";
-    default:
-        return "sample_bilinear";
-    }
 }
 
 static GLuint create_shader(GL *gl, GLenum type, const char *header,
@@ -712,20 +719,27 @@ static GLuint create_program(GL *gl, const char *header, const char *vertex,
     return prog;
 }
 
-struct config_value {
-    const char *name;
-    const char *value;
-};
-
-static char *shader_header(void *talloc_ctx, struct config_value *config)
+static void shader_def(char **shader, const char *name,
+                       const char *value)
 {
-    char *res = talloc_strdup(talloc_ctx, shader_prelude);
-    while (config->name) {
-        res = talloc_asprintf_append(res, "#define %s %s\n", config->name,
-                                     config->value);
-        config++;
+    *shader = talloc_asprintf_append(*shader, "#define %s %s\n", name, value);
+}
+
+static void shader_def_b(char **shader, const char *name, bool b)
+{
+    shader_def(shader, name, b ? "1" : "0");
+}
+
+static void shader_setup_scaler(char **shader, struct scaler *scaler)
+{
+    const char *target = scaler->id == 0 ? "SAMPLE_L" : "SAMPLE_C";
+    if (!scaler->kernel) {
+        shader_def(shader, target, scaler->shader_fn);
+    } else {
+        *shader = talloc_asprintf_append(*shader,
+            "#define %s(p0, p1) %s(%s, p0, p1)\n", target, scaler->shader_fn,
+            scaler->lut_name);
     }
-    return res;
 }
 
 static void compile_shaders(struct vo *vo)
@@ -734,31 +748,27 @@ static void compile_shaders(struct vo *vo)
     GL *gl = p->gl;
     void *tmp = talloc_new(NULL);
 
-    struct config_value shader_config[] = {
-        { "USE_PLANAR", p->is_yuv ? "1" : "0" },
-        { "USE_COLORMATRIX", p->is_yuv ? "1" : "0" },
-        { "USE_GAMMA_POW", p->use_gamma ? "1" : "0" },
-        { "SAMPLE_L", select_scaler(p->lscale) },
-        { "SAMPLE_C", select_scaler(p->cscale) },
-        {0}
-    };
+    char *header = talloc_strdup(tmp, "");
 
-    mp_msg(MSGT_VO, MSGL_V, "[gl] shader config:\n");
-    for (int n = 0; shader_config[n].name; n++) {
-        mp_msg(MSGT_VO, MSGL_V, "  %s=%s\n", shader_config[n].name,
-               shader_config[n].value);
-    }
+    shader_def_b(&header, "USE_PLANAR", p->is_yuv);
+    shader_def_b(&header, "USE_COLORMATRIX", p->is_yuv);
+    shader_def_b(&header, "USE_GAMMA_POW", p->use_gamma);
 
-    char *pre = shader_header(tmp, shader_config);
+    shader_setup_scaler(&header, &p->scalers[0]);
+    shader_setup_scaler(&header, &p->scalers[1]);
+
+    mp_msg(MSGT_VO, MSGL_V, "[gl] shader config:\n%s", header);
+
+    header = talloc_asprintf(tmp, "%s%s", shader_prelude, header);
 
     vertex_array_init(gl, &p->va_eosd,
-                      create_program(gl, pre, vertex_shader, frag_shader_eosd));
+        create_program(gl, header, vertex_shader, frag_shader_eosd));
 
     vertex_array_init(gl, &p->va_osd,
-                      create_program(gl, pre, vertex_shader, frag_shader_osd));
+        create_program(gl, header, vertex_shader, frag_shader_osd));
 
     vertex_array_init(gl, &p->va_video,
-                      create_program(gl, pre, vertex_shader, frag_shader_video));
+        create_program(gl, header, vertex_shader, frag_shader_video));
 
     glCheckError(gl, "shader compilation");
 
@@ -1328,6 +1338,45 @@ static void uninit(struct vo *vo)
     p->gl = NULL;
 }
 
+static bool handle_scaler_opt(struct vo *vo, struct scaler *scaler)
+{
+    if (!scaler->name || scaler->name[0] == '\0')
+        scaler->name = talloc_strdup(vo, "bilinear");
+
+    if (strcmp(scaler->name, "help") == 0) {
+        mp_msg(MSGT_VO, MSGL_INFO, "Available scalers:\n");
+        for (const string2 *e = &fixed_scale_filters[0]; e->a; e++) {
+            mp_msg(MSGT_VO, MSGL_INFO, "    %s\n", e->a);
+        }
+        for (const struct filter_kernel *e = &mp_filter_kernels[0]; e->name; e++)
+        {
+            mp_msg(MSGT_VO, MSGL_INFO, "    %s\n", e->name);
+        }
+        return false;
+    }
+
+    scaler->kernel = NULL;
+    scaler->shader_fn = find_fixed_scaler(scaler->name);
+    if (scaler->shader_fn)
+        return true;
+
+    scaler->kernel = mp_find_filter_kernel(scaler->name);
+    if (can_use_filter_kernel(scaler->kernel)) {
+        const struct convolution_filters *entry =
+            &convolution_filters[scaler->kernel->size];
+        scaler->shader_fn = entry->shader_fn;
+        bool is_luma = scaler->id == 0;
+        scaler->lut_name = entry->use_2d
+                           ? (is_luma ? "lut_l_2d" : "lut_c_2d")
+                           : (is_luma ? "lut_l_1d" : "lut_c_1d");
+        return true;
+    }
+
+    mp_msg(MSGT_VO, MSGL_FATAL, "[gl] Error: scaler '%s' not found.\n",
+           scaler->name);
+    return false;
+}
+
 static int preinit_internal(struct vo *vo, const char *arg, int allow_sw,
                             enum MPGLType gltype)
 {
@@ -1341,15 +1390,16 @@ static int preinit_internal(struct vo *vo, const char *arg, int allow_sw,
         .force_pbo = 0,
         .swap_interval = 1,
         .osd_color = 0xffffff,
+        .scalers = {
+            { .id = 0, .texunit = 5 },
+            { .id = 1, .texunit = 6 },
+        },
     };
 
     p->eosd = eosd_packer_create(vo);
 
-    //essentially unused; for legacy warnings only
-    int user_colorspace = 0;
-    int levelconv = -1;
-    int aspect = -1;
-    int yuv = -1;
+    char *lscale = NULL;
+    char *cscale = NULL;
 
     const opt_t subopts[] = {
         {"gamma",        OPT_ARG_BOOL, &p->use_gamma,    NULL},
@@ -1362,16 +1412,9 @@ static int preinit_internal(struct vo *vo, const char *arg, int allow_sw,
         {"mipmapgen",    OPT_ARG_BOOL, &p->mipmap_gen,   NULL},
         {"osdcolor",     OPT_ARG_INT,  &p->osd_color,    NULL},
         {"stereo",       OPT_ARG_INT,  &p->stereo_mode,  NULL},
+        {"lscale",       OPT_ARG_MSTRZ,&lscale,          NULL},
+        {"cscale",       OPT_ARG_MSTRZ,&cscale,          NULL},
         {"debug",        OPT_ARG_BOOL, &p->gl_debug,     NULL},
-        // Legacy.
-        {"yuv",          OPT_ARG_INT,  &yuv,             int_non_neg},
-        {"lscale",       OPT_ARG_INT,  &p->lscale,       int_non_neg},
-        {"cscale",       OPT_ARG_INT,  &p->cscale,       int_non_neg},
-        // Removed options.
-        // They are only parsed to notify the user about the replacements.
-        {"aspect",       OPT_ARG_BOOL, &aspect,          NULL},
-        {"colorspace",   OPT_ARG_INT,  &user_colorspace, NULL},
-        {"levelconv",    OPT_ARG_INT,  &levelconv,       NULL},
         {NULL}
     };
 
@@ -1397,17 +1440,23 @@ static int preinit_internal(struct vo *vo, const char *arg, int allow_sw,
                "    Requires GLX_SGI_swap_control support to work.\n"
                "  ycbcr\n"
                "    also try to use the GL_MESA_ycbcr_texture extension\n"
-               "  lscale=<n>\n"
-               "    0: use standard bilinear scaling for luma.\n"
-               "    3: bicubic filter (without lookup texture).\n"
-               "    4: experimental unsharp masking (sharpening).\n"
-               "    5: experimental unsharp masking (sharpening) with larger radius.\n"
-               "    6: Lanczos2 (without lookup texture - extremely slow).\n"
-               "    7: like 6, but with lookup texture.\n"
+               "  lscale=<filter>\n"
+               "    bilinear: use standard bilinear scaling for luma.\n"
+               "    bicubic_fast: bicubic filter (without lookup texture).\n"
+               "    sharpen3: unsharp masking (sharpening) with radius=3.\n"
+               "    sharpen5: unsharp masking (sharpening) with radius=5.\n"
+               "    lanczos2: Lanczos with radius=2.\n"
+               "    lanczos3: Lanczos with radius=3.\n"
+               "  There are more filters - print a list with lscale=help.\n"
+               "  Old filter values for lscale:\n"
+               "    0: bilinear\n"
+               "    1,2,3: bicubic_fast\n"
+               "    4: sharpen3\n"
+               "    5: sharpen5\n"
                "  cscale=<n>\n"
                "    as lscale but for chroma (2x slower with little visible effect).\n"
                "  filter-strength=<value>\n"
-               "    set the effect strength for some lscale/cscale filters\n"
+               "    set the effect strength for some sharpen4/sharpen5 filters\n"
                "  mipmapgen\n"
                "    generate mipmaps for the video image (helps with downscaling)\n"
                "  osdcolor=<0xAARRGGBB>\n"
@@ -1420,24 +1469,16 @@ static int preinit_internal(struct vo *vo, const char *arg, int allow_sw,
                "\n");
         return -1;
     }
-    if (user_colorspace != 0 || levelconv != -1) {
-        mp_msg(MSGT_VO, MSGL_ERR, "[gl] \"colorspace\" and \"levelconv\" "
-               "suboptions have been removed. Use options --colormatrix and"
-               " --colormatrix-input-range/--colormatrix-output-range instead.\n");
-        return -1;
-    }
-    if (aspect != -1) {
-        mp_msg(MSGT_VO, MSGL_ERR, "[gl] \"noaspect\" suboption has been "
-               "removed. Use --noaspect instead.\n");
-        return -1;
-    }
 
-    // The new shader code is a bit differently organized, so the old config
-    // parameters don't translate well to the new ones, but try anyway.
+    p->scalers[0].name = talloc_strdup(vo, lscale);
+    p->scalers[1].name = talloc_strdup(vo, cscale);
+    free(lscale);
+    free(cscale);
 
-    // these had gamma controls, although only one used pow() in the shader
-    if (yuv == 3 || yuv == 4 || yuv == 6)
-        p->use_gamma = 1;
+    if (!handle_scaler_opt(vo, &p->scalers[0]))
+        goto err_out;
+    if (!handle_scaler_opt(vo, &p->scalers[1]))
+        goto err_out;
 
     p->glctx = init_mpglcontext(gltype, vo);
     if (!p->glctx)

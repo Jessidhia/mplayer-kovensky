@@ -63,8 +63,10 @@ void main() {
 uniform sampler2D texture1;
 uniform sampler2D texture2;
 uniform sampler2D texture3;
-uniform sampler1D texture_lanczos2_weights;
-uniform sampler2D texture_lanczos3_weights;
+uniform sampler1D lut_c_1d;
+uniform sampler1D lut_l_1d;
+uniform sampler2D lut_c_2d;
+uniform sampler2D lut_l_2d;
 uniform mat4x3 colormatrix;
 uniform vec3 inv_gamma;
 uniform float filter_strength;
@@ -114,7 +116,29 @@ vec4 sample_bicubic(sampler2D tex, vec2 texcoord) {
     return mix(aa, ab, parmx.b);
 }
 
-#define CONVOLUTION_N_TAPS(NAME, N)                                          \
+float[2] weights2(sampler1D lookup, float f) {
+    vec4 c = texture(lookup, f);
+    return float[2](c.r, c.g);
+}
+
+float[4] weights4(sampler1D lookup, float f) {
+    vec4 c = texture(lookup, f);
+    return float[4](c.r, c.g, c.b, c.a);
+}
+
+float[6] weights6(sampler2D lookup, float f) {
+    vec4 c1 = texture(lookup, vec2(0.25, f));
+    vec4 c2 = texture(lookup, vec2(0.75, f));
+    return float[6](c1.r, c1.g, c1.b, c2.r, c2.g, c2.b);
+}
+
+float[8] weights8(sampler2D lookup, float f) {
+    vec4 c1 = texture(lookup, vec2(0.25, f));
+    vec4 c2 = texture(lookup, vec2(0.75, f));
+    return float[8](c1.r, c1.g, c1.b, c1.a, c2.r, c2.g, c2.b, c2.a);
+}
+
+#define CONVOLUTION_N(NAME, N)                                               \
     vec4 NAME(sampler2D tex, vec2 texcoord, vec2 pt, float taps_x[N],        \
               float taps_y[N]) {                                             \
         vec4 res = vec4(0);                                                  \
@@ -127,8 +151,27 @@ vec4 sample_bicubic(sampler2D tex, vec2 texcoord) {
         return res;                                                          \
     }
 
-CONVOLUTION_N_TAPS(convolution4taps, 4)
-CONVOLUTION_N_TAPS(convolution6taps, 6)
+CONVOLUTION_N(convolution2, 2)
+CONVOLUTION_N(convolution4, 4)
+CONVOLUTION_N(convolution6, 6)
+CONVOLUTION_N(convolution8, 8)
+
+#define SAMPLE_CONVOLUTION_N(NAME, N, SAMPLERT, CONV_FUNC, WEIGHTS_FUNC)    \
+    vec4 NAME(SAMPLERT lookup, sampler2D tex, vec2 texcoord) {              \
+        vec2 texsize = textureSize(tex, 0);                                 \
+        vec2 pt = 1 / texsize;                                              \
+        vec2 fcoord = fract(texcoord * texsize - 0.5);                      \
+        vec2 base = texcoord - fcoord * pt;                                 \
+        return CONV_FUNC(tex, base - pt * (N / 2 - 1), pt,                  \
+                         WEIGHTS_FUNC(lookup, fcoord.x),                    \
+                         WEIGHTS_FUNC(lookup, fcoord.y));                   \
+    }
+
+SAMPLE_CONVOLUTION_N(sample_convolution2, 2, sampler1D, convolution2, weights2)
+SAMPLE_CONVOLUTION_N(sample_convolution4, 4, sampler1D, convolution4, weights4)
+SAMPLE_CONVOLUTION_N(sample_convolution6, 6, sampler2D, convolution6, weights6)
+SAMPLE_CONVOLUTION_N(sample_convolution8, 8, sampler2D, convolution8, weights8)
+
 
 // (assumes -a < x < a, normally the function should be 0 otherwise)
 float lanczos_L(float a, float x) {
@@ -158,51 +201,12 @@ vec4 sample_lanczos2_nolookup(sampler2D tex, vec2 texcoord) {
     vec2 pt = 1 / texsize;
     vec2 fcoord = fract(texcoord * texsize - 0.5);
     vec2 base = texcoord - fcoord * pt;
-    return convolution4taps(tex, base - pt, pt,
-                            lanczos2_weights(fcoord.x),
-                            lanczos2_weights(fcoord.y));
+    return convolution4(tex, base - pt, pt,
+                        lanczos2_weights(fcoord.x),
+                        lanczos2_weights(fcoord.y));
 }
 
-float[4] lookup_weights4(sampler1D lookup, float f) {
-    vec4 c = texture(lookup, f);
-    return float[4](c.r, c.g, c.b, c.a);
-}
-
-vec4 sample_convolution4x4(sampler1D lookup, sampler2D tex, vec2 texcoord) {
-    vec2 texsize = textureSize(tex, 0);
-    vec2 pt = 1 / texsize;
-    vec2 fcoord = fract(texcoord * texsize - 0.5);
-    vec2 base = texcoord - fcoord * pt;
-    return convolution4taps(tex, base - pt, pt,
-                            lookup_weights4(lookup, fcoord.x),
-                            lookup_weights4(lookup, fcoord.y));
-}
-
-vec4 sample_lanczos2(sampler2D tex, vec2 texcoord) {
-    return sample_convolution4x4(texture_lanczos2_weights, tex, texcoord);
-}
-
-float[6] lookup_weights6(sampler2D lookup, float f) {
-    vec4 c1 = texture(lookup, vec2(0.25, f));
-    vec4 c2 = texture(lookup, vec2(0.75, f));
-    return float[6](c1.r, c1.g, c1.b, c2.r, c2.g, c2.b);
-}
-
-vec4 sample_convolution6x6(sampler2D lookup, sampler2D tex, vec2 texcoord) {
-    vec2 texsize = textureSize(tex, 0);
-    vec2 pt = 1 / texsize;
-    vec2 fcoord = fract(texcoord * texsize - 0.5);
-    vec2 base = texcoord - fcoord * pt;
-    return convolution6taps(tex, base - pt * 2, pt,
-                            lookup_weights6(lookup, fcoord.x),
-                            lookup_weights6(lookup, fcoord.y));
-}
-
-vec4 sample_lanczos3(sampler2D tex, vec2 texcoord) {
-    return sample_convolution6x6(texture_lanczos3_weights, tex, texcoord);
-}
-
-vec4 sample_unsharp3x3(sampler2D tex, vec2 texcoord) {
+vec4 sample_unsharp3(sampler2D tex, vec2 texcoord) {
     vec2 texsize = textureSize(tex, 0);
     vec2 pt = 1 / texsize;
     vec2 st = pt * 0.5;
@@ -214,7 +218,7 @@ vec4 sample_unsharp3x3(sampler2D tex, vec2 texcoord) {
     return p + (p - 0.25 * sum) * filter_strength;
 }
 
-vec4 sample_unsharp5x5(sampler2D tex, vec2 texcoord) {
+vec4 sample_unsharp5(sampler2D tex, vec2 texcoord) {
     vec2 texsize = textureSize(tex, 0);
     vec2 pt = 1 / texsize;
     vec2 st1 = pt * 1.2;
