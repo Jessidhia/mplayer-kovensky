@@ -123,15 +123,12 @@ struct gl_priv {
     int cscale;
     float filter_strength;
     int use_rectangle;
-    int err_shown;
     uint32_t image_width;
     uint32_t image_height;
     uint32_t image_format;
     uint32_t image_d_width;
     uint32_t image_d_height;
     int many_fmts;
-    int have_texture_rg;
-    int ati_hack;
     int force_pbo;
     int use_glFinish;
     int swap_interval;
@@ -479,8 +476,6 @@ static void texSize(struct vo *vo, int w, int h, int *texw, int *texh)
         while (*texh < h)
             *texh *= 2;
     }
-    if (p->ati_hack)
-        *texw = (*texw + 511) & ~511;
 }
 
 /**
@@ -612,7 +607,6 @@ static void uninitGl(struct vo *vo)
         gl->DeleteTextures(1, &p->eosd_texture);
     eosd_packer_reinit(p->eosd, 0, 0);
     p->eosd_texture = 0;
-    p->err_shown = 0;
 }
 
 static int isSoftwareGl(struct vo *vo)
@@ -628,33 +622,16 @@ static void autodetectGlExtensions(struct vo *vo)
     struct gl_priv *p = vo->priv;
     GL *gl = p->gl;
 
-    const char *extensions = gl->GetString(GL_EXTENSIONS);
+    //const char *extensions = gl->GetString(GL_EXTENSIONS);
     const char *vendor     = gl->GetString(GL_VENDOR);
     const char *version    = gl->GetString(GL_VERSION);
     const char *renderer   = gl->GetString(GL_RENDERER);
-    int is_ati = vendor && strstr(vendor, "ATI") != NULL;
-    int ati_broken_pbo = 0;
     mp_msg(MSGT_VO, MSGL_V, "[gl] Running on OpenGL '%s' by '%s', version '%s'\n",
            renderer, vendor, version);
-    if (is_ati && strncmp(version, "2.1.", 4) == 0) {
-        int ver = atoi(version + 4);
-        mp_msg(MSGT_VO, MSGL_V, "[gl] Detected ATI driver version: %i\n", ver);
-        ati_broken_pbo = ver && ver < 8395;
-    }
-    if (p->ati_hack == -1)
-        p->ati_hack = ati_broken_pbo;
-    if (p->force_pbo == -1) {
+    if (p->force_pbo == -1)
         p->force_pbo = 0;
-        if (extensions && strstr(extensions, "_pixel_buffer_object"))
-            p->force_pbo = is_ati;
-    }
-    p->have_texture_rg = extensions && strstr(extensions, "GL_ARB_texture_rg");
-    if (p->use_rectangle == -1) {
-        // ATI tends to have issues with non-power-of-2, even if the extension
-        // is reported as supported. It's not clear under which circumstances
-        // or with which drivers there are actually problems.
-        p->use_rectangle = !is_ati;
-    }
+    if (p->use_rectangle == -1)
+        p->use_rectangle = 1;
 
     int eq_caps = 0;
     if (p->is_yuv)
@@ -663,13 +640,9 @@ static void autodetectGlExtensions(struct vo *vo)
         eq_caps |= MP_CSP_EQ_CAPS_GAMMA;
     p->video_eq.capabilities = eq_caps;
 
-    if (is_ati && (p->lscale == 1 || p->lscale == 2 || p->cscale == 1 || p->cscale == 2))
-        mp_msg(MSGT_VO, MSGL_WARN, "[gl] Selected scaling mode may be broken on"
-               " ATI cards.\n"
-               "Tell _them_ to fix GL_REPEAT if you have issues.\n");
-    mp_msg(MSGT_VO, MSGL_V, "[gl] Settings after autodetection: ati-hack = %i, "
+    mp_msg(MSGT_VO, MSGL_V, "[gl] Settings after autodetection: "
            "force-pbo = %i, rectangle = %i\n",
-           p->ati_hack, p->force_pbo, p->use_rectangle);
+           p->force_pbo, p->use_rectangle);
 }
 
 static GLint get_scale_type(struct vo *vo, int chroma)
@@ -921,7 +894,7 @@ static int config(struct vo *vo, uint32_t width, uint32_t height,
     p->image_d_width = d_width;
     p->image_d_height = d_height;
     p->is_yuv = mp_get_chroma_shift(p->image_format, &xs, &ys, &depth) > 0;
-    glFindFormat(format, p->have_texture_rg, NULL, &p->gl_internal_format,
+    glFindFormat(format, true, NULL, &p->gl_internal_format,
                  &p->gl_format, &p->gl_type);
 
     if (!p->is_yuv) {
@@ -1189,22 +1162,11 @@ static uint32_t get_image(struct vo *vo, mp_image_t *mpi)
 
     assert(mpi->num_planes == p->plane_count);
 
-    if (!gl->GenBuffers || !gl->BindBuffer || !gl->BufferData || !gl->MapBuffer) {
-        if (!p->err_shown)
-            mp_msg(MSGT_VO, MSGL_ERR, "[gl] extensions missing for dr\n"
-                   "Expect a _major_ speed penalty\n");
-        p->err_shown = 1;
-        return VO_FALSE;
-    }
     if (mpi->flags & MP_IMGFLAG_READABLE)
         return VO_FALSE;
     if (mpi->type != MP_IMGTYPE_STATIC && mpi->type != MP_IMGTYPE_TEMP &&
         (mpi->type != MP_IMGTYPE_NUMBERED || mpi->number))
         return VO_FALSE;
-    if (p->ati_hack) {
-        mpi->width = p->texture_width;
-        mpi->height = p->texture_height;
-    }
     mpi->flags &= ~MP_IMGFLAG_COMMON_PLANE;
     for (int n = 0; n < p->plane_count; n++) {
         struct texplane *plane = &p->planes[n];
@@ -1226,21 +1188,6 @@ static uint32_t get_image(struct vo *vo, mp_image_t *mpi)
     }
     mpi->flags |= MP_IMGFLAG_DIRECT;
     return VO_TRUE;
-}
-
-static void clear_border(struct vo *vo, uint8_t *dst, int start, int stride,
-                         int height, int full_height, int value)
-{
-    int right_border = stride - start;
-    int bottom_border = full_height - height;
-    while (height > 0) {
-        if (right_border > 0)
-            memset(dst + start, value, right_border);
-        dst += stride;
-        height--;
-    }
-    if (bottom_border > 0)
-        memset(dst, value, stride * bottom_border);
 }
 
 static uint32_t draw_image(struct vo *vo, mp_image_t *mpi)
@@ -1266,19 +1213,10 @@ static uint32_t draw_image(struct vo *vo, mp_image_t *mpi)
             int line_bytes = (mpi->w >> xs) * p->plane_bytes;
             memcpy_pic(mpi2.planes[n], mpi->planes[n], line_bytes, mpi->h >> ys,
                        mpi2.stride[n], mpi->stride[n]);
-            if (p->ati_hack) {
-                // since we have to do a full upload we need to clear the borders
-                clear_border(vo, mpi2.planes[n], line_bytes, mpi2.stride[n],
-                             mpi->h >> ys, mpi2.height >> ys, plane->clear_val);
-            }
         }
         mpi = &mpi2;
     }
     p->mpi_flipped = mpi->stride[0] < 0;
-    if ((mpi->flags & MP_IMGFLAG_DIRECT) && p->ati_hack) {
-        w = p->texture_width;
-        h = p->texture_height;
-    }
     for (n = 0; n < p->plane_count; n++) {
         struct texplane *plane = &p->planes[n];
         int xs = plane->shift_x, ys = plane->shift_y;
@@ -1363,7 +1301,7 @@ static int query_format(struct vo *vo, uint32_t format)
     if (!p->use_ycbcr && (format == IMGFMT_UYVY || format == IMGFMT_YVYU))
         return 0;
     if (p->many_fmts &&
-        glFindFormat(format, p->have_texture_rg, NULL, NULL, NULL, NULL))
+        glFindFormat(format, true, NULL, NULL, NULL, NULL))
         return caps;
     return 0;
 }
@@ -1390,7 +1328,6 @@ static int preinit_internal(struct vo *vo, const char *arg, int allow_sw,
         .colorspace = MP_CSP_DETAILS_DEFAULTS,
         .filter_strength = 0.5,
         .use_rectangle = -1,
-        .ati_hack = -1,
         .force_pbo = -1,
         .swap_interval = 1,
         .osd_color = 0xffffff,
@@ -1410,7 +1347,6 @@ static int preinit_internal(struct vo *vo, const char *arg, int allow_sw,
         {"ycbcr",        OPT_ARG_BOOL, &p->use_ycbcr,    NULL},
         {"rectangle",    OPT_ARG_INT,  &p->use_rectangle,int_non_neg},
         {"filter-strength", OPT_ARG_FLOAT, &p->filter_strength, NULL},
-        {"ati-hack",     OPT_ARG_BOOL, &p->ati_hack,     NULL},
         {"force-pbo",    OPT_ARG_BOOL, &p->force_pbo,    NULL},
         {"glfinish",     OPT_ARG_BOOL, &p->use_glFinish, NULL},
         {"swapinterval", OPT_ARG_INT,  &p->swap_interval,NULL},
