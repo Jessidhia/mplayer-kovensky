@@ -46,7 +46,7 @@ in vec4 color;
 out vec4 out_color;
 
 void main() {
-    out_color = vec4(color.rgb, texture2D(texture1, texcoord).a);
+    out_color = vec4(color.rgb, texture2D(texture1, texcoord).r);
 }
 
 #!section frag_shader_osd
@@ -56,7 +56,7 @@ in vec2 texcoord;
 out vec4 out_color;
 
 void main() {
-    out_color = texture2D(texture1, texcoord).rrra;
+    out_color = texture2D(texture1, texcoord).rrrg;
 }
 
 #!section frag_shader_video

@@ -323,44 +323,24 @@ typedef struct {
 } extfunc_desc_t;
 
 #define DEF_FUNC_DESC(name) \
-    {offsetof(GL, name), NULL, {"gl" # name, NULL}, gl ## name}
+    {offsetof(GL, name), NULL, {"gl" # name}, gl ## name}
 #define DEF_EXT_FUNCS(...) __VA_ARGS__
 #define DEF_EXT_DESC(name, ext, funcnames) \
     {offsetof(GL, name), ext, {DEF_EXT_FUNCS funcnames}}
+// These are mostly handled the same, but needed because at least the MESA
+// headers don't define any function prototypes for these.
 #define DEF_GL3_DESC(name) \
-    {offsetof(GL, name), NULL, {"gl" # name, "gl" # name "ARB"}, NULL}
+    {offsetof(GL, name), NULL, {"gl" # name}, NULL}
 
 static const extfunc_desc_t extfuncs[] = {
     // these aren't extension functions but we query them anyway to allow
     // different "backends" with one binary
-    DEF_FUNC_DESC(Begin),
-    DEF_FUNC_DESC(End),
     DEF_FUNC_DESC(Viewport),
-    DEF_FUNC_DESC(MatrixMode),
-    DEF_FUNC_DESC(LoadIdentity),
-    DEF_FUNC_DESC(Translated),
-    DEF_FUNC_DESC(Scaled),
-    DEF_FUNC_DESC(Ortho),
-    DEF_FUNC_DESC(Frustum),
-    DEF_FUNC_DESC(PushMatrix),
-    DEF_FUNC_DESC(PopMatrix),
     DEF_FUNC_DESC(Clear),
-    DEF_FUNC_DESC(GenLists),
-    DEF_FUNC_DESC(DeleteLists),
-    DEF_FUNC_DESC(NewList),
-    DEF_FUNC_DESC(EndList),
-    DEF_FUNC_DESC(CallList),
-    DEF_FUNC_DESC(CallLists),
     DEF_FUNC_DESC(GenTextures),
     DEF_FUNC_DESC(DeleteTextures),
-    DEF_FUNC_DESC(TexEnvf),
     DEF_FUNC_DESC(TexEnvi),
-    DEF_FUNC_DESC(Color4ub),
-    DEF_FUNC_DESC(Color3f),
-    DEF_FUNC_DESC(Color4f),
     DEF_FUNC_DESC(ClearColor),
-    DEF_FUNC_DESC(ClearDepth),
-    DEF_FUNC_DESC(DepthFunc),
     DEF_FUNC_DESC(Enable),
     DEF_FUNC_DESC(Disable),
     DEF_FUNC_DESC(DrawBuffer),
@@ -376,25 +356,42 @@ static const extfunc_desc_t extfuncs[] = {
     DEF_FUNC_DESC(TexParameteri),
     DEF_FUNC_DESC(TexParameterf),
     DEF_FUNC_DESC(TexParameterfv),
-    DEF_FUNC_DESC(TexCoord2f),
-    DEF_FUNC_DESC(Vertex2f),
-    DEF_FUNC_DESC(Vertex3f),
-    DEF_FUNC_DESC(Normal3f),
-    DEF_FUNC_DESC(Lightfv),
-    DEF_FUNC_DESC(ColorMaterial),
-    DEF_FUNC_DESC(ShadeModel),
     DEF_FUNC_DESC(GetIntegerv),
     DEF_FUNC_DESC(ColorMask),
     DEF_FUNC_DESC(ReadPixels),
     DEF_FUNC_DESC(ReadBuffer),
+    DEF_FUNC_DESC(DrawArrays),
+    DEF_FUNC_DESC(GetString),
+    DEF_FUNC_DESC(GetError),
+
+    // legacy GL functions (1.x - 2.x)
+    DEF_FUNC_DESC(Begin),
+    DEF_FUNC_DESC(End),
+    DEF_FUNC_DESC(MatrixMode),
+    DEF_FUNC_DESC(LoadIdentity),
+    DEF_FUNC_DESC(Translated),
+    DEF_FUNC_DESC(Scaled),
+    DEF_FUNC_DESC(Ortho),
+    DEF_FUNC_DESC(PushMatrix),
+    DEF_FUNC_DESC(PopMatrix),
+    DEF_FUNC_DESC(GenLists),
+    DEF_FUNC_DESC(DeleteLists),
+    DEF_FUNC_DESC(NewList),
+    DEF_FUNC_DESC(EndList),
+    DEF_FUNC_DESC(CallList),
+    DEF_FUNC_DESC(CallLists),
+    DEF_FUNC_DESC(Color4ub),
+    DEF_FUNC_DESC(Color3f),
+    DEF_FUNC_DESC(Color4f),
+    DEF_FUNC_DESC(TexCoord2f),
+    DEF_FUNC_DESC(Vertex2f),
     DEF_FUNC_DESC(VertexPointer),
     DEF_FUNC_DESC(ColorPointer),
     DEF_FUNC_DESC(TexCoordPointer),
-    DEF_FUNC_DESC(DrawArrays),
     DEF_FUNC_DESC(EnableClientState),
     DEF_FUNC_DESC(DisableClientState),
-    DEF_FUNC_DESC(GetError),
 
+    // OpenGL extension functions
     DEF_EXT_DESC(GenBuffers, NULL,
                  ("glGenBuffers", "glGenBuffersARB")),
     DEF_EXT_DESC(DeleteBuffers, NULL,
@@ -407,18 +404,6 @@ static const extfunc_desc_t extfuncs[] = {
                  ("glUnmapBuffer", "glUnmapBufferARB")),
     DEF_EXT_DESC(BufferData, NULL,
                  ("glBufferData", "glBufferDataARB")),
-    DEF_EXT_DESC(BeginFragmentShader, "ATI_fragment_shader",
-                 ("glBeginFragmentShaderATI")),
-    DEF_EXT_DESC(EndFragmentShader, "ATI_fragment_shader",
-                 ("glEndFragmentShaderATI")),
-    DEF_EXT_DESC(SampleMap, "ATI_fragment_shader",
-                 ("glSampleMapATI")),
-    DEF_EXT_DESC(ColorFragmentOp2, "ATI_fragment_shader",
-                 ("glColorFragmentOp2ATI")),
-    DEF_EXT_DESC(ColorFragmentOp3, "ATI_fragment_shader",
-                 ("glColorFragmentOp3ATI")),
-    DEF_EXT_DESC(SetFragmentShaderConstant, "ATI_fragment_shader",
-                 ("glSetFragmentShaderConstantATI")),
     DEF_EXT_DESC(ActiveTexture, NULL,
                  ("glActiveTexture", "glActiveTextureARB")),
     DEF_EXT_DESC(BindTexture, NULL,
@@ -433,7 +418,7 @@ static const extfunc_desc_t extfuncs[] = {
                  ("glBindProgramARB")),
     DEF_EXT_DESC(ProgramString, "_program",
                  ("glProgramStringARB")),
-    DEF_EXT_DESC(GetProgramiv, "_program",
+    DEF_EXT_DESC(GetProgramivARB, "_program",
                  ("glGetProgramivARB")),
     DEF_EXT_DESC(ProgramEnvParameter4f, "_program",
                  ("glProgramEnvParameter4fARB")),
@@ -443,6 +428,29 @@ static const extfunc_desc_t extfuncs[] = {
     DEF_EXT_DESC(TexImage3D, NULL,
                  ("glTexImage3D")),
 
+    // ancient ATI extensions
+    DEF_EXT_DESC(BeginFragmentShader, "ATI_fragment_shader",
+                 ("glBeginFragmentShaderATI")),
+    DEF_EXT_DESC(EndFragmentShader, "ATI_fragment_shader",
+                 ("glEndFragmentShaderATI")),
+    DEF_EXT_DESC(SampleMap, "ATI_fragment_shader",
+                 ("glSampleMapATI")),
+    DEF_EXT_DESC(ColorFragmentOp2, "ATI_fragment_shader",
+                 ("glColorFragmentOp2ATI")),
+    DEF_EXT_DESC(ColorFragmentOp3, "ATI_fragment_shader",
+                 ("glColorFragmentOp3ATI")),
+    DEF_EXT_DESC(SetFragmentShaderConstant, "ATI_fragment_shader",
+                 ("glSetFragmentShaderConstantATI")),
+
+    // GL 3, possibly in GL 2.x as well in form of extensions
+    DEF_GL3_DESC(GenBuffers),
+    DEF_GL3_DESC(DeleteBuffers),
+    DEF_GL3_DESC(BindBuffer),
+    DEF_GL3_DESC(MapBuffer),
+    DEF_GL3_DESC(UnmapBuffer),
+    DEF_GL3_DESC(BufferData),
+    DEF_GL3_DESC(ActiveTexture),
+    DEF_GL3_DESC(BindTexture),
     DEF_GL3_DESC(GenVertexArrays),
     DEF_GL3_DESC(BindVertexArray),
     DEF_GL3_DESC(GetAttribLocation),
@@ -463,13 +471,13 @@ static const extfunc_desc_t extfuncs[] = {
     DEF_GL3_DESC(GetShaderInfoLog),
     DEF_GL3_DESC(GetShaderiv),
     DEF_GL3_DESC(GetProgramInfoLog),
+    DEF_GL3_DESC(GetProgramiv),
+    DEF_GL3_DESC(GetStringi),
     DEF_GL3_DESC(Uniform1f),
     DEF_GL3_DESC(Uniform3f),
     DEF_GL3_DESC(Uniform1i),
     DEF_GL3_DESC(UniformMatrix3fv),
     DEF_GL3_DESC(UniformMatrix4x3fv),
-
-    DEF_EXT_DESC(GetProgramiv_new, NULL, ("glGetProgramiv")),
 
     {-1}
 };
@@ -480,43 +488,50 @@ static const extfunc_desc_t extfuncs[] = {
  * \param ext2 an extra extension string
  */
 static void getFunctions(GL *gl, void *(*getProcAddress)(const GLubyte *),
-                         const char *ext2)
+                         const char *ext2, bool is_gl3)
 {
     const extfunc_desc_t *dsc;
-    const char *extensions;
-    char *allexts;
+    char *allexts = talloc_strdup(NULL, ext2 ? ext2 : "");
+
+    *gl = (GL) {0};
 
     if (!getProcAddress)
         getProcAddress = (void *)getdladdr;
 
-    // special case, we need glGetString before starting to find the other functions
-    gl->GetString = getProcAddress("glGetString");
-    if (!gl->GetString)
-        gl->GetString = glGetString;
+    if (is_gl3) {
+        gl->GetStringi = getProcAddress("glGetStringi");
+        gl->GetIntegerv = getProcAddress("glGetIntegerv");
 
-    extensions = (const char *)gl->GetString(GL_EXTENSIONS);
-    if (!extensions)
-        extensions = "";
-    if (!ext2)
-        ext2 = "";
-    allexts = malloc(strlen(extensions) + strlen(ext2) + 2);
-    strcpy(allexts, extensions);
-    strcat(allexts, " ");
-    strcat(allexts, ext2);
+        GLint exts;
+        gl->GetIntegerv(GL_NUM_EXTENSIONS, &exts);
+        for (int n = 0; n < exts; n++) {
+            allexts = talloc_asprintf_append(allexts, " %s",
+                                             gl->GetStringi(GL_EXTENSIONS, n));
+        }
+    } else {
+        gl->GetString = getProcAddress("glGetString");
+        if (!gl->GetString)
+            gl->GetString = glGetString;
+        const char *ext = (char*)gl->GetString(GL_EXTENSIONS);
+        allexts = talloc_asprintf_append(allexts, " %s", ext);
+    }
+
     mp_msg(MSGT_VO, MSGL_DBG2, "OpenGL extensions string:\n%s\n", allexts);
     for (dsc = extfuncs; dsc->offset >= 0; dsc++) {
         void *ptr = NULL;
-        int i;
         if (!dsc->extstr || strstr(allexts, dsc->extstr)) {
-            for (i = 0; !ptr && dsc->funcnames[i]; i++)
+            for (int i = 0; !ptr && dsc->funcnames[i]; i++)
                 ptr = getProcAddress((const GLubyte *)dsc->funcnames[i]);
         }
         if (!ptr)
             ptr = dsc->fallback;
+        if (!ptr && !dsc->extstr)
+            mp_msg(MSGT_VO, MSGL_WARN, "[gl] OpenGL function not found: %s\n",
+                   dsc->funcnames[0]);
         void **funcptr = (void**)(((char*)gl) + dsc->offset);
         *funcptr = ptr;
     }
-    free(allexts);
+    talloc_free(allexts);
 }
 
 /**
@@ -553,7 +568,6 @@ void glCreateClearTex(GL *gl, GLenum target, GLenum fmt, GLenum format,
     glAdjustAlignment(gl, stride);
     gl->PixelStorei(GL_UNPACK_ROW_LENGTH, w);
     gl->TexImage2D(target, 0, fmt, w, h, 0, format, type, init);
-    gl->TexParameterf(target, GL_TEXTURE_PRIORITY, 1.0);
     gl->TexParameteri(target, GL_TEXTURE_MIN_FILTER, filter);
     gl->TexParameteri(target, GL_TEXTURE_MAG_FILTER, filter);
     gl->TexParameteri(target, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -658,6 +672,7 @@ int glFmt2bpp(GLenum format, GLenum type)
         return 4 * component_size;
     case GL_RED:
         return component_size;
+    case GL_RG:
     case GL_LUMINANCE_ALPHA:
         return 2 * component_size;
     }
@@ -1297,12 +1312,12 @@ int loadGPUProgram(GL *gl, GLenum target, char *prog)
                gl->GetString(GL_PROGRAM_ERROR_STRING), &prog[err]);
         return 0;
     }
-    if (!gl->GetProgramiv || !mp_msg_test(MSGT_VO, MSGL_DBG2))
+    if (!gl->GetProgramivARB || !mp_msg_test(MSGT_VO, MSGL_DBG2))
         return 1;
     mp_msg(MSGT_VO, MSGL_V, "[gl] Program statistics:\n");
     for (i = 0; progstats[i].name; i++) {
-        gl->GetProgramiv(target, progstats[i].cur, &cur);
-        gl->GetProgramiv(target, progstats[i].max, &max);
+        gl->GetProgramivARB(target, progstats[i].cur, &cur);
+        gl->GetProgramivARB(target, progstats[i].max, &max);
         mp_msg(MSGT_VO, MSGL_V, "[gl]   %s: %i/%i\n", progstats[i].name, cur,
                max);
     }
@@ -1689,7 +1704,7 @@ static int create_window_cocoa(struct MPGLContext *ctx, uint32_t d_width,
 static int setGlWindow_cocoa(MPGLContext *ctx)
 {
     vo_cocoa_change_attributes(ctx->vo);
-    getFunctions(ctx->gl, (void *)getdladdr, NULL);
+    getFunctions(ctx->gl, (void *)getdladdr, NULL, false);
     if (!ctx->gl->SwapInterval)
         ctx->gl->SwapInterval = vo_cocoa_swap_interval;
     return SET_WINDOW_OK;
@@ -1798,7 +1813,7 @@ static int setGlWindow_w32(MPGLContext *ctx)
             wglDeleteContext(*context);
         *context = new_context;
         *vinfo = new_vinfo;
-        getFunctions(gl, w32gpa, NULL);
+        getFunctions(ctx->gl, w32gpa, NULL, false);
 
         // and inform that reinit is neccessary
         res = SET_WINDOW_REINIT;
@@ -1893,19 +1908,26 @@ static XVisualInfo *getWindowVisualInfo(MPGLContext *ctx, Window win)
     return XGetVisualInfo(ctx->vo->x11->display, VisualIDMask, &vinfo_template, &tmp);
 }
 
-static void appendstr(char **dst, const char *str)
+static char *get_glx_exts(MPGLContext *ctx)
 {
-    int newsize;
-    char *newstr;
-    if (!str)
-        return;
-    newsize = strlen(*dst) + 1 + strlen(str) + 1;
-    newstr = realloc(*dst, newsize);
-    if (!newstr)
-        return;
-    *dst = newstr;
-    strcat(*dst, " ");
-    strcat(*dst, str);
+    Display *display = ctx->vo->x11->display;
+    const char *(*glXExtStr)(Display *, int);
+    char *glxstr = talloc_strdup(NULL, "");
+
+    glXExtStr = getdladdr("glXQueryExtensionsString");
+    if (glXExtStr)
+        glxstr = talloc_asprintf_append(glxstr, " %s",
+                    glXExtStr(display, ctx->vo->x11->screen));
+    glXExtStr = getdladdr("glXGetClientString");
+    if (glXExtStr)
+        glxstr = talloc_asprintf_append(glxstr, " %s",
+                    glXExtStr(display, GLX_EXTENSIONS));
+    glXExtStr = getdladdr("glXGetServerString");
+    if (glXExtStr)
+        glxstr = talloc_asprintf_append(glxstr, " %s",
+                    glXExtStr(display, GLX_EXTENSIONS));
+
+    return glxstr;
 }
 
 /**
@@ -1968,8 +1990,6 @@ static int setGlWindow_x11(MPGLContext *ctx)
     vo_x11_update_geometry(ctx->vo, 1);
     if (!keep_context) {
         void *(*getProcAddress)(const GLubyte *);
-        const char *(*glXExtStr)(Display *, int);
-        char *glxstr = strdup("");
         if (*context)
             glXDestroyContext(display, *context);
         *context = new_context;
@@ -1979,30 +1999,160 @@ static int setGlWindow_x11(MPGLContext *ctx)
         getProcAddress = getdladdr("glXGetProcAddress");
         if (!getProcAddress)
             getProcAddress = getdladdr("glXGetProcAddressARB");
-        glXExtStr = getdladdr("glXQueryExtensionsString");
-        if (glXExtStr)
-            appendstr(&glxstr, glXExtStr(display, DefaultScreen(display)));
-        glXExtStr = getdladdr("glXGetClientString");
-        if (glXExtStr)
-            appendstr(&glxstr, glXExtStr(display, GLX_EXTENSIONS));
-        glXExtStr = getdladdr("glXGetServerString");
-        if (glXExtStr)
-            appendstr(&glxstr, glXExtStr(display, GLX_EXTENSIONS));
 
-        getFunctions(gl, getProcAddress, glxstr);
+        char *glxstr = get_glx_exts(ctx);
+
+        getFunctions(gl, getProcAddress, glxstr, false);
         if (!gl->GenPrograms && gl->GetString &&
             getProcAddress &&
             strstr(gl->GetString(GL_EXTENSIONS), "GL_ARB_vertex_program")) {
             mp_msg(MSGT_VO, MSGL_WARN,
                    "Broken glXGetProcAddress detected, trying workaround\n");
-            getFunctions(gl, NULL, glxstr);
+            getFunctions(gl, NULL, glxstr, false);
         }
-        free(glxstr);
+
+        talloc_free(glxstr);
 
         // and inform that reinit is neccessary
         return SET_WINDOW_REINIT;
     }
     return SET_WINDOW_OK;
+}
+
+// The GL3 initialization code roughly follows/copies from:
+//  http://www.opengl.org/wiki/Tutorial:_OpenGL_3.0_Context_Creation_(GLX)
+// but also uses some of the old code.
+
+static GLXFBConfig select_fb_config(struct vo *vo, const int *attribs)
+{
+    int fbcount;
+    GLXFBConfig *fbc = glXChooseFBConfig(vo->x11->display, vo->x11->screen,
+                                         attribs, &fbcount);
+    if (!fbc)
+        return NULL;
+
+    // The list in fbc is sorted (so that the first element is the best).
+    GLXFBConfig fbconfig = fbc[0];
+
+    XFree(fbc);
+
+    return fbconfig;
+}
+
+typedef GLXContext (*glXCreateContextAttribsARBProc)
+    (Display*, GLXFBConfig, GLXContext, Bool, const int*);
+
+static int create_window_x11_gl3(struct MPGLContext *ctx, int gl_flags,
+                                 int gl_version, uint32_t d_width,
+                                 uint32_t d_height, uint32_t flags)
+{
+    struct vo *vo = ctx->vo;
+
+    if (ctx->context.x11) {
+        // GL context and window already exist.
+        // Only update window geometry etc.
+        Colormap colormap = XCreateColormap(vo->x11->display, vo->x11->rootwin,
+                                        ctx->vinfo.x11->visual, AllocNone);
+        vo_x11_create_vo_window(vo, ctx->vinfo.x11, vo->dx, vo->dy, d_width,
+                                d_height, flags, colormap, "gl");
+        XFreeColormap(vo->x11->display, colormap);
+        return SET_WINDOW_OK;
+    }
+
+    int glx_major, glx_minor;
+
+    // FBConfigs were added in GLX version 1.3.
+    if (!glXQueryVersion(vo->x11->display, &glx_major, &glx_minor) ||
+        (MPGL_VER(glx_major, glx_minor) <  MPGL_VER(1, 3)))
+    {
+        mp_msg(MSGT_VO, MSGL_ERR, "[gl] GLX version older than 1.3.\n");
+        return SET_WINDOW_FAILED;
+    }
+
+    const int glx_attribs_stereo_value_idx = 1; // index of GLX_STEREO + 1
+    int glx_attribs[] = {
+        GLX_STEREO, False,
+        GLX_X_RENDERABLE, True,
+        GLX_RED_SIZE, 1,
+        GLX_GREEN_SIZE, 1,
+        GLX_BLUE_SIZE, 1,
+        GLX_DOUBLEBUFFER, True,
+        None
+    };
+    GLXFBConfig fbc = NULL;
+    if (flags & VOFLAG_STEREO) {
+        glx_attribs[glx_attribs_stereo_value_idx] = True;
+        fbc = select_fb_config(vo, glx_attribs);
+        if (!fbc) {
+            mp_msg(MSGT_VO, MSGL_ERR, "[gl] Could not find a stereo visual,"
+                   " 3D will probably not work!\n");
+            glx_attribs[glx_attribs_stereo_value_idx] = False;
+        }
+    }
+    if (!fbc)
+        fbc = select_fb_config(vo, glx_attribs);
+    if (!fbc) {
+        mp_msg(MSGT_VO, MSGL_ERR, "[gl] no GLX support present\n");
+        return SET_WINDOW_FAILED;
+    }
+
+    XVisualInfo *vinfo = glXGetVisualFromFBConfig(vo->x11->display, fbc);
+    mp_msg(MSGT_VO, MSGL_V, "[gl] GLX chose visual with ID 0x%x\n",
+            (int)vinfo->visualid);
+    Colormap colormap = XCreateColormap(vo->x11->display, vo->x11->rootwin,
+                                        vinfo->visual, AllocNone);
+    vo_x11_create_vo_window(vo, vinfo, vo->dx, vo->dy, d_width, d_height,
+                            flags, colormap, "gl");
+    XFreeColormap(vo->x11->display, colormap);
+
+    glXCreateContextAttribsARBProc glXCreateContextAttribsARB =
+        (glXCreateContextAttribsARBProc)
+            glXGetProcAddressARB((const GLubyte *)"glXCreateContextAttribsARB");
+
+    char *glxstr = get_glx_exts(ctx);
+    bool have_ctx_ext = !!strstr(glxstr, "GLX_ARB_create_context");
+
+    if (!(have_ctx_ext && glXCreateContextAttribsARB))
+    {
+        XFree(vinfo);
+        talloc_free(glxstr);
+        return SET_WINDOW_FAILED;
+    }
+
+    int context_attribs[] = {
+        GLX_CONTEXT_MAJOR_VERSION_ARB, MPGL_VER_GET_MAJOR(gl_version),
+        GLX_CONTEXT_MINOR_VERSION_ARB, MPGL_VER_GET_MINOR(gl_version),
+        GLX_CONTEXT_PROFILE_MASK_ARB, GLX_CONTEXT_CORE_PROFILE_BIT_ARB,
+        GLX_CONTEXT_FLAGS_ARB, GLX_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB
+            | (gl_flags & MPGLFLAG_DEBUG ? GLX_CONTEXT_DEBUG_BIT_ARB : 0),
+        None
+    };
+    GLXContext context = glXCreateContextAttribsARB(vo->x11->display, fbc, 0,
+                                                    True, context_attribs);
+    if (!context) {
+        mp_msg(MSGT_VO, MSGL_FATAL, "[gl] Could not create GLX context!\n");
+        XFree(vinfo);
+        talloc_free(glxstr);
+        return SET_WINDOW_FAILED;
+    }
+
+    // set context
+    if (!glXMakeCurrent(vo->x11->display, vo->x11->window, context)) {
+        mp_msg(MSGT_VO, MSGL_FATAL, "[gl] Could not set GLX context!\n");
+        glXDestroyContext(vo->x11->display, context);
+        XFree(vinfo);
+        talloc_free(glxstr);
+        return SET_WINDOW_FAILED;
+    }
+
+    ctx->vinfo.x11 = vinfo;
+    ctx->context.x11 = context;
+
+    getFunctions(ctx->gl, (void *)glXGetProcAddress, glxstr, true);
+
+    talloc_free(glxstr);
+
+    return SET_WINDOW_REINIT;
 }
 
 /**
@@ -2059,7 +2209,7 @@ static int setGlWindow_sdl(MPGLContext *ctx)
     if (sdl_set_mode(0, SDL_OPENGL | SDL_RESIZABLE) < 0)
         return SET_WINDOW_FAILED;
     SDL_GL_LoadLibrary(NULL);
-    getFunctions(ctx->gl, sdlgpa, NULL);
+    getFunctions(ctx->gl, sdlgpa, NULL, false);
     return SET_WINDOW_OK;
 }
 
@@ -2139,6 +2289,7 @@ MPGLContext *init_mpglcontext(enum MPGLType type, struct vo *vo)
     case GLTYPE_X11:
         ctx->create_window = create_window_x11;
         ctx->setGlWindow = setGlWindow_x11;
+        ctx->create_window_gl3 = create_window_x11_gl3;
         ctx->releaseGlContext = releaseGlContext_x11;
         ctx->swapGlBuffers = swapGlBuffers_x11;
         ctx->update_xinerama_info = update_xinerama_info;
@@ -2168,6 +2319,24 @@ MPGLContext *init_mpglcontext(enum MPGLType type, struct vo *vo)
     }
     talloc_free(ctx);
     return NULL;
+}
+
+int create_mpglcontext(struct MPGLContext *ctx, int gl_flags, int gl_version,
+                       uint32_t d_width, uint32_t d_height, uint32_t flags)
+{
+    if (gl_version < MPGL_VER(3, 0)) {
+        if (ctx->create_window(ctx, d_width, d_height, flags) < 0)
+            return SET_WINDOW_FAILED;
+        return ctx->setGlWindow(ctx);
+    } else {
+        if (!ctx->create_window_gl3) {
+            mp_msg(MSGT_VO, MSGL_ERR, "[gl] OpenGL 3.x context creation not "
+                   "implemented.\n");
+            return SET_WINDOW_FAILED;
+        }
+        return ctx->create_window_gl3(ctx, gl_flags, gl_version, d_width,
+                                      d_height, flags);
+    }
 }
 
 void uninit_mpglcontext(MPGLContext *ctx)
