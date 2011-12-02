@@ -428,19 +428,20 @@ static void update_all_uniforms(struct vo *vo)
     update_uniforms(vo, p->va_video.program);
 }
 
-static void resize(struct vo *vo, int x, int y)
+static void resize(struct vo *vo)
 {
     struct gl_priv *p = vo->priv;
     GL *gl = p->gl;
 
-    mp_msg(MSGT_VO, MSGL_V, "[gl] Resize: %dx%d\n", x, y);
+    mp_msg(MSGT_VO, MSGL_V, "[gl] Resize: %dx%d\n", vo->dwidth, vo->dheight);
+    int left = 0, top = 0;
     if (WinID >= 0) {
-        int left = 0, top = 0, w = x, h = y;
+        int w = vo->dwidth, h = vo->dheight;
+        int old_y = vo->dheight;
         geometry(&left, &top, &w, &h, vo->dwidth, vo->dheight);
-        top = y - h - top;
-        gl->Viewport(left, top, w, h);
-    } else
-        gl->Viewport(0, 0, x, y);
+        top = old_y - h - top;
+    }
+    gl->Viewport(left, top, vo->dwidth, vo->dheight);
 
     struct vo_rect borders;
     calc_src_dst_rects(vo, p->image_width, p->image_height, &p->src_rect,
@@ -569,16 +570,11 @@ static void drawEOSD(struct vo *vo)
     gl->BindTexture(GL_TEXTURE_2D, 0);
 }
 
-/**
- * \brief uninitialize OpenGL context, freeing textures, buffers etc.
- */
-static void uninitGl(struct vo *vo)
+// Free video resources etc.
+static void uninitVideo(struct vo *vo)
 {
     struct gl_priv *p = vo->priv;
     GL *gl = p->gl;
-
-    if (!gl || !gl->DeleteTextures)
-        return;
 
     gl->DeleteProgram(p->va_osd.program);
     gl->DeleteProgram(p->va_eosd.program);
@@ -595,56 +591,30 @@ static void uninitGl(struct vo *vo)
 
     for (int n = 0; n < 3; n++) {
         struct texplane *plane = &p->planes[n];
-        if (plane->gl_texture)
-            gl->DeleteTextures(1, &plane->gl_texture);
+
+        gl->DeleteTextures(1, &plane->gl_texture);
         plane->gl_texture = 0;
-        if (gl->DeleteBuffers && plane->gl_buffer)
-            gl->DeleteBuffers(1, &plane->gl_buffer);
+        gl->DeleteBuffers(1, &plane->gl_buffer);
         plane->gl_buffer = 0;
         plane->buffer_ptr = NULL;
         plane->buffer_size = 0;
     }
-    clearOSD(vo);
-    if (p->eosd_texture)
-        gl->DeleteTextures(1, &p->eosd_texture);
-    eosd_packer_reinit(p->eosd, 0, 0);
-    p->eosd_texture = 0;
 }
 
-static int isSoftwareGl(struct vo *vo)
-{
-    struct gl_priv *p = vo->priv;
-    const char *renderer = p->gl->GetString(GL_RENDERER);
-    return !renderer || strcmp(renderer, "Software Rasterizer") == 0 ||
-           strstr(renderer, "llvmpipe");
-}
-
-static void autodetectGlExtensions(struct vo *vo)
+/**
+ * \brief uninitialize OpenGL context, freeing textures, buffers etc.
+ */
+static void uninitGL(struct vo *vo)
 {
     struct gl_priv *p = vo->priv;
     GL *gl = p->gl;
 
-    //const char *extensions = gl->GetString(GL_EXTENSIONS);
-    const char *vendor     = gl->GetString(GL_VENDOR);
-    const char *version    = gl->GetString(GL_VERSION);
-    const char *renderer   = gl->GetString(GL_RENDERER);
-    mp_msg(MSGT_VO, MSGL_V, "[gl] Running on OpenGL '%s' by '%s', version '%s'\n",
-           renderer, vendor, version);
-    if (p->force_pbo == -1)
-        p->force_pbo = 0;
-    if (p->use_rectangle == -1)
-        p->use_rectangle = 1;
+    uninitVideo(vo);
 
-    int eq_caps = 0;
-    if (p->is_yuv)
-        eq_caps |= MP_CSP_EQ_CAPS_COLORMATRIX;
-    if (p->use_gamma)
-        eq_caps |= MP_CSP_EQ_CAPS_GAMMA;
-    p->video_eq.capabilities = eq_caps;
-
-    mp_msg(MSGT_VO, MSGL_V, "[gl] Settings after autodetection: "
-           "force-pbo = %i, rectangle = %i\n",
-           p->force_pbo, p->use_rectangle);
+    clearOSD(vo);
+    gl->DeleteTextures(1, &p->eosd_texture);
+    eosd_packer_reinit(p->eosd, 0, 0);
+    p->eosd_texture = 0;
 }
 
 static GLint get_scale_type(struct vo *vo, int chroma)
@@ -795,11 +765,9 @@ static void compile_shaders(struct vo *vo)
     talloc_free(tmp);
 }
 
-/**
- * \brief Initialize a (new or reused) OpenGL context.
- * set global gl-related variables to their default values
- */
-static int initGl(struct vo *vo, uint32_t d_width, uint32_t d_height)
+
+// First-time initialization of the GL state.
+static int initGL(struct vo *vo)
 {
     struct gl_priv *p = vo->priv;
     GL *gl = p->gl;
@@ -820,12 +788,13 @@ static int initGl(struct vo *vo, uint32_t d_width, uint32_t d_height)
     }
 #endif
 
-    autodetectGlExtensions(vo);
+    glCheckError(p->gl, "before initGL");
 
-    compile_shaders(vo);
-
-    texSize(vo, p->image_width, p->image_height,
-            &p->texture_width, &p->texture_height);
+    const char *vendor     = gl->GetString(GL_VENDOR);
+    const char *version    = gl->GetString(GL_VERSION);
+    const char *renderer   = gl->GetString(GL_RENDERER);
+    mp_msg(MSGT_VO, MSGL_V, "[gl] GL_RENDERER='%s', GL_VENDOR='%s', "
+                            "GL_VERSION='%s'\n", renderer, vendor, version);
 
     gl->Disable(GL_BLEND);
     gl->Disable(GL_DEPTH_TEST);
@@ -833,79 +802,28 @@ static int initGl(struct vo *vo, uint32_t d_width, uint32_t d_height)
     gl->Disable(GL_CULL_FACE);
     gl->DrawBuffer(vo_doublebuffering ? GL_BACK : GL_FRONT);
 
-    glCheckError(gl, "before video texture creation");
-
-    mp_msg(MSGT_VO, MSGL_V, "[gl] Creating %dx%d texture...\n",
-           p->texture_width, p->texture_height);
-
-    for (int n = 0; n < p->plane_count; n++) {
-        struct texplane *plane = &p->planes[n];
-
-        gl->ActiveTexture(GL_TEXTURE0 + n);
-        gl->GenTextures(1, &plane->gl_texture);
-        gl->BindTexture(GL_TEXTURE_2D, plane->gl_texture);
-
-        GLint scale_type = get_scale_type(vo, plane->is_chroma);
-        glCreateClearTex(gl, GL_TEXTURE_2D, p->gl_internal_format, p->gl_format,
-                         p->gl_type, scale_type,
-                         p->texture_width >> plane->shift_x,
-                         p->texture_height >> plane->shift_y,
-                         plane->clear_val);
-
-        if (p->mipmap_gen)
-            gl->TexParameteri(GL_TEXTURE_2D, GL_GENERATE_MIPMAP, GL_TRUE);
-    }
-    gl->ActiveTexture(GL_TEXTURE0);
-
-    glCheckError(gl, "after video texture creation");
-
     GLint max_texture_size;
     gl->GetIntegerv(GL_MAX_TEXTURE_SIZE, &max_texture_size);
     eosd_packer_reinit(p->eosd, max_texture_size, max_texture_size);
-
-    resize(vo, d_width, d_height);
 
     gl->ClearColor(0.0f, 0.0f, 0.0f, 0.0f);
     gl->Clear(GL_COLOR_BUFFER_BIT);
     if (gl->SwapInterval && p->swap_interval >= 0)
         gl->SwapInterval(p->swap_interval);
 
-    glCheckError(gl, "after initGl");
+    glCheckError(gl, "after initGL");
 
     return 1;
 }
 
-static int create_window(struct vo *vo, uint32_t d_width, uint32_t d_height,
-                         uint32_t flags)
+static void initVideo(struct vo *vo)
 {
     struct gl_priv *p = vo->priv;
-
-    if (p->stereo_mode == GL_3D_QUADBUFFER)
-        flags |= VOFLAG_STEREO;
-
-    int mpgl_version = MPGL_VER(3, 1);
-    int mpgl_flags = 0;
-    if (p->gl_debug)
-        mpgl_flags |= MPGLFLAG_DEBUG;
-
-    return create_mpglcontext(p->glctx, mpgl_flags, mpgl_version, d_width,
-                              d_height, flags);
-}
-
-static int config(struct vo *vo, uint32_t width, uint32_t height,
-                  uint32_t d_width, uint32_t d_height, uint32_t flags,
-                  uint32_t format)
-{
-    struct gl_priv *p = vo->priv;
+    GL *gl = p->gl;
 
     int xs, ys, depth;
-    p->image_height = height;
-    p->image_width = width;
-    p->image_format = format;
-    p->image_d_width = d_width;
-    p->image_d_height = d_height;
     p->is_yuv = mp_get_chroma_shift(p->image_format, &xs, &ys, &depth) > 0;
-    glFindFormat(format, true, NULL, &p->gl_internal_format,
+    glFindFormat(p->image_format, true, NULL, &p->gl_internal_format,
                  &p->gl_format, &p->gl_type);
 
     // fix for legacy crap from gl_common.c
@@ -935,15 +853,89 @@ static int config(struct vo *vo, uint32_t width, uint32_t height,
         plane->clear_val = n > 0 ? get_chroma_clear_val(p->plane_bits) : 0;
     }
 
-    p->vo_flipped = !!(flags & VOFLAG_FLIPPING);
+    int eq_caps = 0;
+    if (p->is_yuv)
+        eq_caps |= MP_CSP_EQ_CAPS_COLORMATRIX;
+    if (p->use_gamma)
+        eq_caps |= MP_CSP_EQ_CAPS_GAMMA;
+    p->video_eq.capabilities = eq_caps;
 
-    if (vo->config_count)
-        uninitGl(vo);
+    compile_shaders(vo);
+
+    glCheckError(gl, "before video texture creation");
+
+    texSize(vo, p->image_width, p->image_height,
+            &p->texture_width, &p->texture_height);
+
+    for (int n = 0; n < p->plane_count; n++) {
+        struct texplane *plane = &p->planes[n];
+
+        int w = p->texture_width >> plane->shift_x;
+        int h = p->texture_height >> plane->shift_y;
+
+        mp_msg(MSGT_VO, MSGL_V, "[gl] Texture for plane %d: %dx%d\n", n, w, h);
+
+        gl->ActiveTexture(GL_TEXTURE0 + n);
+        gl->GenTextures(1, &plane->gl_texture);
+        gl->BindTexture(GL_TEXTURE_2D, plane->gl_texture);
+
+        GLint scale_type = get_scale_type(vo, plane->is_chroma);
+        glCreateClearTex(gl, GL_TEXTURE_2D, p->gl_internal_format, p->gl_format,
+                         p->gl_type, scale_type, w, h, plane->clear_val);
+
+        if (p->mipmap_gen)
+            gl->TexParameteri(GL_TEXTURE_2D, GL_GENERATE_MIPMAP, GL_TRUE);
+    }
+    gl->ActiveTexture(GL_TEXTURE0);
+
+    glCheckError(gl, "after video texture creation");
+}
+
+
+static int create_window(struct vo *vo, uint32_t d_width, uint32_t d_height,
+                         uint32_t flags)
+{
+    struct gl_priv *p = vo->priv;
+
+    if (p->stereo_mode == GL_3D_QUADBUFFER)
+        flags |= VOFLAG_STEREO;
+
+    int mpgl_version = MPGL_VER(3, 1);
+    int mpgl_flags = 0;
+    if (p->gl_debug)
+        mpgl_flags |= MPGLFLAG_DEBUG;
+
+    return create_mpglcontext(p->glctx, mpgl_flags, mpgl_version, d_width,
+                              d_height, flags);
+}
+
+static int config(struct vo *vo, uint32_t width, uint32_t height,
+                  uint32_t d_width, uint32_t d_height, uint32_t flags,
+                  uint32_t format)
+{
+    struct gl_priv *p = vo->priv;
 
     if (create_window(vo, d_width, d_height, flags) == SET_WINDOW_FAILED)
         return -1;
-    glCheckError(p->gl, "before initGl");
-    initGl(vo, vo->dwidth, vo->dheight);
+
+    if (!vo->config_count)
+        initGL(vo);
+
+    p->image_d_width = d_width;
+    p->image_d_height = d_height;
+    p->vo_flipped = !!(flags & VOFLAG_FLIPPING);
+
+    if (p->image_format != format || p->image_width != width
+        || p->image_height != height)
+    {
+        uninitVideo(vo);
+        p->image_height = height;
+        p->image_width = width;
+        p->image_format = format;
+        initVideo(vo);
+    }
+
+    resize(vo);
 
     return 0;
 }
@@ -954,11 +946,13 @@ static void check_events(struct vo *vo)
 
     int e = p->glctx->check_events(vo);
     if (e & VO_EVENT_REINIT) {
-        uninitGl(vo);
-        initGl(vo, vo->dwidth, vo->dheight);
+        uninitGL(vo);
+        initGL(vo);
+        initVideo(vo);
+        resize(vo);
     }
     if (e & VO_EVENT_RESIZE)
-        resize(vo, vo->dwidth, vo->dheight);
+        resize(vo);
     if (e & VO_EVENT_EXPOSE)
         vo->want_redraw = true;
 }
@@ -1326,8 +1320,9 @@ static void uninit(struct vo *vo)
 {
     struct gl_priv *p = vo->priv;
 
-    if (p->glctx)
-        uninitGl(vo);
+    // NOTE: GL functions might not be loaded yet
+    if (p->glctx && p->gl->DeleteTextures)
+        uninitGL(vo);
     uninit_mpglcontext(p->glctx);
     p->glctx = NULL;
     p->gl = NULL;
@@ -1342,8 +1337,8 @@ static int preinit_internal(struct vo *vo, const char *arg, int allow_sw,
     *p = (struct gl_priv) {
         .colorspace = MP_CSP_DETAILS_DEFAULTS,
         .filter_strength = 0.5,
-        .use_rectangle = -1,
-        .force_pbo = -1,
+        .use_rectangle = 1,
+        .force_pbo = 0,
         .swap_interval = 1,
         .osd_color = 0xffffff,
     };
@@ -1452,9 +1447,8 @@ static int preinit_internal(struct vo *vo, const char *arg, int allow_sw,
     if (true) {
         if (create_window(vo, 320, 200, VOFLAG_HIDDEN) == SET_WINDOW_FAILED)
             goto err_out;
-        if (!allow_sw && isSoftwareGl(vo))
+        if (!initGL(vo))
             goto err_out;
-        autodetectGlExtensions(vo);
         // We created a window to test whether the GL context supports hardware
         // acceleration and so on. Destroy that window to make sure all state
         // associated with it is lost.
@@ -1513,18 +1507,18 @@ static int control(struct vo *vo, uint32_t request, void *data)
         return VO_TRUE;
     case VOCTRL_FULLSCREEN:
         p->glctx->fullscreen(vo);
-        resize(vo, vo->dwidth, vo->dheight);
+        resize(vo);
         return VO_TRUE;
     case VOCTRL_BORDER:
         if (!p->glctx->border)
             break;
         p->glctx->border(vo);
-        resize(vo, vo->dwidth, vo->dheight);
+        resize(vo);
         return VO_TRUE;
     case VOCTRL_GET_PANSCAN:
         return VO_TRUE;
     case VOCTRL_SET_PANSCAN:
-        resize(vo, vo->dwidth, vo->dheight);
+        resize(vo);
         return VO_TRUE;
     case VOCTRL_GET_EQUALIZER: {
         struct voctrl_get_equalizer_args *args = data;
