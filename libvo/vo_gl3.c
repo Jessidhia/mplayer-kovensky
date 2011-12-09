@@ -531,10 +531,11 @@ static void genEOSD(struct vo *vo, mp_eosd_images_t *imgs)
     struct gl_priv *p = vo->priv;
     GL *gl = p->gl;
 
-    bool need_upload, need_allocate;
-    eosd_packer_generate(p->eosd, imgs, &need_upload, &need_allocate);
+    bool need_repos, need_upload, need_allocate;
+    eosd_packer_generate(p->eosd, imgs, &need_repos, &need_upload,
+                         &need_allocate);
 
-    if (!need_upload)
+    if (!need_repos)
         return;
 
     if (!p->eosd_texture) {
@@ -564,9 +565,11 @@ static void genEOSD(struct vo *vo, mp_eosd_images_t *imgs)
         struct eosd_target *target = &p->eosd->targets[n];
         ASS_Image *i = target->ass_img;
 
-        glUploadTex(gl, GL_TEXTURE_2D, GL_RED, GL_UNSIGNED_BYTE, i->bitmap,
-                    i->stride, target->source.x0, target->source.y0,
-                    i->w, i->h, 0);
+        if (need_upload) {
+            glUploadTex(gl, GL_TEXTURE_2D, GL_RED, GL_UNSIGNED_BYTE, i->bitmap,
+                        i->stride, target->source.x0, target->source.y0,
+                        i->w, i->h, 0);
+        }
 
         uint8_t color[4] = { i->color >> 24, (i->color >> 16) & 0xff,
                             (i->color >> 8) & 0xff, 255 - (i->color & 0xff) };
