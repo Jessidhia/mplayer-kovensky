@@ -17,3 +17,6 @@
 /TAGS
 /locale
 /po
+
+text2header
+libvo/vo_gl3_shaders.h
