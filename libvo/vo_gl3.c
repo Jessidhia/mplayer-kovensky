@@ -668,8 +668,11 @@ static int get_chroma_clear_val(int bit_depth)
 static GLuint create_shader(GL *gl, GLenum type, const char *header,
                             const char *source)
 {
+    void *ctx = talloc_new(NULL);
+    const char *full_source = talloc_asprintf(ctx, "%s%s", header, source);
+
     GLuint shader = gl->CreateShader(type);
-    gl->ShaderSource(shader, 2, (const char*[]) { header, source }, NULL);
+    gl->ShaderSource(shader, 1, &full_source, NULL);
     gl->CompileShader(shader);
     GLint status;
     gl->GetShaderiv(shader, GL_COMPILE_STATUS, &status);
@@ -677,12 +680,16 @@ static GLuint create_shader(GL *gl, GLenum type, const char *header,
     gl->GetShaderiv(shader, GL_INFO_LOG_LENGTH, &log_length);
 
     if (!status || log_length > 1) {
-        GLchar *log = talloc_zero_size(NULL, log_length + 1);
+        int pri = status ? MSGL_V : MSGL_ERR;
+        mp_msg(MSGT_VO, pri, "[gl] Shader source:\n");
+        mp_log_source(MSGT_VO, pri, full_source);
+        GLchar *log = talloc_zero_size(ctx, log_length + 1);
         gl->GetShaderInfoLog(shader, log_length, NULL, log);
-        mp_msg(MSGT_VO, status ? MSGL_V : MSGL_ERR,
-               "[gl] shader compile log (status=%d): %s\n", status, log);
-        talloc_free(log);
+        mp_msg(MSGT_VO, pri,
+               "[gl] shader compile log (status=%d):\n%s\n", status, log);
     }
+
+    talloc_free(ctx);
 
     return shader;
 }

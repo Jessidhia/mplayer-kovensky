@@ -20,7 +20,7 @@
 // text2header, and in fact contains multiple vertex and fragment shaders.
 
 #!section shader_prelude
-// inserted at the beginning of all shaders
+#!// inserted at the beginning of all shaders
 #version 140
 
 #!section vertex_shader
