@@ -36,16 +36,13 @@
 #include "codec-cfg.h"
 
 #include "libvo/video_out.h"
+#include "libvo/csputils.h"
 
 #include "libmpdemux/stheader.h"
 #include "vd.h"
 #include "vf.h"
 
 #include "dec_video.h"
-
-#ifdef CONFIG_DYNAMIC_PLUGINS
-#include <dlfcn.h>
-#endif
 
 // ===================================================================
 
@@ -139,6 +136,51 @@ int get_video_colors(sh_video_t *sh_video, const char *item, int *value)
     return 0;
 }
 
+void get_detected_video_colorspace(struct sh_video *sh, struct mp_csp_details *csp)
+{
+    struct MPOpts *opts = sh->opts;
+    struct vf_instance *vf = sh->vfilter;
+
+    csp->format = opts->requested_colorspace;
+    csp->levels_in = opts->requested_input_range;
+    csp->levels_out = opts->requested_output_range;
+
+    if (csp->format == MP_CSP_AUTO)
+        csp->format = mp_csp_guess_colorspace(vf->w, vf->h);
+    if (csp->levels_in == MP_CSP_LEVELS_AUTO)
+        csp->levels_in = MP_CSP_LEVELS_TV;
+    if (csp->levels_out == MP_CSP_LEVELS_AUTO)
+        csp->levels_out = MP_CSP_LEVELS_PC;
+}
+
+void set_video_colorspace(struct sh_video *sh)
+{
+    struct vf_instance *vf = sh->vfilter;
+
+    struct mp_csp_details requested;
+    get_detected_video_colorspace(sh, &requested);
+    vf->control(vf, VFCTRL_SET_YUV_COLORSPACE, &requested);
+
+    struct mp_csp_details actual = MP_CSP_DETAILS_DEFAULTS;
+    vf->control(vf, VFCTRL_GET_YUV_COLORSPACE, &actual);
+
+    int success = actual.format == requested.format
+               && actual.levels_in == requested.levels_in
+               && actual.levels_out == requested.levels_out;
+
+    if (!success)
+        mp_tmsg(MSGT_DECVIDEO, MSGL_WARN,
+                "Colorspace details not fully supported by selected vo.\n");
+
+    if (actual.format != requested.format
+            && requested.format == MP_CSP_SMPTE_240M) {
+        // BT.709 is pretty close, much better than BT.601
+        requested.format = MP_CSP_BT_709;
+        vf->control(vf, VFCTRL_SET_YUV_COLORSPACE, &requested);
+    }
+
+}
+
 int set_rectangle(sh_video_t *sh_video, int param, int value)
 {
     vf_instance_t *vf = sh_video->vfilter;
@@ -153,14 +195,6 @@ int set_rectangle(sh_video_t *sh_video, int param, int value)
     return 0;
 }
 
-int redraw_osd(struct sh_video *sh_video, struct osd_state *osd)
-{
-    struct vf_instance *vf = sh_video->vfilter;
-    if (vf->control(vf, VFCTRL_REDRAW_OSD, osd) == true)
-        return 0;
-    return -1;
-}
-
 void resync_video_stream(sh_video_t *sh_video)
 {
     const struct vd_functions *vd = sh_video->vd_driver;
@@ -168,6 +202,13 @@ void resync_video_stream(sh_video_t *sh_video)
         vd->control(sh_video, VDCTRL_RESYNC_STREAM, NULL);
     sh_video->prev_codec_reordered_pts = MP_NOPTS_VALUE;
     sh_video->prev_sorted_pts = MP_NOPTS_VALUE;
+}
+
+void video_reset_aspect(struct sh_video *sh_video)
+{
+    int r = sh_video->vd_driver->control(sh_video, VDCTRL_RESET_ASPECT, NULL);
+    if (r != true)
+        mpcodecs_config_vo(sh_video, sh_video->disp_w, sh_video->disp_h, 0);
 }
 
 int get_current_video_decoder_lag(sh_video_t *sh_video)
@@ -187,10 +228,6 @@ void uninit_video(sh_video_t *sh_video)
         return;
     mp_tmsg(MSGT_DECVIDEO, MSGL_V, "Uninit video: %s\n", sh_video->codec->drv);
     sh_video->vd_driver->uninit(sh_video);
-#ifdef CONFIG_DYNAMIC_PLUGINS
-    if (sh_video->dec_handle)
-        dlclose(sh_video->dec_handle);
-#endif
     vf_uninit_filter_chain(sh_video->vfilter);
     sh_video->initialized = 0;
 }
@@ -250,42 +287,6 @@ static int init_video(sh_video_t *sh_video, char *codecname, char *vfm,
                         sh_video->codec->drv))
                 break;
         sh_video->vd_driver = mpcodecs_vd_drivers[i];
-#ifdef CONFIG_DYNAMIC_PLUGINS
-        if (!sh_video->vd_driver) {
-            /* try to open shared decoder plugin */
-            int buf_len;
-            char *buf;
-            vd_functions_t *funcs_sym;
-            vd_info_t *info_sym;
-
-            buf_len =
-                strlen(MPLAYER_LIBDIR) + strlen(sh_video->codec->drv) + 16;
-            buf = malloc(buf_len);
-            if (!buf)
-                break;
-            snprintf(buf, buf_len, "%s/mplayer/vd_%s.so", MPLAYER_LIBDIR,
-                     sh_video->codec->drv);
-            mp_msg(MSGT_DECVIDEO, MSGL_DBG2,
-                   "Trying to open external plugin: %s\n", buf);
-            sh_video->dec_handle = dlopen(buf, RTLD_LAZY);
-            if (!sh_video->dec_handle)
-                break;
-            snprintf(buf, buf_len, "mpcodecs_vd_%s", sh_video->codec->drv);
-            funcs_sym = dlsym(sh_video->dec_handle, buf);
-            if (!funcs_sym || !funcs_sym->info || !funcs_sym->init
-                || !funcs_sym->uninit || !funcs_sym->control
-                || !funcs_sym->decode)
-                break;
-            info_sym = funcs_sym->info;
-            if (strcmp(info_sym->short_name, sh_video->codec->drv))
-                break;
-            free(buf);
-            sh_video->vd_driver = funcs_sym;
-            mp_msg(MSGT_DECVIDEO, MSGL_V,
-                   "Using external decoder plugin (%s/mplayer/vd_%s.so)!\n",
-                   MPLAYER_LIBDIR, sh_video->codec->drv);
-        }
-#endif
         if (!sh_video->vd_driver) {    // driver not available (==compiled in)
             mp_tmsg(MSGT_DECVIDEO, MSGL_WARN,
                    _("Requested video codec family [%s] (vfm=%s) not available.\nEnable it at compilation.\n"),

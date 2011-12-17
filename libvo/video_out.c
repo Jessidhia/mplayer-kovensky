@@ -87,8 +87,7 @@ extern struct vo_driver video_out_vdpau;
 extern struct vo_driver video_out_xv;
 extern struct vo_driver video_out_gl_nosw;
 extern struct vo_driver video_out_gl;
-extern struct vo_driver video_out_gl2;
-extern struct vo_driver video_out_matrixview;
+extern struct vo_driver video_out_gl_sdl;
 extern struct vo_driver video_out_dga;
 extern struct vo_driver video_out_sdl;
 extern struct vo_driver video_out_3dfx;
@@ -184,7 +183,9 @@ const struct vo_driver *video_out_drivers[] =
 #endif
 #ifdef CONFIG_GL
         &video_out_gl,
-        &video_out_gl2,
+#endif
+#ifdef CONFIG_GL_SDL
+        &video_out_gl_sdl,
 #endif
 #ifdef CONFIG_DGA
         &video_out_dga,
@@ -198,9 +199,6 @@ const struct vo_driver *video_out_drivers[] =
 #endif
 #ifdef CONFIG_SVGALIB
         &video_out_svga,
-#endif
-#ifdef CONFIG_MATRIXVIEW
-        &video_out_matrixview,
 #endif
 #ifdef CONFIG_AA
         &video_out_aa,
@@ -280,9 +278,25 @@ int vo_draw_image(struct vo *vo, struct mp_image *mpi, double pts)
     }
     vo->frame_loaded = true;
     vo->next_pts = pts;
+    // Guaranteed to support at least DRAW_IMAGE later
+    if (vo->driver->is_new) {
+        vo->waiting_mpi = mpi;
+        return 0;
+    }
     if (vo_control(vo, VOCTRL_DRAW_IMAGE, mpi) == VO_NOTIMPL)
         return -1;
     return 0;
+}
+
+int vo_redraw_frame(struct vo *vo)
+{
+    if (!vo->config_ok)
+        return -1;
+    if (vo_control(vo, VOCTRL_REDRAW_FRAME, NULL) == true) {
+        vo->redrawing = true;
+        return 0;
+    }
+    return -1;
 }
 
 int vo_get_buffered_frame(struct vo *vo, bool eof)
@@ -299,6 +313,7 @@ int vo_get_buffered_frame(struct vo *vo, bool eof)
 
 void vo_skip_frame(struct vo *vo)
 {
+    vo_control(vo, VOCTRL_SKIPFRAME, NULL);
     vo->frame_loaded = false;
 }
 
@@ -315,6 +330,18 @@ int vo_draw_slice(struct vo *vo, uint8_t *src[], int stride[], int w, int h, int
     return vo->driver->draw_slice(vo, src, stride, w, h, x, y);
 }
 
+void vo_new_frame_imminent(struct vo *vo)
+{
+    if (!vo->driver->is_new)
+        return;
+    if (vo->driver->buffer_frames)
+        vo_control(vo, VOCTRL_NEWFRAME, NULL);
+    else {
+        vo_control(vo, VOCTRL_DRAW_IMAGE, vo->waiting_mpi);
+        vo->waiting_mpi = NULL;
+    }
+}
+
 void vo_draw_osd(struct vo *vo, struct osd_state *osd)
 {
     if (!vo->config_ok)
@@ -326,8 +353,12 @@ void vo_flip_page(struct vo *vo, unsigned int pts_us, int duration)
 {
     if (!vo->config_ok)
         return;
-    vo->frame_loaded = false;
-    vo->next_pts = MP_NOPTS_VALUE;
+    if (!vo->redrawing) {
+        vo->frame_loaded = false;
+        vo->next_pts = MP_NOPTS_VALUE;
+    }
+    vo->want_redraw = false;
+    vo->redrawing = false;
     if (vo->driver->flip_page_timed)
         vo->driver->flip_page_timed(vo, pts_us, duration);
     else
@@ -462,7 +493,7 @@ static int event_fd_callback(void *ctx, int fd)
 
 int vo_config(struct vo *vo, uint32_t width, uint32_t height,
                      uint32_t d_width, uint32_t d_height, uint32_t flags,
-                     char *title, uint32_t format)
+                     uint32_t format)
 {
     struct MPOpts *opts = vo->opts;
     panscan_init(vo);
@@ -483,7 +514,7 @@ int vo_config(struct vo *vo, uint32_t width, uint32_t height,
     }
 
     int ret = vo->driver->config(vo, width, height, d_width, d_height, flags,
-                                 title, format);
+                                 format);
     vo->config_ok = (ret == 0);
     vo->config_count += vo->config_ok;
     if (vo->registered_fd == -1 && vo->event_fd != -1 && vo->config_ok) {
@@ -491,6 +522,9 @@ int vo_config(struct vo *vo, uint32_t width, uint32_t height,
                             NULL, vo);
         vo->registered_fd = vo->event_fd;
     }
+    vo->frame_loaded = false;
+    vo->waiting_mpi = NULL;
+    vo->redrawing = false;
     return ret;
 }
 
@@ -575,6 +609,18 @@ void calc_src_dst_rects(struct vo *vo, int src_width, int src_height,
   src->height = src->bottom - src->top;
   dst->width  = dst->right  - dst->left;
   dst->height = dst->bottom - dst->top;
+}
+
+// Return the window title the VO should set. Always returns a null terminated
+// string. The string is valid until frontend code is invoked again. Copy it if
+// you need to keep the string for an extended period of time.
+const char *vo_get_window_title(struct vo *vo)
+{
+    if (vo->opts->vo_wintitle) {
+        return vo->opts->vo_wintitle;
+    } else {
+        return "mplayer2";
+    }
 }
 
 /**

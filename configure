@@ -334,7 +334,6 @@ Optional features:
   --disable-freetype     disable FreeType 2 font rendering [autodetect]
   --disable-fontconfig   disable fontconfig font lookup [autodetect]
   --disable-unrarexec    disable using of UnRAR executable [enabled]
-  --enable-menu          enable OSD menu (not DVD menu) [disabled]
   --disable-sortsub      disable subtitle sorting [enabled]
   --enable-fribidi       enable the FriBiDi libs [autodetect]
   --disable-enca         disable ENCA charset oracle library [autodetect]
@@ -381,7 +380,6 @@ Codecs:
 
 Video output:
   --enable-gl              enable OpenGL video output [autodetect]
-  --disable-matrixview     disable OpenGL MatrixView video output [autodetect]
   --enable-dga2            enable DGA 2 support [autodetect]
   --enable-dga1            enable DGA 1 support [autodetect]
   --enable-vesa            enable VESA video output [autodetect]
@@ -421,6 +419,7 @@ Video output:
   --disable-md5sum         disable md5sum video output [enable]
   --disable-yuv4mpeg       disable yuv4mpeg video output [enable]
   --disable-corevideo      disable CoreVideo video output [autodetect]
+  --disable-cocoa          disable Cocoa OpenGL backend [autodetect]
   --disable-quartz         disable Quartz video output [autodetect]
 
 Audio output:
@@ -496,7 +495,6 @@ Advanced options:
   --enable-profile          compile-in profiling information [disable]
   --disable-sighandler      disable sighandler for crashes [enable]
   --enable-crash-debug      enable automatic gdb attach on crash [disable]
-  --enable-dynamic-plugins  enable dynamic A/V plugins [disable]
 
 Use these options if autodetection fails:
   --extra-cflags=FLAGS        extra CFLAGS
@@ -574,7 +572,6 @@ _md5sum=yes
 _yuv4mpeg=yes
 _gif=auto
 _gl=auto
-matrixview=yes
 _ggi=auto
 _ggiwmh=auto
 _aa=auto
@@ -672,7 +669,6 @@ _bl=no
 _shm=auto
 _translation=no
 _charset="UTF-8"
-_dynamic_plugins=no
 _crash_debug=no
 _sighandler=yes
 _libdv=auto
@@ -682,10 +678,10 @@ _big_endian=auto
 _bitmap_font=yes
 _freetype=auto
 _fontconfig=auto
-_menu=no
 _qtx=auto
 _coreaudio=auto
 _corevideo=auto
+_cocoa=auto
 _quartz=auto
 quicktime=auto
 _macosx_finder=no
@@ -843,8 +839,6 @@ for ac_option do
   --disable-cross-compile)          _cross_compile=no           ;;
   --enable-mplayer)     _mplayer=yes    ;;
   --disable-mplayer)    _mplayer=no     ;;
-  --enable-dynamic-plugins) _dynamic_plugins=yes ;;
-  --disable-dynamic-plugins) _dynamic_plugins=no ;;
   --enable-x11)         _x11=yes        ;;
   --disable-x11)        _x11=no         ;;
   --enable-xshape)      _xshape=yes     ;;
@@ -883,8 +877,6 @@ for ac_option do
   --disable-gif)        _gif=no         ;;
   --enable-gl)          _gl=yes         ;;
   --disable-gl)         _gl=no          ;;
-  --enable-matrixview)  matrixview=yes  ;;
-  --disable-matrixview) matrixview=no   ;;
   --enable-ggi)         _ggi=yes        ;;
   --disable-ggi)        _ggi=no         ;;
   --enable-ggiwmh)      _ggiwmh=yes     ;;
@@ -1118,9 +1110,6 @@ for ac_option do
   --enable-dga2) _dga2=yes ;;
   --disable-dga2) _dga2=no ;;
 
-  --enable-menu) _menu=yes ;;
-  --disable-menu) _menu=no ;;
-
   --enable-qtx) _qtx=yes ;;
   --disable-qtx) _qtx=no ;;
 
@@ -1128,6 +1117,8 @@ for ac_option do
   --disable-coreaudio) _coreaudio=no ;;
   --enable-corevideo) _corevideo=yes ;;
   --disable-corevideo) _corevideo=no ;;
+  --enable-cocoa) _cocoa=yes ;;
+  --disable-cocoa) _cocoa=no ;;
   --enable-quartz) _quartz=yes ;;
   --disable-quartz) _quartz=no ;;
   --enable-macosx-finder) _macosx_finder=yes ;;
@@ -3108,18 +3099,6 @@ fi
 echores "$_dl"
 
 
-echocheck "dynamic a/v plugins support"
-if test "$_dl" = no ; then
-  _dynamic_plugins=no
-fi
-if test "$_dynamic_plugins" = yes ; then
-  def_dynamic_plugins='#define CONFIG_DYNAMIC_PLUGINS 1'
-else
-  def_dynamic_plugins='#undef CONFIG_DYNAMIC_PLUGINS'
-fi
-echores "$_dynamic_plugins"
-
-
 def_threads='#define HAVE_THREADS 0'
 
 echocheck "pthread"
@@ -4255,6 +4234,26 @@ else
 fi
 echores "$_corevideo"
 
+echocheck "Cocoa"
+if test "$_gl" = no ; then
+  # if _gl is not enabled there is no point to add potentially unused linker flags
+  _cocoa=no
+fi
+if test "$_cocoa" = auto ; then
+  cat > $TMPC <<EOF
+#include <CoreServices/CoreServices.h>
+#include <OpenGL/OpenGL.h>
+#include <QuartzCore/CoreVideo.h>
+int main(void) { return 0; }
+EOF
+  _cocoa=no
+  cc_check -framework Cocoa -framework QuartzCore -framework OpenGL && _cocoa=yes
+fi
+if test "$_cocoa" = yes ; then
+  libs_mplayer="$libs_mplayer -framework Cocoa -framework QuartzCore -framework OpenGL"
+fi
+echores "$_cocoa"
+
 fi #if darwin
 
 
@@ -4513,7 +4512,7 @@ echores "$_sdl"
 # conflicts between -lGL and -framework OpenGL
 echocheck "OpenGL"
 #Note: this test is run even with --enable-gl since we autodetect linker flags
-if (test "$_x11" = yes || test "$_sdl" = yes || win32) && test "$_gl" != no ; then
+if (test "$_x11" = yes || test "$_sdl" = yes || test "$_cocoa" = yes || win32) && test "$_gl" != no ; then
   cat > $TMPC << EOF
 #ifdef GL_WIN32
 #include <windows.h>
@@ -4561,6 +4560,10 @@ EOF
     _gl_win32=yes
     libs_mplayer="$libs_mplayer -lopengl32 -lgdi32"
   fi
+  if test "$_cocoa" = yes ; then
+    _gl=yes
+    _gl_cocoa=yes
+  fi
   # last so it can reuse any linker etc. flags detected before
   if test "$_sdl" = yes ; then
     if cc_check -DGL_SDL ||
@@ -4580,6 +4583,10 @@ fi
 if test "$_gl" = yes ; then
   def_gl='#define CONFIG_GL 1'
   res_comment="backends:"
+  if test "$_gl_cocoa" = yes ; then
+    def_gl_cocoa='#define CONFIG_GL_COCOA 1'
+    res_comment="$res_comment cocoa"
+  fi
   if test "$_gl_win32" = yes ; then
     def_gl_win32='#define CONFIG_GL_WIN32 1'
     res_comment="$res_comment win32"
@@ -4595,26 +4602,13 @@ if test "$_gl" = yes ; then
   vomodules="opengl $vomodules"
 else
   def_gl='#undef CONFIG_GL'
+  def_gl_cocoa='#undef CONFIG_GL_COCOA'
   def_gl_win32='#undef CONFIG_GL_WIN32'
   def_gl_x11='#undef CONFIG_GL_X11'
   def_gl_sdl='#undef CONFIG_GL_SDL'
   novomodules="opengl $novomodules"
 fi
 echores "$_gl"
-
-
-echocheck "MatrixView"
-if test "$_gl" = no ; then
-  matrixview=no
-fi
-if test "$matrixview" = yes ; then
-  vomodules="matrixview $vomodules"
-  def_matrixview='#define CONFIG_MATRIXVIEW 1'
-else
-  novomodules="matrixview $novomodules"
-  def_matrixview='#undef CONFIG_MATRIXVIEW'
-fi
-echores "$matrixview"
 
 
 if os2 ; then
@@ -6449,17 +6443,6 @@ fi
 echores "$_vstream"
 
 
-echocheck "OSD menu"
-if test "$_menu" = yes ; then
-    def_menu='#define CONFIG_MENU 1'
-    test $_dvbin = "yes" && _menu_dvbin=yes
-else
-def_menu='#undef CONFIG_MENU'
-    _menu_dvbin=no
-fi
-echores "$_menu"
-
-
 echocheck "Subtitles sorting"
 if test "$_sortsub" = yes ; then
     def_sortsub='#define CONFIG_SORTSUB 1'
@@ -6757,10 +6740,10 @@ FTP = $_ftp
 GIF = $_gif
 GGI = $_ggi
 GL = $_gl
+GL_COCOA = $_gl_cocoa
 GL_WIN32 = $_gl_win32
 GL_X11 = $_gl_x11
 GL_SDL = $_gl_sdl
-MATRIXVIEW = $matrixview
 HAVE_POSIX_SELECT = $_posix_select
 HAVE_SYS_MMAN_H = $_mman
 IVTV = $_ivtv
@@ -6778,8 +6761,6 @@ LIBDCA = $_libdca
 LIBDV = $_libdv
 LIBDVDCSS_INTERNAL = $_libdvdcss_internal
 LIBMAD = $_mad
-LIBMENU = $_menu
-LIBMENU_DVBIN = $_menu_dvbin
 LIBNEMESI = $_nemesi
 LIBNUT = $_libnut
 LIBSMBCLIENT = $_smb
@@ -6915,7 +6896,6 @@ cat > $TMPH << EOF
 
 #define MPLAYER_DATADIR "$_datadir"
 #define MPLAYER_CONFDIR "$_confdir"
-#define MPLAYER_LIBDIR "$_libdir"
 #define MPLAYER_LOCALEDIR "$_localedir"
 
 $def_translation
@@ -7000,9 +6980,7 @@ $def_unrar_exec
 $def_charset
 $def_crash_debug
 $def_debug
-$def_dynamic_plugins
 $def_fastmemcpy
-$def_menu
 $def_runtime_cpudetection
 $def_sighandler
 $def_sortsub
@@ -7168,10 +7146,10 @@ $def_gif
 $def_gif_4
 $def_gif_tvt_hack
 $def_gl
+$def_gl_cocoa
 $def_gl_win32
 $def_gl_x11
 $def_gl_sdl
-$def_matrixview
 $def_ivtv
 $def_jpeg
 $def_kva
@@ -7310,9 +7288,10 @@ skipping autodetection. This behavior is unlike what you may be used to from
 autoconf-based configure scripts that can decide to override you. This greater
 level of control comes at a price. You may have to provide the correct compiler
 and linker flags yourself.
-If you used one of these options (except --enable-menu and similar ones that
-turn on internal features) and experience a compilation or linking failure,
-make sure you have passed the necessary compiler/linker flags to configure.
+If you used one of these options (except --enable-runtime-cpudetection and
+similar ones that turn on internal features) and experience a compilation or
+linking failure, make sure you have passed the necessary compiler/linker flags
+to configure.
 
 If you suspect a bug, please read DOCS/HTML/$language_doc/bugreports.html.
 

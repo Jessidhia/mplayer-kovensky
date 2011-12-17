@@ -21,6 +21,9 @@ typedef struct MPOpts {
     int fullscreen;
     int vo_dbpp;
     float vo_panscanrange;
+    int requested_colorspace;
+    int requested_input_range;
+    int requested_output_range;
 
     // ranges -100 - 100, 1000 if the vo default should be used
     int vo_gamma_gamma;
@@ -51,6 +54,7 @@ typedef struct MPOpts {
     int user_pts_assoc_mode;
     int initial_audio_sync;
     int hr_seek;
+    float hr_seek_demuxer_offset;
     int autosync;
     int softsleep;
     int rtc;

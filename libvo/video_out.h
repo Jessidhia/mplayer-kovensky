@@ -63,7 +63,9 @@ enum mp_voctrl {
     VOCTRL_XOVERLAY_SET_COLORKEY,       // mp_colorkey_t
     VOCTRL_XOVERLAY_SET_WIN,
 
-    VOCTRL_REDRAW_OSD,
+    VOCTRL_NEWFRAME,
+    VOCTRL_SKIPFRAME,
+    VOCTRL_REDRAW_FRAME,
 
     VOCTRL_ONTOP,
     VOCTRL_ROOTWIN,
@@ -76,8 +78,10 @@ enum mp_voctrl {
 
     VOCTRL_UPDATE_SCREENINFO,
 
-    VOCTRL_SET_YUV_COLORSPACE,
-    VOCTRL_GET_YUV_COLORSPACE,
+    VOCTRL_SET_YUV_COLORSPACE,          // struct mp_csp_details
+    VOCTRL_GET_YUV_COLORSPACE,          // struct mp_csp_details
+
+    VOCTRL_SCREENSHOT,                  // struct voctrl_screenshot_args
 };
 
 // VOCTRL_SET_EQUALIZER
@@ -98,11 +102,28 @@ typedef struct {
     uint16_t r,g,b;
 } mp_colorkey_t;
 
-//VOCTRL_GET_EOSD_RES
+// VOCTRL_GET_EOSD_RES
 typedef struct mp_eosd_res {
     int w, h; // screen dimensions, including black borders
     int mt, mb, ml, mr; // borders (top, bottom, left, right)
 } mp_eosd_res_t;
+
+// VOCTRL_SCREENSHOT
+struct voctrl_screenshot_args {
+    // 0: Save image of the currently displayed video frame, in original
+    //    resolution.
+    // 1: Save full screenshot of the window. Should contain OSD, EOSD, and the
+    //    scaled video.
+    // The value of this variable can be ignored if only a single method is
+    // implemented.
+    int full_window;
+    // Will be set to a newly allocated image, that contains the screenshot.
+    // The caller has to free the pointer with free_mp_image().
+    // It is not specified whether the image data is a copy or references the
+    // image data directly.
+    // Is never NULL. (Failure has to be indicated by returning VO_FALSE.)
+    struct mp_image *out_image;
+};
 
 typedef struct {
   int x,y;
@@ -169,7 +190,7 @@ struct vo_driver {
      */
     int (*config)(struct vo *vo, uint32_t width, uint32_t height,
                   uint32_t d_width, uint32_t d_height, uint32_t fullscreen,
-                  char *title, uint32_t format);
+                  uint32_t format);
 
     /*
      * Control interface
@@ -239,8 +260,11 @@ struct vo {
     int config_count;  // Total number of successful config calls
 
     bool frame_loaded;  // Is there a next frame the VO could flip to?
+    struct mp_image *waiting_mpi;
     double next_pts;    // pts value of the next frame if any
     double next_pts2;   // optional pts of frame after that
+    bool want_redraw;   // visible frame wrong (window resize), needs refresh
+    bool redrawing;     // between redrawing frame and flipping it
 
     double flip_queue_offset; // queue flip events at most this much in advance
 
@@ -279,21 +303,24 @@ struct vo *init_best_video_out(struct MPOpts *opts, struct vo_x11_state *x11,
                                struct input_ctx *input_ctx);
 int vo_config(struct vo *vo, uint32_t width, uint32_t height,
                      uint32_t d_width, uint32_t d_height, uint32_t flags,
-                     char *title, uint32_t format);
+                     uint32_t format);
 void list_video_out(void);
 
 int vo_control(struct vo *vo, uint32_t request, void *data);
 int vo_draw_image(struct vo *vo, struct mp_image *mpi, double pts);
+int vo_redraw_frame(struct vo *vo);
 int vo_get_buffered_frame(struct vo *vo, bool eof);
 void vo_skip_frame(struct vo *vo);
 int vo_draw_frame(struct vo *vo, uint8_t *src[]);
 int vo_draw_slice(struct vo *vo, uint8_t *src[], int stride[], int w, int h, int x, int y);
+void vo_new_frame_imminent(struct vo *vo);
 void vo_draw_osd(struct vo *vo, struct osd_state *osd);
 void vo_flip_page(struct vo *vo, unsigned int pts_us, int duration);
 void vo_check_events(struct vo *vo);
 void vo_seek_reset(struct vo *vo);
 void vo_destroy(struct vo *vo);
 
+const char *vo_get_window_title(struct vo *vo);
 
 // NULL terminated array of all drivers
 extern const struct vo_driver *video_out_drivers[];

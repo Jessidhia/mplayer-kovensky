@@ -41,6 +41,7 @@
 #include "libmpcodecs/vd.h"
 #include "mp_osd.h"
 #include "libvo/video_out.h"
+#include "libvo/csputils.h"
 #include "sub/font_load.h"
 #include "playtree.h"
 #include "libao2/audio_out.h"
@@ -65,13 +66,11 @@
 #endif
 #include "stream/stream_dvdnav.h"
 #include "m_struct.h"
-#include "libmenu/menu.h"
+#include "screenshot.h"
 
 #include "mp_core.h"
 #include "mp_fifo.h"
 #include "libavutil/avstring.h"
-
-extern int use_menu;
 
 static void rescale_input_coordinates(struct MPContext *mpctx, int ix, int iy,
                                       double *dx, double *dy)
@@ -288,19 +287,21 @@ static int mp_property_playback_speed(m_option_t *prop, int action,
                                       void *arg, MPContext *mpctx)
 {
     struct MPOpts *opts = &mpctx->opts;
+    double orig_speed = opts->playback_speed;
     switch (action) {
     case M_PROPERTY_SET:
         if (!arg)
             return M_PROPERTY_ERROR;
-        M_PROPERTY_CLAMP(prop, *(float *) arg);
         opts->playback_speed = *(float *) arg;
-        reinit_audio_chain(mpctx);
-        return M_PROPERTY_OK;
+        goto set;
     case M_PROPERTY_STEP_UP:
     case M_PROPERTY_STEP_DOWN:
         opts->playback_speed += (arg ? *(float *) arg : 0.1) *
                                 (action == M_PROPERTY_STEP_DOWN ? -1 : 1);
+    set:
         M_PROPERTY_CLAMP(prop, opts->playback_speed);
+        // Adjust time until next frame flip for nosound mode
+        mpctx->time_frame *= orig_speed / opts->playback_speed;
         reinit_audio_chain(mpctx);
         return M_PROPERTY_OK;
     }
@@ -529,13 +530,13 @@ static int mp_property_chapter(m_option_t *prop, int action, void *arg,
 
     double next_pts = 0;
     queue_seek(mpctx, MPSEEK_NONE, 0, 0);
-    chapter = seek_chapter(mpctx, chapter, &next_pts, &chapter_name);
+    chapter = seek_chapter(mpctx, chapter, &next_pts);
     if (chapter >= 0) {
         if (next_pts > -1.0)
             queue_seek(mpctx, MPSEEK_ABSOLUTE, next_pts, 0);
-        if (chapter_name)
-            set_osd_tmsg(OSD_MSG_TEXT, 1, opts->osd_duration,
-                         "Chapter: (%d) %s", chapter + 1, chapter_name);
+        chapter_name = chapter_display_name(mpctx, chapter);
+        set_osd_tmsg(OSD_MSG_TEXT, 1, opts->osd_duration,
+                     "Chapter: %s", chapter_name);
     } else if (step_all > 0)
         queue_seek(mpctx, MPSEEK_RELATIVE, 1000000000, 0);
     else
@@ -551,10 +552,8 @@ static int mp_property_chapters(m_option_t *prop, int action, void *arg,
 {
     if (!mpctx->demuxer)
         return M_PROPERTY_UNAVAILABLE;
-    if (mpctx->demuxer->num_chapters == 0)
-        stream_control(mpctx->demuxer->stream, STREAM_CTRL_GET_NUM_CHAPTERS,
-                       &mpctx->demuxer->num_chapters);
-    return m_property_int_ro(prop, action, arg, mpctx->demuxer->num_chapters);
+    int count = get_chapter_count(mpctx);
+    return m_property_int_ro(prop, action, arg, count);
 }
 
 /// Current dvd angle (RW)
@@ -1152,48 +1151,114 @@ static int mp_property_deinterlace(m_option_t *prop, int action,
     return m_property_flag_ro(prop, action, arg, value);
 }
 
-static int mp_property_yuv_colorspace(m_option_t *prop, int action,
+static int colormatrix_property_helper(m_option_t *prop, int action,
                                       void *arg, MPContext *mpctx)
 {
-    if (!mpctx->sh_video || !mpctx->sh_video->vfilter)
-        return M_PROPERTY_UNAVAILABLE;
-
-    struct vf_instance *vf = mpctx->sh_video->vfilter;
-    int colorspace;
+    int r = mp_property_generic_option(prop, action, arg, mpctx);
+    // testing for an actual change is too much effort
     switch (action) {
-    case M_PROPERTY_GET:
-        if (!arg)
-            return M_PROPERTY_ERROR;
-        if (vf->control(vf, VFCTRL_GET_YUV_COLORSPACE, arg) != true)
-            return M_PROPERTY_UNAVAILABLE;
-        return M_PROPERTY_OK;
+    case M_PROPERTY_SET:
+    case M_PROPERTY_STEP_UP:
+    case M_PROPERTY_STEP_DOWN:
+        if (mpctx->sh_video)
+            set_video_colorspace(mpctx->sh_video);
+        break;
+    }
+    return r;
+}
+
+static int mp_property_colormatrix(m_option_t *prop, int action, void *arg,
+                                   MPContext *mpctx)
+{
+    struct MPOpts *opts = &mpctx->opts;
+    switch (action) {
     case M_PROPERTY_PRINT:
         if (!arg)
             return M_PROPERTY_ERROR;
-        if (vf->control(vf, VFCTRL_GET_YUV_COLORSPACE, &colorspace) != true)
-            return M_PROPERTY_UNAVAILABLE;
-        char *const names[] = {
-            "BT.601 (SD)", "BT.709 (HD)", "SMPTE-240M"
-        };
-        if (colorspace < 0 || colorspace >= sizeof(names) / sizeof(names[0]))
-            *(char **)arg = talloc_strdup(NULL, mp_gtext("unknown"));
-        else
-            *(char **)arg = talloc_strdup(NULL, names[colorspace]);
+        struct mp_csp_details actual = { .format = -1 };
+        char *req_csp = mp_csp_names[opts->requested_colorspace];
+        char *real_csp = NULL;
+        if (mpctx->sh_video) {
+            struct vf_instance *vf = mpctx->sh_video->vfilter;
+            if (vf->control(vf, VFCTRL_GET_YUV_COLORSPACE, &actual) == true) {
+                real_csp = mp_csp_names[actual.format];
+            } else {
+                real_csp = "Unknown";
+            }
+        }
+        char *res;
+        if (opts->requested_colorspace == MP_CSP_AUTO && real_csp) {
+            // Caveat: doesn't handle the case when the autodetected colorspace
+            // is different from the actual colorspace as used by the
+            // VO - the OSD will display the VO colorspace without
+            // indication that it doesn't match the requested colorspace.
+            res = talloc_asprintf(NULL, "Auto (%s)", real_csp);
+        } else if (opts->requested_colorspace == actual.format || !real_csp) {
+            res = talloc_strdup(NULL, req_csp);
+        } else
+            res = talloc_asprintf(NULL, mp_gtext("%s, but %s used"),
+                                  req_csp, real_csp);
+        *(char **)arg = res;
         return M_PROPERTY_OK;
-    case M_PROPERTY_SET:
+    default:;
+        return colormatrix_property_helper(prop, action, arg, mpctx);
+    }
+}
+
+static int levels_property_helper(int offset, m_option_t *prop, int action,
+                                  void *arg, MPContext *mpctx)
+{
+    char *optname = prop->priv;
+    const struct m_option *opt = m_config_get_option(mpctx->mconfig,
+                                                     bstr(optname));
+    int *valptr = (int *)m_option_get_ptr(opt, &mpctx->opts);
+
+    switch (action) {
+    case M_PROPERTY_PRINT:
         if (!arg)
             return M_PROPERTY_ERROR;
-        M_PROPERTY_CLAMP(prop, *(int *) arg);
-        vf->control(vf, VFCTRL_SET_YUV_COLORSPACE, arg);
+        struct mp_csp_details actual = {0};
+        int actual_level = -1;
+        char *req_level = m_option_print(opt, valptr);
+        char *real_level = NULL;
+        if (mpctx->sh_video) {
+            struct vf_instance *vf = mpctx->sh_video->vfilter;
+            if (vf->control(vf, VFCTRL_GET_YUV_COLORSPACE, &actual) == true) {
+                actual_level = *(enum mp_csp_levels *)(((char *)&actual) + offset);
+                real_level = m_option_print(opt, &actual_level);
+            } else {
+                real_level = talloc_strdup(NULL, "Unknown");
+            }
+        }
+        char *res;
+        if (*valptr == MP_CSP_LEVELS_AUTO && real_level) {
+            res = talloc_asprintf(NULL, "Auto (%s)", real_level);
+        } else if (*valptr == actual_level || !real_level) {
+            res = talloc_strdup(NULL, real_level);
+        } else
+            res = talloc_asprintf(NULL, mp_gtext("%s, but %s used"),
+                                  req_level, real_level);
+        talloc_free(req_level);
+        talloc_free(real_level);
+        *(char **)arg = res;
         return M_PROPERTY_OK;
-    case M_PROPERTY_STEP_UP:;
-        if (vf->control(vf, VFCTRL_GET_YUV_COLORSPACE, &colorspace) != true)
-            return M_PROPERTY_UNAVAILABLE;
-        colorspace += 1;
-        vf->control(vf, VFCTRL_SET_YUV_COLORSPACE, &colorspace);
-        return M_PROPERTY_OK;
+    default:;
+        return colormatrix_property_helper(prop, action, arg, mpctx);
     }
-    return M_PROPERTY_NOT_IMPLEMENTED;
+}
+
+static int mp_property_colormatrix_input_range(m_option_t *prop, int action,
+                                               void *arg, MPContext *mpctx)
+{
+    return levels_property_helper(offsetof(struct mp_csp_details, levels_in),
+                                  prop, action, arg, mpctx);
+}
+
+static int mp_property_colormatrix_output_range(m_option_t *prop, int action,
+                                                void *arg, MPContext *mpctx)
+{
+    return levels_property_helper(offsetof(struct mp_csp_details, levels_out),
+                                  prop, action, arg, mpctx);
 }
 
 static int mp_property_capture(m_option_t *prop, int action,
@@ -2267,8 +2332,12 @@ static const m_option_t mp_properties[] = {
       M_OPT_RANGE, 0, 1, NULL },
     { "deinterlace", mp_property_deinterlace, CONF_TYPE_FLAG,
       M_OPT_RANGE, 0, 1, NULL },
-    { "yuv_colorspace", mp_property_yuv_colorspace, CONF_TYPE_INT,
-      M_OPT_RANGE, 0, 2, NULL },
+    { "colormatrix", mp_property_colormatrix, &m_option_type_choice,
+      0, 0, 0, "colormatrix" },
+    { "colormatrix_input_range", mp_property_colormatrix_input_range, &m_option_type_choice,
+      0, 0, 0, "colormatrix-input-range" },
+    { "colormatrix_output_range", mp_property_colormatrix_output_range, &m_option_type_choice,
+      0, 0, 0, "colormatrix-output-range" },
     { "ontop", mp_property_ontop, CONF_TYPE_FLAG,
       M_OPT_RANGE, 0, 1, NULL },
     { "rootwin", mp_property_rootwin, CONF_TYPE_FLAG,
@@ -2430,7 +2499,9 @@ static struct property_osd_display {
     { "border", 0, -1, _("Border: %s") },
     { "framedropping", 0, -1, _("Framedropping: %s") },
     { "deinterlace", 0, -1, _("Deinterlace: %s") },
-    { "yuv_colorspace", 0, -1, _("YUV colorspace: %s") },
+    { "colormatrix", 0, -1, _("YUV colormatrix: %s") },
+    { "colormatrix_input_range", 0, -1, _("YUV input range: %s") },
+    { "colormatrix_output_range", 0, -1, _("RGB output range: %s") },
     { "gamma", OSD_BRIGHTNESS, -1, _("Gamma") },
     { "brightness", OSD_BRIGHTNESS, -1, _("Brightness") },
     { "contrast", OSD_CONTRAST, -1, _("Contrast") },
@@ -2473,6 +2544,7 @@ static int show_property_osd(MPContext *mpctx, const char *pname)
     for (p = property_osd_display; p->name; p++)
         if (!strcmp(p->name, pname))
             break;
+
     if (!p->name)
         return -1;
 
@@ -2879,7 +2951,7 @@ void run_command(MPContext *mpctx, mp_cmd_t *cmd)
             opts->movie_aspect = (float) sh_video->disp_w / sh_video->disp_h;
         else
             opts->movie_aspect = cmd->args[0].v.f;
-        mpcodecs_config_vo(sh_video, sh_video->disp_w, sh_video->disp_h, 0);
+        video_reset_aspect(sh_video);
         break;
 
     case MP_CMD_SPEED_INCR: {
@@ -2903,10 +2975,6 @@ void run_command(MPContext *mpctx, mp_cmd_t *cmd)
 
     case MP_CMD_FRAME_STEP:
         add_step_frame(mpctx);
-        break;
-
-    case MP_CMD_FILE_FILTER:
-        file_filter = cmd->args[0].v.i;
         break;
 
     case MP_CMD_QUIT:
@@ -3315,15 +3383,7 @@ void run_command(MPContext *mpctx, mp_cmd_t *cmd)
         break;
 
     case MP_CMD_SCREENSHOT:
-        if (mpctx->video_out && mpctx->video_out->config_ok) {
-            mp_msg(MSGT_CPLAYER, MSGL_INFO, "sending VFCTRL_SCREENSHOT!\n");
-            if (CONTROL_OK !=
-                ((vf_instance_t *) sh_video->vfilter)->
-                control(sh_video->vfilter, VFCTRL_SCREENSHOT,
-                        &cmd->args[0].v.i))
-                mp_msg(MSGT_CPLAYER, MSGL_INFO,
-                       "failed (forgot -vf screenshot?)\n");
-        }
+        screenshot_request(mpctx, cmd->args[0].v.i, cmd->args[1].v.i);
         break;
 
     case MP_CMD_AF_EQ_SET: {
@@ -3491,10 +3551,6 @@ void run_command(MPContext *mpctx, mp_cmd_t *cmd)
                 set_osd_msg(OSD_MSG_TEXT, 1, osd_duration,
                             "Selected button number %d", button);
         }
-#endif
-#ifdef CONFIG_MENU
-        if (use_menu && dx >= 0.0 && dy >= 0.0)
-            menu_update_mouse_pos(dx, dy);
 #endif
         break;
     }

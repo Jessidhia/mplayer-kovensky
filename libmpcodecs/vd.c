@@ -321,12 +321,12 @@ int mpcodecs_config_vo2(sh_video_t *sh, int w, int h,
 
     // Time to config libvo!
     mp_msg(MSGT_CPLAYER, MSGL_V,
-           "VO Config (%dx%d->%dx%d,flags=%d,'%s',0x%X)\n", sh->disp_w,
-           sh->disp_h, screen_size_x, screen_size_y, vocfg_flags, "MPlayer",
-           out_fmt);
+           "VO Config (%dx%d->%dx%d,flags=%d,0x%X)\n", sh->disp_w,
+           sh->disp_h, screen_size_x, screen_size_y, vocfg_flags, out_fmt);
 
     vf->w = sh->disp_w;
     vf->h = sh->disp_h;
+
     if (vf_config_wrapper
         (vf, sh->disp_w, sh->disp_h, screen_size_x, screen_size_y, vocfg_flags,
          out_fmt) == 0) {
@@ -336,6 +336,8 @@ int mpcodecs_config_vo2(sh_video_t *sh, int w, int h,
     }
 
     sh->vf_initialized = 1;
+
+    set_video_colorspace(sh);
 
     if (opts->vo_gamma_gamma != 1000)
         set_video_colors(sh, "gamma", opts->vo_gamma_gamma);

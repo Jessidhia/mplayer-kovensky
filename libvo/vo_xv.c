@@ -58,6 +58,7 @@ Buffer allocation:
 #include "fastmemcpy.h"
 #include "sub/sub.h"
 #include "aspect.h"
+#include "csputils.h"
 
 #include "subopt-helper.h"
 
@@ -88,15 +89,15 @@ struct xvctx {
     int current_ip_buf;
     int num_buffers;
     int total_buffers;
-    int have_visible_image_copy;
-    int have_next_image_copy;
-    int unchanged_visible_image;
-    int unchanged_next_image;
+    bool have_image_copy;
+    bool unchanged_image;
     int visible_buf;
     XvImage *xvimage[NUM_BUFFERS + 1];
     uint32_t image_width;
     uint32_t image_height;
     uint32_t image_format;
+    uint32_t image_d_width;
+    uint32_t image_d_height;
     int is_paused;
     struct vo_rect src_rect;
     struct vo_rect dst_rect;
@@ -197,7 +198,7 @@ static void resize(struct vo *vo)
  */
 static int config(struct vo *vo, uint32_t width, uint32_t height,
                   uint32_t d_width, uint32_t d_height, uint32_t flags,
-                  char *title, uint32_t format)
+                  uint32_t format)
 {
     struct vo_x11_state *x11 = vo->x11;
     XVisualInfo vinfo;
@@ -211,6 +212,8 @@ static int config(struct vo *vo, uint32_t width, uint32_t height,
     ctx->image_height = height;
     ctx->image_width = width;
     ctx->image_format = format;
+    ctx->image_d_width = d_width;
+    ctx->image_d_height = d_height;
 
     if ((ctx->max_width != 0 && ctx->max_height != 0)
         && (ctx->image_width > ctx->max_width
@@ -222,8 +225,7 @@ static int config(struct vo *vo, uint32_t width, uint32_t height,
     }
 
     ctx->visible_buf = -1;
-    ctx->have_visible_image_copy = false;
-    ctx->have_next_image_copy = false;
+    ctx->have_image_copy = false;
 
     /* check image formats */
     ctx->xv_format = 0;
@@ -260,8 +262,7 @@ static int config(struct vo *vo, uint32_t width, uint32_t height,
         }
 
         vo_x11_create_vo_window(vo, &vinfo, vo->dx, vo->dy, vo->dwidth,
-                                vo->dheight, flags, CopyFromParent, "xv",
-                                title);
+                                vo->dheight, flags, CopyFromParent, "xv");
         XChangeWindowAttributes(x11->display, x11->window, xswamask, &xswa);
 
 #ifdef CONFIG_XF86VM
@@ -416,18 +417,11 @@ static void copy_backup_image(struct vo *vo, int dest, int src)
 
 static void check_events(struct vo *vo)
 {
-    struct xvctx *ctx = vo->priv;
     int e = vo_x11_check_events(vo);
 
-    if (e & VO_EVENT_EXPOSE || e & VO_EVENT_RESIZE)
+    if (e & VO_EVENT_EXPOSE || e & VO_EVENT_RESIZE) {
         resize(vo);
-
-    if ((e & VO_EVENT_EXPOSE || e & VO_EVENT_RESIZE) && ctx->is_paused) {
-        /* did we already draw a buffer */
-        if (ctx->visible_buf != -1) {
-            /* redraw the last visible buffer */
-            put_xvimage(vo, ctx->xvimage[ctx->visible_buf]);
-        }
+        vo->want_redraw = true;
     }
 }
 
@@ -442,26 +436,21 @@ static void draw_osd(struct vo *vo, struct osd_state *osd)
                                                       vo->panscan_x),
                   ctx->image_height, ctx->draw_alpha_fnc, vo);
     if (ctx->osd_objects_drawn)
-        ctx->unchanged_next_image = false;
+        ctx->unchanged_image = false;
 }
 
-static int redraw_osd(struct vo *vo, struct osd_state *osd)
+static int redraw_frame(struct vo *vo)
 {
     struct xvctx *ctx = vo->priv;
 
-    if (ctx->have_visible_image_copy)
+    if (ctx->have_image_copy)
         copy_backup_image(vo, ctx->visible_buf, ctx->num_buffers);
-    else if (ctx->unchanged_visible_image) {
+    else if (ctx->unchanged_image) {
         copy_backup_image(vo, ctx->num_buffers, ctx->visible_buf);
-        ctx->have_visible_image_copy = true;
-    }
-    else
+        ctx->have_image_copy = true;
+    }  else
         return false;
-    int temp = ctx->current_buf;
     ctx->current_buf = ctx->visible_buf;
-    draw_osd(vo, osd);
-    ctx->current_buf = temp;
-    put_xvimage(vo, ctx->xvimage[ctx->visible_buf]);
     return true;
 }
 
@@ -472,11 +461,6 @@ static void flip_page(struct vo *vo)
 
     /* remember the currently visible buffer */
     ctx->visible_buf = ctx->current_buf;
-
-    ctx->have_visible_image_copy = ctx->have_next_image_copy;
-    ctx->have_next_image_copy = false;
-    ctx->unchanged_visible_image = ctx->unchanged_next_image;
-    ctx->unchanged_next_image = false;
 
     if (ctx->num_buffers > 1) {
         ctx->current_buf = vo_directrendering ? 0 : ((ctx->current_buf + 1) %
@@ -520,11 +504,54 @@ static int draw_slice(struct vo *vo, uint8_t *image[], int stride[], int w,
     return 0;
 }
 
+static mp_image_t *get_screenshot(struct vo *vo)
+{
+    struct xvctx *ctx = vo->priv;
+
+    // try to get an image without OSD
+    if (ctx->have_image_copy)
+        copy_backup_image(vo, ctx->visible_buf, ctx->num_buffers);
+
+    XvImage *xv_image = ctx->xvimage[ctx->visible_buf];
+
+    int w = xv_image->width;
+    int h = xv_image->height;
+
+    mp_image_t *image = alloc_mpi(w, h, ctx->image_format);
+
+    int bytes = 1;
+    if (!(image->flags & MP_IMGFLAG_PLANAR) && (image->flags & MP_IMGFLAG_YUV))
+        // packed YUV
+        bytes = image->bpp / 8;
+
+    memcpy_pic(image->planes[0], xv_image->data + xv_image->offsets[0],
+               bytes * w, h, image->stride[0], xv_image->pitches[0]);
+
+    if (image->flags & MP_IMGFLAG_PLANAR) {
+        int swap = ctx->image_format == IMGFMT_YV12;
+        int p1 = swap ? 2 : 1;
+        int p2 = swap ? 1 : 2;
+
+        w /= 2;
+        h /= 2;
+
+        memcpy_pic(image->planes[p1], xv_image->data + xv_image->offsets[1],
+                   w, h, image->stride[p1], xv_image->pitches[1]);
+        memcpy_pic(image->planes[p2], xv_image->data + xv_image->offsets[2],
+                   w, h, image->stride[p2], xv_image->pitches[2]);
+    }
+
+    image->w = ctx->image_d_width;
+    image->h = ctx->image_d_height;
+
+    return image;
+}
+
 static uint32_t draw_image(struct vo *vo, mp_image_t *mpi)
 {
     struct xvctx *ctx = vo->priv;
 
-    ctx->have_next_image_copy = false;
+    ctx->have_image_copy = false;
 
     if (mpi->flags & MP_IMGFLAG_DIRECT)
         // direct rendering:
@@ -544,9 +571,9 @@ static uint32_t draw_image(struct vo *vo, mp_image_t *mpi)
 
     if (ctx->is_paused) {
         copy_backup_image(vo, ctx->num_buffers, ctx->current_buf);
-        ctx->have_next_image_copy = true;
+        ctx->have_image_copy = true;
     }
-    ctx->unchanged_next_image = true;
+    ctx->unchanged_image = true;
     return true;
 }
 
@@ -798,24 +825,27 @@ static int control(struct vo *vo, uint32_t request, void *data)
     case VOCTRL_SET_PANSCAN:
         resize(vo);
         return VO_TRUE;
-    case VOCTRL_SET_EQUALIZER:
-        {
-            struct voctrl_set_equalizer_args *args = data;
-            return vo_xv_set_eq(vo, x11->xv_port, args->name, args->value);
-        }
-    case VOCTRL_GET_EQUALIZER:
-        {
-            struct voctrl_get_equalizer_args *args = data;
-            return vo_xv_get_eq(vo, x11->xv_port, args->name, args->valueptr);
-        }
+    case VOCTRL_SET_EQUALIZER: {
+        vo->want_redraw = true;
+        struct voctrl_set_equalizer_args *args = data;
+        return vo_xv_set_eq(vo, x11->xv_port, args->name, args->value);
+    }
+    case VOCTRL_GET_EQUALIZER: {
+        struct voctrl_get_equalizer_args *args = data;
+        return vo_xv_get_eq(vo, x11->xv_port, args->name, args->valueptr);
+    }
     case VOCTRL_SET_YUV_COLORSPACE:;
-        int given_cspc = *(int *)data % 2;
-        return vo_xv_set_eq(vo, x11->xv_port, "bt_709", given_cspc * 200 - 100);
+        struct mp_csp_details* given_cspc = data;
+        int is_709 = given_cspc->format == MP_CSP_BT_709;
+        vo_xv_set_eq(vo, x11->xv_port, "bt_709", is_709 * 200 - 100);
+        vo->want_redraw = true;
+        return true;
     case VOCTRL_GET_YUV_COLORSPACE:;
+        struct mp_csp_details* cspc = data;
+        *cspc = (struct mp_csp_details) MP_CSP_DETAILS_DEFAULTS;
         int bt709_enabled;
-        if (!vo_xv_get_eq(vo, x11->xv_port, "bt_709", &bt709_enabled))
-            return false;
-        *(int *)data = bt709_enabled == 100;
+        if (vo_xv_get_eq(vo, x11->xv_port, "bt_709", &bt709_enabled))
+            cspc->format = bt709_enabled == 100 ? MP_CSP_BT_709 : MP_CSP_BT_601;
         return true;
     case VOCTRL_ONTOP:
         vo_x11_ontop(vo);
@@ -823,8 +853,13 @@ static int control(struct vo *vo, uint32_t request, void *data)
     case VOCTRL_UPDATE_SCREENINFO:
         update_xinerama_info(vo);
         return VO_TRUE;
-    case VOCTRL_REDRAW_OSD:
-        return redraw_osd(vo, data);
+    case VOCTRL_REDRAW_FRAME:
+        return redraw_frame(vo);
+    case VOCTRL_SCREENSHOT: {
+        struct voctrl_screenshot_args *args = data;
+        args->out_image = get_screenshot(vo);
+        return true;
+    }
     }
     return VO_NOTIMPL;
 }

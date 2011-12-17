@@ -41,6 +41,7 @@
 #include "video_out.h"
 #include "x11_common.h"
 #include "aspect.h"
+#include "csputils.h"
 #include "sub/sub.h"
 #include "subopt-helper.h"
 #include "libmpcodecs/vfcap.h"
@@ -79,13 +80,16 @@
 /* number of video and output surfaces */
 #define MAX_OUTPUT_SURFACES                15
 #define MAX_VIDEO_SURFACES                 50
-#define NUM_BUFFERED_VIDEO                 4
+#define NUM_BUFFERED_VIDEO                 5
 
 /* number of palette entries */
 #define PALETTE_SIZE 256
 
 /* Initial size of EOSD surface in pixels (x*x) */
 #define EOSD_SURFACE_INITIAL_SIZE 256
+
+/* Pixelformat used for output surfaces */
+#define OUTPUT_RGBA_FORMAT VDP_RGBA_FORMAT_B8G8R8A8
 
 /*
  * Global variable declaration - VDPAU specific
@@ -112,7 +116,7 @@ struct vdpctx {
     uint64_t                           last_vdp_time;
     unsigned int                       last_sync_update;
 
-    /* an extra last output surface is misused for OSD. */
+    /* an extra last output surface is used for OSD and screenshots */
     VdpOutputSurface                   output_surfaces[MAX_OUTPUT_SURFACES + 1];
     int                                num_output_surfaces;
     struct buffered_video_surface {
@@ -124,9 +128,7 @@ struct vdpctx {
     int                                output_surface_width, output_surface_height;
 
     VdpVideoMixer                      video_mixer;
-    int                                user_colorspace;
-    int                                colorspace;
-    int                                studio_levels;
+    struct mp_csp_details              colorspace;
     int                                deint;
     int                                deint_type;
     int                                deint_counter;
@@ -159,6 +161,7 @@ struct vdpctx {
     bool                               dropped_frame;
     uint64_t                           dropped_time;
     uint32_t                           vid_width, vid_height;
+    uint32_t                           vid_d_width, vid_d_height;
     uint32_t                           image_format;
     VdpChromaType                      vdp_chroma_type;
     VdpYCbCrFormat                     vdp_pixel_format;
@@ -190,10 +193,7 @@ struct vdpctx {
     int eosd_render_count;
 
     // Video equalizer
-    VdpProcamp procamp;
-
-    int num_shown_frames;
-    bool paused;
+    struct mp_csp_equalizer video_eq;
 
     // These tell what's been initialized and uninit() should free/uninitialize
     bool mode_switched;
@@ -243,7 +243,9 @@ static uint64_t convert_to_vdptime(struct vo *vo, unsigned int t)
 
 static void flip_page_timed(struct vo *vo, unsigned int pts_us, int duration);
 
-static int video_to_output_surface(struct vo *vo)
+static int render_video_to_output_surface(struct vo *vo,
+                                          VdpOutputSurface output_surface,
+                                          VdpRect *output_rect)
 {
     struct vdpctx *vc = vo->priv;
     struct vdp_functions *vdp = vc->vdp;
@@ -266,7 +268,6 @@ static int video_to_output_surface(struct vo *vo)
         bv[(dp+1)/2].surface, bv[(dp+2)/2].surface};
     const VdpVideoSurface *future_fields = (const VdpVideoSurface []){
         dp >= 1 ? bv[(dp-1)/2].surface : VDP_INVALID_HANDLE};
-    VdpOutputSurface output_surface = vc->output_surfaces[vc->surface_num];
     vdp_st = vdp->presentation_queue_block_until_surface_idle(vc->flip_queue,
                                                               output_surface,
                                                               &dummy);
@@ -277,12 +278,21 @@ static int video_to_output_surface(struct vo *vo)
                                      0, field, 2, past_fields,
                                      bv[dp/2].surface, 1, future_fields,
                                      &vc->src_rect_vid, output_surface,
-                                     NULL, &vc->out_rect_vid, 0, NULL);
+                                     NULL, output_rect, 0, NULL);
     CHECK_ST_WARNING("Error when calling vdp_video_mixer_render");
     return 0;
 }
 
-static void get_buffered_frame(struct vo *vo, bool eof)
+static int video_to_output_surface(struct vo *vo)
+{
+    struct vdpctx *vc = vo->priv;
+
+    return render_video_to_output_surface(vo,
+                                          vc->output_surfaces[vc->surface_num],
+                                          &vc->out_rect_vid);
+}
+
+static int next_deint_queue_pos(struct vo *vo, bool eof)
 {
     struct vdpctx *vc = vo->priv;
 
@@ -292,15 +302,23 @@ static void get_buffered_frame(struct vo *vo, bool eof)
     else
         dqp = vc->deint >= 2 ? dqp - 1 : dqp - 2 | 1;
     if (dqp < (eof ? 0 : 3))
-        return;
+        return -1;
+    return dqp;
+}
 
-    dqp = FFMIN(dqp, 4);
-    vc->deint_queue_pos = dqp;
+static void set_next_frame_info(struct vo *vo, bool eof)
+{
+    struct vdpctx *vc = vo->priv;
+
+    vo->frame_loaded = false;
+    int dqp = next_deint_queue_pos(vo, eof);
+    if (dqp < 0)
+        return;
     vo->frame_loaded = true;
 
     // Set pts values
     struct buffered_video_surface *bv = vc->buffered_video;
-    int idx = vc->deint_queue_pos >> 1;
+    int idx = dqp >> 1;
     if (idx == 0) {  // no future frame/pts available
         vo->next_pts = bv[0].pts;
         vo->next_pts2 = MP_NOPTS_VALUE;
@@ -314,7 +332,7 @@ static void get_buffered_frame(struct vo *vo, bool eof)
             intermediate_pts = (bv[idx].pts + bv[idx - 1].pts) / 2;
         else
             intermediate_pts =  bv[idx].pts;
-        if (vc->deint_queue_pos & 1) { // first field
+        if (dqp & 1) { // first field
             vo->next_pts = bv[idx].pts;
             vo->next_pts2 = intermediate_pts;
         } else {
@@ -322,8 +340,6 @@ static void get_buffered_frame(struct vo *vo, bool eof)
             vo->next_pts2 = bv[idx - 1].pts;
         }
     }
-
-    video_to_output_surface(vo);
 }
 
 static void add_new_video_surface(struct vo *vo, VdpVideoSurface surface,
@@ -345,8 +361,9 @@ static void add_new_video_surface(struct vo *vo, VdpVideoSurface surface,
         .pts = pts,
     };
 
-    vc->deint_queue_pos += 2;
-    get_buffered_frame(vo, false);
+    vc->deint_queue_pos = FFMIN(vc->deint_queue_pos + 2,
+                                NUM_BUFFERED_VIDEO * 2 - 3);
+    set_next_frame_info(vo, false);
 }
 
 static void forget_frames(struct vo *vo)
@@ -394,18 +411,20 @@ static void resize(struct vo *vo)
     int flip_offset_ms = vo_fs ? vc->flip_offset_fs : vc->flip_offset_window;
     vo->flip_queue_offset = flip_offset_ms / 1000.;
 
-    bool had_frames = vc->num_shown_frames;
-    if (vc->output_surface_width < vo->dwidth
-        || vc->output_surface_height < vo->dheight) {
-        if (vc->output_surface_width < vo->dwidth) {
+    int min_output_width = FFMAX(vo->dwidth, vc->vid_width);
+    int min_output_height = FFMAX(vo->dheight, vc->vid_height);
+
+    if (vc->output_surface_width < min_output_width
+        || vc->output_surface_height < min_output_height) {
+        if (vc->output_surface_width < min_output_width) {
             vc->output_surface_width += vc->output_surface_width >> 1;
             vc->output_surface_width = FFMAX(vc->output_surface_width,
-                                             vo->dwidth);
+                                             min_output_width);
         }
-        if (vc->output_surface_height < vo->dheight) {
+        if (vc->output_surface_height < min_output_height) {
             vc->output_surface_height += vc->output_surface_height >> 1;
             vc->output_surface_height = FFMAX(vc->output_surface_height,
-                                              vo->dheight);
+                                              min_output_height);
         }
         // Creation of output_surfaces
         for (i = 0; i <= vc->num_output_surfaces; i++) {
@@ -415,7 +434,7 @@ static void resize(struct vo *vo)
                                  "vdp_output_surface_destroy");
             }
             vdp_st = vdp->output_surface_create(vc->vdp_device,
-                                                VDP_RGBA_FORMAT_B8G8R8A8,
+                                                OUTPUT_RGBA_FORMAT,
                                                 vc->output_surface_width,
                                                 vc->output_surface_height,
                                                 &vc->output_surfaces[i]);
@@ -423,11 +442,8 @@ static void resize(struct vo *vo)
             mp_msg(MSGT_VO, MSGL_DBG2, "vdpau out create: %u\n",
                    vc->output_surfaces[i]);
         }
-        vc->num_shown_frames = 0;
     }
-    if (vc->paused && had_frames)
-        if (video_to_output_surface(vo) >= 0)
-            flip_page_timed(vo, 0, -1);
+    vo->want_redraw = true;
 }
 
 static void preemption_callback(VdpDevice device, void *context)
@@ -574,33 +590,16 @@ static int set_video_attribute(struct vdpctx *vc, VdpVideoMixerAttribute attr,
 static void update_csc_matrix(struct vo *vo)
 {
     struct vdpctx *vc = vo->priv;
-    struct vdp_functions *vdp = vc->vdp;
-    VdpStatus vdp_st;
 
-    const VdpColorStandard vdp_colors[] = {VDP_COLOR_STANDARD_ITUR_BT_601,
-                                           VDP_COLOR_STANDARD_ITUR_BT_709,
-                                           VDP_COLOR_STANDARD_SMPTE_240M};
-    char * const vdp_names[] = {"BT.601", "BT.709", "SMPTE-240M"};
-    int csp = vc->colorspace;
-    mp_msg(MSGT_VO, MSGL_V, "[vdpau] Updating CSC matrix for %s\n",
-           vdp_names[csp]);
+    mp_msg(MSGT_VO, MSGL_V, "[vdpau] Updating CSC matrix\n");
 
+    // VdpCSCMatrix happens to be compatible with mplayer's CSC matrix type
+    // both are float[3][4]
     VdpCSCMatrix matrix;
-    vdp_st = vdp->generate_csc_matrix(&vc->procamp, vdp_colors[csp], &matrix);
-    CHECK_ST_WARNING("Error when generating CSC matrix");
 
-    if (vc->studio_levels) {
-        /* Modify matrix to change output range from 0..255 to 16..235.
-         * Clipping limits can't be changed, so out-of-range results that
-         * would have been clipped to 0 or 255 before can still go below
-         * 16 or above 235.
-         */
-        for (int i = 0; i < 3; i++) {
-            for (int j = 0; j < 4; j++)
-                matrix[i][j] *= 220. / 256;
-            matrix[i][3] += 16. / 256;
-        }
-    }
+    struct mp_csp_params cparams = { .colorspace = vc->colorspace };
+    mp_csp_copy_equalizer_values(&cparams, &vc->video_eq);
+    mp_get_yuv2rgb_coeffs(&cparams, matrix);
 
     set_video_attribute(vc, VDP_VIDEO_MIXER_ATTRIBUTE_CSC_MATRIX,
                         &matrix, "CSC matrix");
@@ -826,7 +825,6 @@ static void mark_vdpau_objects_uninitialized(struct vo *vo)
     };
     vc->output_surface_width = vc->output_surface_height = -1;
     vc->eosd_render_count = 0;
-    vc->num_shown_frames = 0;
 }
 
 static int handle_preemption(struct vo *vo)
@@ -865,7 +863,7 @@ static int handle_preemption(struct vo *vo)
  */
 static int config(struct vo *vo, uint32_t width, uint32_t height,
                   uint32_t d_width, uint32_t d_height, uint32_t flags,
-                  char *title, uint32_t format)
+                  uint32_t format)
 {
     struct vdpctx *vc = vo->priv;
     struct vo_x11_state *x11 = vo->x11;
@@ -886,10 +884,9 @@ static int config(struct vo *vo, uint32_t width, uint32_t height,
     vc->image_format = format;
     vc->vid_width    = width;
     vc->vid_height   = height;
-    if (vc->user_colorspace == 0)
-        vc->colorspace = width >= 1280 || height > 576 ? 1 : 0;
-    else
-        vc->colorspace = vc->user_colorspace - 1;
+    vc->vid_d_width    = d_width;
+    vc->vid_d_height   = d_height;
+
     free_video_specific(vo);
     if (IMGFMT_IS_VDPAU(vc->image_format) && !create_vdp_decoder(vo, 2))
         return -1;
@@ -914,7 +911,7 @@ static int config(struct vo *vo, uint32_t width, uint32_t height,
     xswamask = CWBorderPixel;
 
     vo_x11_create_vo_window(vo, &vinfo, vo->dx, vo->dy, d_width, d_height,
-                            flags, CopyFromParent, "vdpau", title);
+                            flags, CopyFromParent, "vdpau");
     XChangeWindowAttributes(x11->display, x11->window, xswamask, &xswa);
 
 #ifdef CONFIG_XF86VM
@@ -939,9 +936,6 @@ static int config(struct vo *vo, uint32_t width, uint32_t height,
 
 static void check_events(struct vo *vo)
 {
-    struct vdpctx *vc = vo->priv;
-    struct vdp_functions *vdp = vc->vdp;
-
     if (handle_preemption(vo) < 0)
         return;
 
@@ -949,19 +943,8 @@ static void check_events(struct vo *vo)
 
     if (e & VO_EVENT_RESIZE)
         resize(vo);
-    else if (e & VO_EVENT_EXPOSE && vc->paused) {
-        /* did we already draw a buffer */
-        if (vc->num_shown_frames) {
-            /* redraw the last visible buffer */
-            VdpStatus vdp_st;
-            int last_surface = WRAP_ADD(vc->surface_num, -1,
-                                        vc->num_output_surfaces);
-            vdp_st = vdp->presentation_queue_display(vc->flip_queue,
-                                         vc->output_surfaces[last_surface],
-                                         vo->dwidth, vo->dheight, 0);
-            CHECK_ST_WARNING("Error when calling "
-                             "vdp_presentation_queue_display");
-        }
+    else if (e & VO_EVENT_EXPOSE) {
+        vo->want_redraw = true;
     }
 }
 
@@ -1402,7 +1385,6 @@ static void flip_page_timed(struct vo *vo, unsigned int pts_us, int duration)
     vc->last_ideal_time = ideal_pts;
     vc->dropped_frame = false;
     vc->surface_num = WRAP_ADD(vc->surface_num, 1, vc->num_output_surfaces);
-    vc->num_shown_frames = FFMIN(vc->num_shown_frames + 1, 1000);
 }
 
 static int draw_slice(struct vo *vo, uint8_t *image[], int stride[], int w,
@@ -1495,6 +1477,56 @@ static void draw_image(struct vo *vo, mp_image_t *mpi, double pts)
     add_new_video_surface(vo, rndr->surface, reserved_mpi, pts);
 
     return;
+}
+
+// warning: the size and pixel format of surface must match that of the
+//          surfaces in vc->output_surfaces
+static struct mp_image *read_output_surface(struct vdpctx *vc,
+                                            VdpOutputSurface surface)
+{
+    VdpStatus vdp_st;
+    struct vdp_functions *vdp = vc->vdp;
+    struct mp_image *image = alloc_mpi(vc->output_surface_width,
+                                       vc->output_surface_height, IMGFMT_BGR32);
+
+    void *dst_planes[] = { image->planes[0] };
+    uint32_t dst_pitches[] = { image->stride[0] };
+    vdp_st = vdp->output_surface_get_bits_native(surface, NULL, dst_planes,
+                                                 dst_pitches);
+    CHECK_ST_WARNING("Error when calling vdp_output_surface_get_bits_native");
+
+    return image;
+}
+
+static struct mp_image *get_screenshot(struct vo *vo)
+{
+    struct vdpctx *vc = vo->priv;
+
+    VdpOutputSurface screenshot_surface =
+        vc->output_surfaces[vc->num_output_surfaces];
+
+    VdpRect rc = { .x1 = vc->vid_width, .y1 = vc->vid_height };
+    render_video_to_output_surface(vo, screenshot_surface, &rc);
+
+    struct mp_image *image = read_output_surface(vc, screenshot_surface);
+
+    image->width = vc->vid_width;
+    image->height = vc->vid_height;
+    image->w = vc->vid_d_width;
+    image->h = vc->vid_d_height;
+
+    return image;
+}
+
+static struct mp_image *get_window_screenshot(struct vo *vo)
+{
+    struct vdpctx *vc = vo->priv;
+    int last_surface = WRAP_ADD(vc->surface_num, -1, vc->num_output_surfaces);
+    VdpOutputSurface screen = vc->output_surfaces[last_surface];
+    struct mp_image *image = read_output_surface(vo->priv, screen);
+    image->width = image->w = vo->dwidth;
+    image->height = image->h = vo->dheight;
+    return image;
 }
 
 static uint32_t get_image(struct vo *vo, mp_image_t *mpi)
@@ -1607,6 +1639,8 @@ static void uninit(struct vo *vo)
 static int preinit(struct vo *vo, const char *arg)
 {
     int i;
+    int user_colorspace = 0;
+    int studio_levels = 0;
 
     struct vdpctx *vc = talloc_zero(vo, struct vdpctx);
     vo->priv = vc;
@@ -1615,20 +1649,21 @@ static int preinit(struct vo *vo, const char *arg)
     // allocated
     mark_vdpau_objects_uninitialized(vo);
 
+    vc->colorspace = (struct mp_csp_details) MP_CSP_DETAILS_DEFAULTS;
     vc->deint_type = 3;
     vc->chroma_deint = 1;
-    vc->user_colorspace = 1;
     vc->flip_offset_window = 50;
     vc->flip_offset_fs = 50;
     vc->num_output_surfaces = 3;
+    vc->video_eq.capabilities = MP_CSP_EQ_CAPS_COLORMATRIX;
     const opt_t subopts[] = {
         {"deint",   OPT_ARG_INT,   &vc->deint,   NULL},
         {"chroma-deint", OPT_ARG_BOOL,  &vc->chroma_deint,  NULL},
         {"pullup",  OPT_ARG_BOOL,  &vc->pullup,  NULL},
         {"denoise", OPT_ARG_FLOAT, &vc->denoise, NULL},
         {"sharpen", OPT_ARG_FLOAT, &vc->sharpen, NULL},
-        {"colorspace", OPT_ARG_INT, &vc->user_colorspace, NULL},
-        {"studio", OPT_ARG_BOOL, &vc->studio_levels, NULL},
+        {"colorspace", OPT_ARG_INT, &user_colorspace, NULL},
+        {"studio", OPT_ARG_BOOL, &studio_levels, NULL},
         {"hqscaling", OPT_ARG_INT, &vc->hqscaling, NULL},
         {"fps",     OPT_ARG_FLOAT, &vc->user_fps, NULL},
         {"queuetime_windowed", OPT_ARG_INT, &vc->flip_offset_window, NULL},
@@ -1648,6 +1683,12 @@ static int preinit(struct vo *vo, const char *arg)
     if (vc->num_output_surfaces < 2) {
         mp_msg(MSGT_VO, MSGL_FATAL, "[vdpau] Invalid suboption "
                "output_surfaces: can't use less than 2 surfaces\n");
+        return -1;
+    }
+    if (user_colorspace != 0 || studio_levels != 0) {
+        mp_msg(MSGT_VO, MSGL_ERR, "[vdpau] \"colorspace\" and \"studio\""
+               " suboptions have been removed. Use options --colormatrix and"
+               " --colormatrix-output-range=limited instead.\n");
         return -1;
     }
     if (vc->num_output_surfaces > MAX_OUTPUT_SURFACES) {
@@ -1676,30 +1717,14 @@ static int preinit(struct vo *vo, const char *arg)
     for (i = 0; i < PALETTE_SIZE; ++i)
         vc->palette[i] = (i << 16) | (i << 8) | i;
 
-    vc->procamp.struct_version = VDP_PROCAMP_VERSION;
-    vc->procamp.brightness = 0.0;
-    vc->procamp.contrast   = 1.0;
-    vc->procamp.saturation = 1.0;
-    vc->procamp.hue        = 0.0;
-
     return 0;
 }
 
 static int get_equalizer(struct vo *vo, const char *name, int *value)
 {
     struct vdpctx *vc = vo->priv;
-
-    if (!strcasecmp(name, "brightness"))
-        *value = vc->procamp.brightness * 100;
-    else if (!strcasecmp(name, "contrast"))
-        *value = (vc->procamp.contrast - 1.0) * 100;
-    else if (!strcasecmp(name, "saturation"))
-        *value = (vc->procamp.saturation - 1.0) * 100;
-    else if (!strcasecmp(name, "hue"))
-        *value = vc->procamp.hue * 100 / M_PI;
-    else
-        return VO_NOTIMPL;
-    return VO_TRUE;
+    return mp_csp_equalizer_get(&vc->video_eq, name, value) >= 0 ?
+           VO_TRUE : VO_NOTIMPL;
 }
 
 static bool status_ok(struct vo *vo)
@@ -1713,15 +1738,7 @@ static int set_equalizer(struct vo *vo, const char *name, int value)
 {
     struct vdpctx *vc = vo->priv;
 
-    if (!strcasecmp(name, "brightness"))
-        vc->procamp.brightness = value / 100.0;
-    else if (!strcasecmp(name, "contrast"))
-        vc->procamp.contrast = value / 100.0 + 1.0;
-    else if (!strcasecmp(name, "saturation"))
-        vc->procamp.saturation = value / 100.0 + 1.0;
-    else if (!strcasecmp(name, "hue"))
-        vc->procamp.hue = value / 100.0 * M_PI;
-    else
+    if (mp_csp_equalizer_set(&vc->video_eq, name, value) < 0)
         return VO_NOTIMPL;
 
     if (status_ok(vo))
@@ -1763,13 +1780,12 @@ static int control(struct vo *vo, uint32_t request, void *data)
                                                           feature_enables);
             CHECK_ST_WARNING("Error changing deinterlacing settings");
         }
+        vo->want_redraw = true;
         return VO_TRUE;
     case VOCTRL_PAUSE:
         if (vc->dropped_frame)
             flip_page_timed(vo, 0, -1);
-        return (vc->paused = true);
-    case VOCTRL_RESUME:
-        return (vc->paused = false);
+        return true;
     case VOCTRL_QUERY_FORMAT:
         return query_format(*(uint32_t *)data);
     case VOCTRL_GET_IMAGE:
@@ -1790,6 +1806,7 @@ static int control(struct vo *vo, uint32_t request, void *data)
         checked_resize(vo);
         return VO_TRUE;
     case VOCTRL_SET_EQUALIZER: {
+        vo->want_redraw = true;
         struct voctrl_set_equalizer_args *args = data;
         return set_equalizer(vo, args->name, args->value);
     }
@@ -1798,12 +1815,13 @@ static int control(struct vo *vo, uint32_t request, void *data)
         return get_equalizer(vo, args->name, args->valueptr);
     }
     case VOCTRL_SET_YUV_COLORSPACE:
-        vc->colorspace = *(int *)data % 3;
+        vc->colorspace = *(struct mp_csp_details *)data;
         if (status_ok(vo))
             update_csc_matrix(vo);
+        vo->want_redraw = true;
         return true;
     case VOCTRL_GET_YUV_COLORSPACE:
-        *(int *)data = vc->colorspace;
+        *(struct mp_csp_details *)data = vc->colorspace;
         return true;
     case VOCTRL_ONTOP:
         vo_x11_ontop(vo);
@@ -1825,15 +1843,27 @@ static int control(struct vo *vo, uint32_t request, void *data)
         r->mt = r->mb = vc->border_y;
         return VO_TRUE;
     }
-    case VOCTRL_REDRAW_OSD:
+    case VOCTRL_NEWFRAME:
+        vc->deint_queue_pos = next_deint_queue_pos(vo, true);
         video_to_output_surface(vo);
-        draw_eosd(vo);
-        draw_osd(vo, data);
-        flip_page_timed(vo, 0, -1);
+        return true;
+    case VOCTRL_SKIPFRAME:
+        vc->deint_queue_pos = next_deint_queue_pos(vo, true);
+        return true;
+    case VOCTRL_REDRAW_FRAME:
+        video_to_output_surface(vo);
         return true;
     case VOCTRL_RESET:
         forget_frames(vo);
         return true;
+    case VOCTRL_SCREENSHOT: {
+        struct voctrl_screenshot_args *args = data;
+        if (args->full_window)
+            args->out_image = get_window_screenshot(vo);
+        else
+            args->out_image = get_screenshot(vo);
+        return true;
+    }
     }
     return VO_NOTIMPL;
 }
@@ -1851,7 +1881,7 @@ const struct vo_driver video_out_vdpau = {
     .config = config,
     .control = control,
     .draw_image = draw_image,
-    .get_buffered_frame = get_buffered_frame,
+    .get_buffered_frame = set_next_frame_info,
     .draw_slice = draw_slice,
     .draw_osd = draw_osd,
     .flip_page_timed = flip_page_timed,
