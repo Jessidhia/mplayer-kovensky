@@ -589,18 +589,21 @@ static void genEOSD(struct vo *vo, mp_eosd_images_t *imgs)
                         p->eosd->targets_count * VERTICES_PER_QUAD);
 }
 
-// Note: relies on state being setup, like projection matrix and blending
-static void drawEOSD(struct vo *vo)
+static void draw_eosd(struct vo *vo, mp_eosd_images_t *imgs)
 {
     struct gl_priv *p = vo->priv;
     GL *gl = p->gl;
 
+    genEOSD(vo, imgs);
+
     if (p->eosd->targets_count == 0)
         return;
 
+    gl->Enable(GL_BLEND);
     gl->BindTexture(GL_TEXTURE_2D, p->eosd_texture);
     vertex_array_draw(gl, &p->va_eosd);
     gl->BindTexture(GL_TEXTURE_2D, 0);
+    gl->Disable(GL_BLEND);
 }
 
 // Free video resources etc.
@@ -817,10 +820,11 @@ static int initGL(struct vo *vo)
                             "GL_VERSION='%s'\n", renderer, vendor, version);
 
     gl->Disable(GL_BLEND);
+    gl->BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     gl->Disable(GL_DEPTH_TEST);
     gl->DepthMask(GL_FALSE);
     gl->Disable(GL_CULL_FACE);
-    gl->DrawBuffer(vo_doublebuffering ? GL_BACK : GL_FRONT);
+    gl->DrawBuffer(GL_BACK);
 
     GLint max_texture_size;
     gl->GetIntegerv(GL_MAX_TEXTURE_SIZE, &max_texture_size);
@@ -1034,45 +1038,6 @@ static void create_osd_texture(void *ctx, int x0, int y0, int w, int h,
     p->osdtexCnt++;
 }
 
-#define RENDER_OSD  1
-#define RENDER_EOSD 2
-
-/**
- * \param type bit 0: render OSD, bit 1: render EOSD
- */
-static void do_render_osd(struct vo *vo, int type)
-{
-    struct gl_priv *p = vo->priv;
-    GL *gl = p->gl;
-
-    int draw_osd  = (type & RENDER_OSD) && p->osdtexCnt > 0;
-    int draw_eosd = (type & RENDER_EOSD);
-    if (!draw_osd && !draw_eosd)
-        return;
-
-    gl->Enable(GL_BLEND);
-    gl->BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    if (draw_eosd) {
-        drawEOSD(vo);
-    }
-    if (draw_osd) {
-        gl->UseProgram(p->va_osd.program);
-        gl->BindVertexArray(p->va_osd.vao);
-
-        for (int n = 0; n < p->osdtexCnt; n++) {
-            gl->BindTexture(GL_TEXTURE_2D, p->osdtex[n]);
-            gl->DrawArrays(GL_TRIANGLES, n * VERTICES_PER_QUAD,
-                           VERTICES_PER_QUAD);
-        }
-
-        gl->BindVertexArray(0);
-        gl->UseProgram(0);
-    }
-    // set rendering parameters back to defaults
-    gl->Disable(GL_BLEND);
-    gl->BindTexture(GL_TEXTURE_2D, 0);
-}
-
 static void draw_osd(struct vo *vo, struct osd_state *osd)
 {
     struct gl_priv *p = vo->priv;
@@ -1087,8 +1052,25 @@ static void draw_osd(struct vo *vo, struct osd_state *osd)
         vertex_array_upload(gl, &p->va_osd, &p->osd_va[0],
                             p->osdtexCnt * VERTICES_PER_QUAD);
     }
-    if (vo_doublebuffering)
-        do_render_osd(vo, RENDER_OSD);
+
+    if (p->osdtexCnt > 0) {
+        gl->Enable(GL_BLEND);
+
+        gl->UseProgram(p->va_osd.program);
+        gl->BindVertexArray(p->va_osd.vao);
+
+        for (int n = 0; n < p->osdtexCnt; n++) {
+            gl->BindTexture(GL_TEXTURE_2D, p->osdtex[n]);
+            gl->DrawArrays(GL_TRIANGLES, n * VERTICES_PER_QUAD,
+                           VERTICES_PER_QUAD);
+        }
+
+        gl->BindVertexArray(0);
+        gl->UseProgram(0);
+
+        gl->Disable(GL_BLEND);
+        gl->BindTexture(GL_TEXTURE_2D, 0);
+    }
 }
 
 static void do_render(struct vo *vo)
@@ -1150,20 +1132,11 @@ static void flip_page(struct vo *vo)
     struct gl_priv *p = vo->priv;
     GL *gl = p->gl;
 
-    if (vo_doublebuffering) {
-        if (p->use_glFinish)
-            gl->Finish();
-        p->glctx->swapGlBuffers(p->glctx);
-        if (aspect_scaling())
-            gl->Clear(GL_COLOR_BUFFER_BIT);
-    } else {
-        do_render(vo);
-        do_render_osd(vo, RENDER_OSD | RENDER_EOSD);
-        if (p->use_glFinish)
-            gl->Finish();
-        else
-            gl->Flush();
-    }
+    if (p->use_glFinish)
+        gl->Finish();
+    p->glctx->swapGlBuffers(p->glctx);
+    if (aspect_scaling())
+        gl->Clear(GL_COLOR_BUFFER_BIT);
 }
 
 static int draw_slice(struct vo *vo, uint8_t *src[], int stride[], int w, int h,
@@ -1267,8 +1240,7 @@ static uint32_t draw_image(struct vo *vo, mp_image_t *mpi)
     gl->ActiveTexture(GL_TEXTURE0);
     gl->BindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 skip_upload:
-    if (vo_doublebuffering)
-        do_render(vo);
+    do_render(vo);
     return VO_TRUE;
 }
 
@@ -1536,9 +1508,7 @@ static int control(struct vo *vo, uint32_t request, void *data)
     case VOCTRL_DRAW_EOSD:
         if (!data)
             return VO_FALSE;
-        genEOSD(vo, data);
-        if (vo_doublebuffering)
-            do_render_osd(vo, RENDER_EOSD);
+        draw_eosd(vo, data);
         return VO_TRUE;
     case VOCTRL_GET_EOSD_RES: {
         mp_eosd_res_t *r = data;
@@ -1609,8 +1579,7 @@ static int control(struct vo *vo, uint32_t request, void *data)
         return true;
     }
     case VOCTRL_REDRAW_FRAME:
-        if (vo_doublebuffering)
-            do_render(vo);
+        do_render(vo);
         return true;
     }
     return VO_NOTIMPL;
