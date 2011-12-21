@@ -538,10 +538,8 @@ static void genEOSD(struct vo *vo, mp_eosd_images_t *imgs)
     if (!need_repos)
         return;
 
-    if (!p->eosd_texture) {
+    if (!p->eosd_texture)
         gl->GenTextures(1, &p->eosd_texture);
-        need_allocate = true;
-    }
 
     gl->BindTexture(GL_TEXTURE_2D, p->eosd_texture);
 
