@@ -473,6 +473,7 @@ static const extfunc_desc_t extfuncs[] = {
     DEF_GL3_DESC(GetProgramInfoLog),
     DEF_GL3_DESC(GetProgramiv),
     DEF_GL3_DESC(GetStringi),
+    DEF_GL3_DESC(BindAttribLocation),
     DEF_GL3_DESC(Uniform1f),
     DEF_GL3_DESC(Uniform3f),
     DEF_GL3_DESC(Uniform1i),

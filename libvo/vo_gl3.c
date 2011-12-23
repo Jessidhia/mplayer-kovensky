@@ -105,6 +105,10 @@ struct vertex {
     float texcoord[2];
 };
 
+#define VERTEX_ATTRIB_POSITION 0
+#define VERTEX_ATTRIB_COLOR 1
+#define VERTEX_ATTRIB_TEXCOORD 2
+
 #define VERTICES_PER_QUAD 6
 
 struct texplane {
@@ -240,7 +244,6 @@ static bool can_use_filter_kernel(struct filter_kernel *kernel)
 static void vertex_array_init(GL *gl, struct vertex_array * va, GLuint program)
 {
     size_t stride = sizeof(struct vertex);
-    GLint loc;
 
     *va = (struct vertex_array) { .program = program };
 
@@ -250,26 +253,17 @@ static void vertex_array_init(GL *gl, struct vertex_array * va, GLuint program)
     gl->BindBuffer(GL_ARRAY_BUFFER, va->buffer);
     gl->BindVertexArray(va->vao);
 
-    loc = gl->GetAttribLocation(program, "vertex_position");
-    if (loc >= 0) {
-        gl->EnableVertexAttribArray(loc);
-        gl->VertexAttribPointer(loc, 2, GL_FLOAT, GL_FALSE, stride,
-                                (void*)offsetof(struct vertex, position));
-    }
+    gl->EnableVertexAttribArray(VERTEX_ATTRIB_POSITION);
+    gl->VertexAttribPointer(VERTEX_ATTRIB_POSITION, 2, GL_FLOAT, GL_FALSE,
+                            stride, (void*)offsetof(struct vertex, position));
 
-    loc = gl->GetAttribLocation(program, "vertex_color");
-    if (loc >= 0) {
-        gl->EnableVertexAttribArray(loc);
-        gl->VertexAttribPointer(loc, 4, GL_UNSIGNED_BYTE, GL_TRUE, stride,
-                                (void*)offsetof(struct vertex, color));
-    }
+    gl->EnableVertexAttribArray(VERTEX_ATTRIB_COLOR);
+    gl->VertexAttribPointer(VERTEX_ATTRIB_COLOR, 4, GL_UNSIGNED_BYTE, GL_TRUE,
+                            stride, (void*)offsetof(struct vertex, color));
 
-    loc = gl->GetAttribLocation(program, "vertex_texcoord");
-    if (loc >= 0) {
-        gl->EnableVertexAttribArray(loc);
-        gl->VertexAttribPointer(loc, 2, GL_FLOAT, GL_FALSE, stride,
-                                (void*)offsetof(struct vertex, texcoord));
-    }
+    gl->EnableVertexAttribArray(VERTEX_ATTRIB_TEXCOORD);
+    gl->VertexAttribPointer(VERTEX_ATTRIB_TEXCOORD, 2, GL_FLOAT, GL_FALSE,
+                            stride, (void*)offsetof(struct vertex, texcoord));
 
     gl->BindBuffer(GL_ARRAY_BUFFER, 0);
     gl->BindVertexArray(0);
@@ -643,18 +637,26 @@ static void draw_eosd(struct vo *vo, mp_eosd_images_t *imgs)
     gl->Disable(GL_BLEND);
 }
 
+static void delete_shaders(struct vo *vo)
+{
+    struct gl_priv *p = vo->priv;
+    GL *gl = p->gl;
+
+    gl->DeleteProgram(p->va_osd.program);
+    p->va_osd.program = 0;
+    gl->DeleteProgram(p->va_eosd.program);
+    p->va_eosd.program = 0;
+    gl->DeleteProgram(p->va_video.program);
+    p->va_video.program = 0;
+}
+
 // Free video resources etc.
 static void uninitVideo(struct vo *vo)
 {
     struct gl_priv *p = vo->priv;
     GL *gl = p->gl;
 
-    gl->DeleteProgram(p->va_osd.program);
-    gl->DeleteProgram(p->va_eosd.program);
-    gl->DeleteProgram(p->va_video.program);
-    vertex_array_uninit(gl, &p->va_osd);
-    vertex_array_uninit(gl, &p->va_eosd);
-    vertex_array_uninit(gl, &p->va_video);
+    delete_shaders(vo);
 
     for (int n = 0; n < 2; n++) {
         gl->DeleteTextures(1, &p->scalers->gl_lut);
@@ -682,6 +684,10 @@ static void uninitGL(struct vo *vo)
     GL *gl = p->gl;
 
     uninitVideo(vo);
+
+    vertex_array_uninit(gl, &p->va_osd);
+    vertex_array_uninit(gl, &p->va_eosd);
+    vertex_array_uninit(gl, &p->va_video);
 
     clearOSD(vo);
     gl->DeleteTextures(1, &p->eosd_texture);
@@ -771,6 +777,13 @@ static void prog_create_shader(GL *gl, GLuint program, GLenum type,
     gl->DeleteShader(shader);
 }
 
+static void bind_attrib_locs(GL *gl, GLuint program)
+{
+    gl->BindAttribLocation(program, VERTEX_ATTRIB_POSITION, "vertex_position");
+    gl->BindAttribLocation(program, VERTEX_ATTRIB_COLOR, "vertex_color");
+    gl->BindAttribLocation(program, VERTEX_ATTRIB_TEXCOORD, "vertex_texcoord");
+}
+
 static void link_shader(GL *gl, GLuint program)
 {
     gl->LinkProgram(program);
@@ -794,6 +807,7 @@ static GLuint create_program(GL *gl, const char *header, const char *vertex,
     GLuint prog = gl->CreateProgram();
     prog_create_shader(gl, prog, GL_VERTEX_SHADER, header, vertex);
     prog_create_shader(gl, prog, GL_FRAGMENT_SHADER, header, frag);
+    bind_attrib_locs(gl, prog);
     link_shader(gl, prog);
     return prog;
 }
@@ -845,17 +859,19 @@ static void compile_shaders(struct vo *vo)
 
     header = talloc_asprintf(tmp, "%s%s", shader_prelude, header);
 
-    vertex_array_init(gl, &p->va_eosd,
-        create_program(gl, header, vertex_shader,
-            get_section(tmp, src, "frag_eosd")));
+    delete_shaders(vo);
 
-    vertex_array_init(gl, &p->va_osd,
+    p->va_eosd.program =
         create_program(gl, header, vertex_shader,
-            get_section(tmp, src, "frag_osd")));
+            get_section(tmp, src, "frag_eosd"));
 
-    vertex_array_init(gl, &p->va_video,
+    p->va_osd.program =
         create_program(gl, header, vertex_shader,
-            get_section(tmp, src, "frag_video")));
+            get_section(tmp, src, "frag_osd"));
+
+    p->va_video.program =
+        create_program(gl, header, vertex_shader,
+            get_section(tmp, src, "frag_video"));
 
     glCheckError(gl, "shader compilation");
 
@@ -898,6 +914,10 @@ static int initGL(struct vo *vo)
     gl->DepthMask(GL_FALSE);
     gl->Disable(GL_CULL_FACE);
     gl->DrawBuffer(GL_BACK);
+
+    vertex_array_init(gl, &p->va_eosd, 0);
+    vertex_array_init(gl, &p->va_osd, 0);
+    vertex_array_init(gl, &p->va_video, 0);
 
     GLint max_texture_size;
     gl->GetIntegerv(GL_MAX_TEXTURE_SIZE, &max_texture_size);

@@ -547,6 +547,7 @@ struct GL {
     void (GLAPIENTRY *GetProgramInfoLog)(GLuint, GLsizei, GLsizei *, GLchar *);
     void (GLAPIENTRY *GetProgramiv)(GLenum, GLenum, GLint *);
     const GLubyte* (GLAPIENTRY *GetStringi)(GLenum, GLuint);
+    void (GLAPIENTRY *BindAttribLocation)(GLuint, GLuint, const GLchar *);
 
     void (GLAPIENTRY *Uniform1f)(GLint, GLfloat);
     void (GLAPIENTRY *Uniform3f)(GLint, GLfloat, GLfloat, GLfloat);
