@@ -53,10 +53,11 @@ void main() {
 uniform sampler2D texture1;
 
 in vec2 texcoord;
+in vec4 color;
 out vec4 out_color;
 
 void main() {
-    out_color = texture(texture1, texcoord).rrrg;
+    out_color = texture(texture1, texcoord).rrrg * color;
 }
 
 #!section frag_shader_video

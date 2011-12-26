@@ -598,6 +598,7 @@ static void draw_eosd(struct vo *vo, mp_eosd_images_t *imgs)
         return;
 
     gl->Enable(GL_BLEND);
+    gl->BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     gl->BindTexture(GL_TEXTURE_2D, p->eosd_texture);
     vertex_array_draw(gl, &p->va_eosd);
     gl->BindTexture(GL_TEXTURE_2D, 0);
@@ -818,7 +819,6 @@ static int initGL(struct vo *vo)
                             "GL_VERSION='%s'\n", renderer, vendor, version);
 
     gl->Disable(GL_BLEND);
-    gl->BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     gl->Disable(GL_DEPTH_TEST);
     gl->DepthMask(GL_FALSE);
     gl->Disable(GL_CULL_FACE);
@@ -1053,6 +1053,8 @@ static void draw_osd(struct vo *vo, struct osd_state *osd)
 
     if (p->osdtexCnt > 0) {
         gl->Enable(GL_BLEND);
+        // OSD bitmaps use premultiplied alpha.
+        gl->BlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 
         gl->UseProgram(p->va_osd.program);
         gl->BindVertexArray(p->va_osd.vao);
