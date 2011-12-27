@@ -46,7 +46,7 @@ in vec4 color;
 out vec4 out_color;
 
 void main() {
-    out_color = vec4(color.rgb, texture(texture1, texcoord).r);
+    out_color = vec4(color.rgb, color.a * texture(texture1, texcoord).r);
 }
 
 #!section frag_shader_osd
