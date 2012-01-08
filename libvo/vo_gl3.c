@@ -152,6 +152,7 @@ struct gl_priv {
     //! Textures for OSD
     GLuint osdtex[MAX_OSD_PARTS];
     GLuint eosd_texture;
+    GLuint eosd_buffer;
     int eosd_texture_width, eosd_texture_height;
     struct eosd_packer *eosd;
     struct vertex *eosd_va;
@@ -538,8 +539,10 @@ static void genEOSD(struct vo *vo, mp_eosd_images_t *imgs)
     if (!need_repos)
         return;
 
-    if (!p->eosd_texture)
+    if (!p->eosd_texture) {
         gl->GenTextures(1, &p->eosd_texture);
+        gl->GenBuffers(1, &p->eosd_buffer);
+    }
 
     gl->BindTexture(GL_TEXTURE_2D, p->eosd_texture);
 
@@ -550,6 +553,12 @@ static void genEOSD(struct vo *vo, mp_eosd_images_t *imgs)
         glCreateClearTex(gl, GL_TEXTURE_2D, GL_RED, GL_RED,
                          GL_UNSIGNED_BYTE, GL_NEAREST,
                          p->eosd_texture_width, p->eosd_texture_height, 0);
+        gl->BindBuffer(GL_PIXEL_UNPACK_BUFFER, p->eosd_buffer);
+        gl->BufferData(GL_PIXEL_UNPACK_BUFFER,
+                       p->eosd->surface.w * p->eosd->surface.h,
+                       NULL,
+                       GL_DYNAMIC_COPY);
+        gl->BindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
     }
 
     // 2 triangles primitives per quad = 6 vertices per quad
@@ -559,16 +568,46 @@ static void genEOSD(struct vo *vo, mp_eosd_images_t *imgs)
                                      * sizeof(struct vertex)
                                      * VERTICES_PER_QUAD);
 
+    if (need_upload) {
+        gl->BindBuffer(GL_PIXEL_UNPACK_BUFFER, p->eosd_buffer);
+        char *data = gl->MapBuffer(GL_PIXEL_UNPACK_BUFFER, GL_WRITE_ONLY);
+        if (!data) {
+            assert(0);
+        } else {
+            for (int n = 0; n < p->eosd->targets_count; n++) {
+                struct eosd_target *target = &p->eosd->targets[n];
+                ASS_Image *i = target->ass_img;
+
+                void *pdata = data + target->source.y0 * p->eosd->surface.w
+                              + target->source.x0;
+
+                memcpy_pic(pdata, i->bitmap, i->w, i->h,
+                           p->eosd->surface.w, i->stride);
+            }
+            gl->UnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
+            struct eosd_rect rc;
+            eosd_packer_calculate_source_bb(p->eosd, &rc);
+            glUploadTex(gl, GL_TEXTURE_2D, GL_RED, GL_UNSIGNED_BYTE, NULL,
+                        p->eosd->surface.w, rc.x0, rc.y0,
+                        rc.x1 - rc.x0, rc.y1 - rc.y0, 0);
+        }
+        gl->BindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+    }
+
+    gl->BindTexture(GL_TEXTURE_2D, 0);
+
+    glCheckError(gl, "EOSD upload");
+
     for (int n = 0; n < p->eosd->targets_count; n++) {
         struct eosd_target *target = &p->eosd->targets[n];
         ASS_Image *i = target->ass_img;
-
+/*
         if (need_upload) {
             glUploadTex(gl, GL_TEXTURE_2D, GL_RED, GL_UNSIGNED_BYTE, i->bitmap,
                         i->stride, target->source.x0, target->source.y0,
                         i->w, i->h, 0);
         }
-
+*/
         uint8_t color[4] = { i->color >> 24, (i->color >> 16) & 0xff,
                             (i->color >> 8) & 0xff, 255 - (i->color & 0xff) };
 
@@ -580,8 +619,6 @@ static void genEOSD(struct vo *vo, mp_eosd_images_t *imgs)
                    p->eosd_texture_width, p->eosd_texture_height,
                    color, false);
     }
-
-    gl->BindTexture(GL_TEXTURE_2D, 0);
 
     vertex_array_upload(gl, &p->va_eosd, p->eosd_va,
                         p->eosd->targets_count * VERTICES_PER_QUAD);
@@ -647,6 +684,7 @@ static void uninitGL(struct vo *vo)
 
     clearOSD(vo);
     gl->DeleteTextures(1, &p->eosd_texture);
+    gl->DeleteBuffers(1, &p->eosd_buffer);
     eosd_packer_reinit(p->eosd, 0, 0);
     p->eosd_texture = 0;
 }
