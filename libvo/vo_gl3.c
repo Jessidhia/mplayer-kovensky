@@ -146,6 +146,7 @@ struct gl_priv {
     GL *gl;
 
     int gl_debug;
+    int force_gl2;
 
     struct vertex_array va_osd, va_eosd, va_video;
 
@@ -960,7 +961,7 @@ static int create_window(struct vo *vo, uint32_t d_width, uint32_t d_height,
     if (p->stereo_mode == GL_3D_QUADBUFFER)
         flags |= VOFLAG_STEREO;
 
-    int mpgl_version = MPGL_VER(3, 1);
+    int mpgl_version = p->force_gl2 ? MPGL_VER(2, 1) : MPGL_VER(3, 0);
     int mpgl_flags = 0;
     if (p->gl_debug)
         mpgl_flags |= MPGLFLAG_DEBUG;
@@ -1435,6 +1436,7 @@ static int preinit_internal(struct vo *vo, const char *arg, int allow_sw,
         {"lscale",       OPT_ARG_MSTRZ,&lscale,          NULL},
         {"cscale",       OPT_ARG_MSTRZ,&cscale,          NULL},
         {"debug",        OPT_ARG_BOOL, &p->gl_debug,     NULL},
+        {"force-gl2",    OPT_ARG_BOOL, &p->force_gl2,    NULL},
         {NULL}
     };
 
@@ -1486,6 +1488,9 @@ static int preinit_internal(struct vo *vo, const char *arg, int allow_sw,
                "    1: side-by-side to red-cyan stereo\n"
                "    2: side-by-side to green-magenta stereo\n"
                "    3: side-by-side to quadbuffer stereo\n"
+               "  force-gl2\n"
+               "    Create a legacy GL context. This will randomly malfunction\n"
+               "    if the proper extensions are not supported.\n"
                "\n");
         return -1;
     }

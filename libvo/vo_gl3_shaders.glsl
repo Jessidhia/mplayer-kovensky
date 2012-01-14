@@ -21,7 +21,7 @@
 
 #!section shader_prelude
 #!// inserted at the beginning of all shaders
-#version 140
+#version 130
 
 #!section vertex_shader
 uniform mat3 transform;
