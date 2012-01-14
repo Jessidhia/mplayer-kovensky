@@ -74,7 +74,6 @@ static const string2 fixed_scale_filters[] = {
     {"bicubic_fast", "sample_bicubic"},
     {"sharpen3", "sample_unsharp3"},
     {"sharpen5", "sample_unsharp5"},
-    {"lanczos2_slow", "sample_lanczos2_nolookup"},
     {"0", "sample_bilinear"},
     {"1", "sample_bicubic"}, // was bicubic scaling with lookup texture
     {"2", "sample_bicubic"}, // was like 1, but linear in Y direction (faster)

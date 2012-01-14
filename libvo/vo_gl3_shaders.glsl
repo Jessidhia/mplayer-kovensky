@@ -174,39 +174,6 @@ SAMPLE_CONVOLUTION_N(sample_convolution6, 6, sampler2D, convolution6, weights6)
 SAMPLE_CONVOLUTION_N(sample_convolution8, 8, sampler2D, convolution8, weights8)
 
 
-// (assumes -a < x < a, normally the function should be 0 otherwise)
-float lanczos_L(float a, float x) {
-    float pix = 3.1415926 * x;
-    return (x == 0) ? 1 : (a * sin(pix) * sin(pix / a) / (pix * pix));
-}
-
-// Calculate the Lanczos filtering kernel for 4 sample points.
-// f = x0 - abs(x0)
-float[4] lanczos2_weights(float f) {
-    float[4] taps;
-    float sum = 0;
-    float a = 2;
-    for (int n = 0; n < 4; n++) {
-        float x = f - (n - a + 1);
-        taps[n] = lanczos_L(a, x);
-        sum += taps[n];
-    }
-    //normalize
-    for (int n = 0; n < 4; n++)
-        taps[n] /= sum;
-    return taps;
-}
-
-vec4 sample_lanczos2_nolookup(sampler2D tex, vec2 texcoord) {
-    vec2 texsize = textureSize(tex, 0);
-    vec2 pt = 1 / texsize;
-    vec2 fcoord = fract(texcoord * texsize - 0.5);
-    vec2 base = texcoord - fcoord * pt;
-    return convolution4(tex, base - pt, pt,
-                        lanczos2_weights(fcoord.x),
-                        lanczos2_weights(fcoord.y));
-}
-
 vec4 sample_unsharp3(sampler2D tex, vec2 texcoord) {
     vec2 texsize = textureSize(tex, 0);
     vec2 pt = 1 / texsize;
