@@ -134,13 +134,14 @@ static const vf_info_t *const filter_list[] = {
     &vf_info_mirror,
     &vf_info_palette,
     &vf_info_pp7,
-#ifdef CONFIG_FFMPEG
+
     &vf_info_pp,
     &vf_info_lavc,
     &vf_info_lavcdeint,
     &vf_info_screenshot,
+    &vf_info_fspp,
     &vf_info_uspp,
-#endif
+
     &vf_info_dvbscale,
     &vf_info_cropdetect,
     &vf_info_test,
@@ -183,13 +184,10 @@ static const vf_info_t *const filter_list[] = {
     &vf_info_hue,
 #ifdef CONFIG_FFMPEG_INTERNALS
     &vf_info_spp,
-    &vf_info_fspp,
     &vf_info_mcdeint,
 #endif
-#ifdef CONFIG_FFMPEG_EVAL_API
     &vf_info_geq,
     &vf_info_qp,
-#endif
     &vf_info_yuvcsp,
     &vf_info_kerndeint,
     &vf_info_rgbtest,

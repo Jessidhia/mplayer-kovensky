@@ -59,27 +59,9 @@ SRCS_COMMON-$(DVDREAD_INTERNAL)      += libdvdread4/bitreader.c \
 
 SRCS_COMMON-$(FAAD)                  += libmpcodecs/ad_faad.c
 SRCS_COMMON-$(FASTMEMCPY)            += libvo/aclib.c
-SRCS_COMMON-$(FFMPEG)                += libmpcodecs/vf_pp.c \
-                                        av_opts.c \
-                                        libaf/af_lavcac3enc.c \
-                                        libaf/af_lavcresample.c \
-                                        libmpcodecs/ad_ffmpeg.c \
-                                        libmpcodecs/vd_ffmpeg.c \
-                                        libmpcodecs/vf_lavc.c \
-                                        libmpcodecs/vf_lavcdeint.c \
-                                        libmpcodecs/vf_screenshot.c \
-                                        libmpcodecs/vf_uspp.c \
-                                        libmpdemux/demux_lavf.c \
-                                        stream/stream_ffmpeg.c \
-                                        sub/av_sub.c \
-
-# Requires a new enough libavutil that installs eval.h
-SRCS_COMMON-$(FFMPEG_EVAL_API)          += libmpcodecs/vf_geq.c \
-                                           libmpcodecs/vf_qp.c \
 
 # These filters use private headers and do not work with shared libavcodec.
-SRCS_COMMON-$(FFMPEG_INTERNALS)      += libmpcodecs/vf_fspp.c \
-                                        libmpcodecs/vf_mcdeint.c \
+SRCS_COMMON-$(FFMPEG_INTERNALS)      += libmpcodecs/vf_mcdeint.c \
                                         libmpcodecs/vf_spp.c \
 
 SRCS_COMMON-$(FREETYPE)              += sub/font_load_ft.c
@@ -231,6 +213,7 @@ SRCS_COMMON-$(XMMS_PLUGINS)          += libmpdemux/demux_xmms.c
 SRCS_COMMON-$(XVID4)                 += libmpcodecs/vd_xvid4.c
 SRCS_COMMON = asxparser.c \
               av_log.c \
+              av_opts.c \
               bstr.c \
               codec-cfg.c \
               cpudetect.c \
@@ -260,6 +243,8 @@ SRCS_COMMON = asxparser.c \
               libaf/af_gate.c \
               libaf/af_hrtf.c \
               libaf/af_karaoke.c \
+              libaf/af_lavcac3enc.c \
+              libaf/af_lavcresample.c \
               libaf/af_pan.c \
               libaf/af_resample.c \
               libaf/af_scaletempo.c \
@@ -279,6 +264,7 @@ SRCS_COMMON = asxparser.c \
               libmpcodecs/ad_alaw.c \
               libmpcodecs/ad_dk3adpcm.c \
               libmpcodecs/ad_dvdpcm.c \
+              libmpcodecs/ad_ffmpeg.c \
               libmpcodecs/ad_hwac3.c \
               libmpcodecs/ad_hwmpa.c \
               libmpcodecs/ad_imaadpcm.c \
@@ -291,6 +277,7 @@ SRCS_COMMON = asxparser.c \
               libmpcodecs/mp_image.c \
               libmpcodecs/pullup.c \
               libmpcodecs/vd.c \
+              libmpcodecs/vd_ffmpeg.c \
               libmpcodecs/vd_hmblck.c \
               libmpcodecs/vd_lzo.c \
               libmpcodecs/vd_mpegpes.c \
@@ -324,6 +311,8 @@ SRCS_COMMON = asxparser.c \
               libmpcodecs/vf_flip.c \
               libmpcodecs/vf_format.c \
               libmpcodecs/vf_framestep.c \
+              libmpcodecs/vf_fspp.c \
+              libmpcodecs/vf_geq.c \
               libmpcodecs/vf_gradfun.c \
               libmpcodecs/vf_halfpack.c \
               libmpcodecs/vf_harddup.c \
@@ -333,6 +322,8 @@ SRCS_COMMON = asxparser.c \
               libmpcodecs/vf_ilpack.c \
               libmpcodecs/vf_ivtc.c \
               libmpcodecs/vf_kerndeint.c \
+              libmpcodecs/vf_lavc.c \
+              libmpcodecs/vf_lavcdeint.c \
               libmpcodecs/vf_mirror.c \
               libmpcodecs/vf_noformat.c \
               libmpcodecs/vf_noise.c \
@@ -340,14 +331,17 @@ SRCS_COMMON = asxparser.c \
               libmpcodecs/vf_palette.c \
               libmpcodecs/vf_perspective.c \
               libmpcodecs/vf_phase.c \
+              libmpcodecs/vf_pp.c \
               libmpcodecs/vf_pp7.c \
               libmpcodecs/vf_pullup.c \
+              libmpcodecs/vf_qp.c \
               libmpcodecs/vf_rectangle.c \
               libmpcodecs/vf_remove_logo.c \
               libmpcodecs/vf_rgbtest.c \
               libmpcodecs/vf_rotate.c \
               libmpcodecs/vf_sab.c \
               libmpcodecs/vf_scale.c \
+              libmpcodecs/vf_screenshot.c \
               libmpcodecs/vf_smartblur.c \
               libmpcodecs/vf_softpulldown.c \
               libmpcodecs/vf_stereo3d.c \
@@ -360,6 +354,7 @@ SRCS_COMMON = asxparser.c \
               libmpcodecs/vf_tile.c \
               libmpcodecs/vf_tinterlace.c \
               libmpcodecs/vf_unsharp.c \
+              libmpcodecs/vf_uspp.c \
               libmpcodecs/vf_vo.c \
               libmpcodecs/vf_yadif.c \
               libmpcodecs/vf_yuvcsp.c \
@@ -377,6 +372,7 @@ SRCS_COMMON = asxparser.c \
               libmpdemux/demux_edl.c \
               libmpdemux/demux_film.c \
               libmpdemux/demux_fli.c \
+              libmpdemux/demux_lavf.c \
               libmpdemux/demux_lmlm4.c \
               libmpdemux/demux_mf.c \
               libmpdemux/demux_mkv.c \
@@ -414,11 +410,13 @@ SRCS_COMMON = asxparser.c \
               stream/open.c \
               stream/stream.c \
               stream/stream_cue.c \
+              stream/stream_ffmpeg.c \
               stream/stream_file.c \
               stream/stream_mf.c \
               stream/stream_null.c \
               stream/url.c \
               sub/dec_sub.c \
+              sub/av_sub.c \
               sub/sub.c \
               sub/sub_cc.c \
               sub/dec_sub.c \
@@ -453,7 +451,6 @@ SRCS_MPLAYER-$(DIRECTX)      += libao2/ao_dsound.c libvo/vo_directx.c
 SRCS_MPLAYER-$(DXR3)         += libvo/vo_dxr3.c
 SRCS_MPLAYER-$(ESD)          += libao2/ao_esd.c
 SRCS_MPLAYER-$(FBDEV)        += libvo/vo_fbdev.c libvo/vo_fbdev2.c
-SRCS_MPLAYER-$(FFMPEG)       += libvo/vo_png.c
 SRCS_MPLAYER-$(GGI)          += libvo/vo_ggi.c
 SRCS_MPLAYER-$(GIF)          += libvo/vo_gif89a.c
 SRCS_MPLAYER-$(GL)           += libvo/gl_common.c libvo/vo_gl.c \
@@ -521,6 +518,7 @@ SRCS_MPLAYER = command.c \
                libvo/video_out.c \
                libvo/vo_mpegpes.c \
                libvo/vo_null.c \
+               libvo/vo_png.c \
                $(SRCS_MPLAYER-yes)
 
 COMMON_LIBS += $(COMMON_LIBS-yes)
