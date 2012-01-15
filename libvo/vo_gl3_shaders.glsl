@@ -16,14 +16,15 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-// Note that this file is not directly passed as shader, but run through
-// text2header, and in fact contains multiple vertex and fragment shaders.
+// Note that this file is not directly passed as shader, but run through some
+// text processing functions, and in fact contains multiple vertex and fragment
+// shaders.
 
-#!section shader_prelude
-#!// inserted at the beginning of all shaders
+#!section prelude
+// inserted at the beginning of all shaders
 #version 130
 
-#!section vertex_shader
+#!section vertex_all
 uniform mat3 transform;
 
 in vec2 vertex_position;
@@ -38,7 +39,7 @@ void main() {
     texcoord = vertex_texcoord;
 }
 
-#!section frag_shader_eosd
+#!section frag_eosd
 uniform sampler2D texture1;
 
 in vec2 texcoord;
@@ -49,7 +50,7 @@ void main() {
     out_color = vec4(color.rgb, color.a * texture(texture1, texcoord).r);
 }
 
-#!section frag_shader_osd
+#!section frag_osd
 uniform sampler2D texture1;
 
 in vec2 texcoord;
@@ -60,7 +61,7 @@ void main() {
     out_color = texture(texture1, texcoord).rrrg * color;
 }
 
-#!section frag_shader_video
+#!section frag_video
 uniform sampler2D texture1;
 uniform sampler2D texture2;
 uniform sampler2D texture3;

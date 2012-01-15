@@ -609,19 +609,8 @@ codec-cfg$(EXESUF): codec-cfg.c codec-cfg.h
 codecs.conf.h: codec-cfg$(EXESUF) etc/codecs.conf
 	./$^ > $@
 
-HOST_CFLAGS = -std=c99 -O -I.
-
-bstr-host.o: bstr.c bstr.h talloc.h
-	$(HOST_CC) $(HOST_CFLAGS) -c -o $@ $<
-
-talloc-host.o: talloc.c talloc.h
-	$(HOST_CC) $(HOST_CFLAGS) -c -o $@ $<
-
-text2header$(EXESUF): text2header.c bstr-host.o talloc-host.o
-	$(HOST_CC) $(HOST_CFLAGS) -o $@ $^
-
-libvo/vo_gl3_shaders.h: text2header$(EXESUF) libvo/vo_gl3_shaders.glsl
-	./$^ --sections $@
+libvo/vo_gl3_shaders.h: libvo/vo_gl3_shaders.glsl
+	python ./bin_to_header.py $^ $@
 
 libvo/vo_gl3.c: libvo/vo_gl3_shaders.h
 

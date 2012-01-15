@@ -36,6 +36,7 @@
 
 #include "config.h"
 #include "talloc.h"
+#include "bstr.h"
 #include "mp_msg.h"
 #include "subopt-helper.h"
 #include "video_out.h"
@@ -705,6 +706,34 @@ static int get_chroma_clear_val(int bit_depth)
     return 1 << (bit_depth - 1 & 7);
 }
 
+#define SECTION_HEADER "#!section "
+
+// uau would probably never agree to this being in bstr.h, so it's local
+static bool eat_start(struct bstr *s, struct bstr prefix)
+{
+    if (!bstr_startswith(*s, prefix))
+        return false;
+    *s = bstr_cut(*s, prefix.len);
+    return true;
+}
+
+static char *get_section(void *talloc_ctx, struct bstr source,
+                         const char *section)
+{
+    char *res = talloc_strdup(talloc_ctx, "");
+    bool copy = false;
+    while (source.len) {
+        struct bstr line = bstr_getline(source, &source);
+        if (eat_start(&line, bstr(SECTION_HEADER))) {
+            copy = bstrcmp0(line, section) == 0;
+        } else {
+            if (copy)
+                res = talloc_asprintf_append_buffer(res, "%.*s\n", BSTR_P(line));
+        }
+    }
+    return res;
+}
+
 static GLuint create_shader(GL *gl, GLenum type, const char *header,
                             const char *source)
 {
@@ -798,6 +827,11 @@ static void compile_shaders(struct vo *vo)
     GL *gl = p->gl;
     void *tmp = talloc_new(NULL);
 
+    struct bstr src = { (char*)vo_gl3_shaders, sizeof(vo_gl3_shaders) };
+
+    char *vertex_shader = get_section(tmp, src, "vertex_all");
+    char *shader_prelude = get_section(tmp, src, "prelude");
+
     char *header = talloc_strdup(tmp, "");
 
     shader_def_b(&header, "USE_PLANAR", p->is_yuv);
@@ -812,13 +846,16 @@ static void compile_shaders(struct vo *vo)
     header = talloc_asprintf(tmp, "%s%s", shader_prelude, header);
 
     vertex_array_init(gl, &p->va_eosd,
-        create_program(gl, header, vertex_shader, frag_shader_eosd));
+        create_program(gl, header, vertex_shader,
+            get_section(tmp, src, "frag_eosd")));
 
     vertex_array_init(gl, &p->va_osd,
-        create_program(gl, header, vertex_shader, frag_shader_osd));
+        create_program(gl, header, vertex_shader,
+            get_section(tmp, src, "frag_osd")));
 
     vertex_array_init(gl, &p->va_video,
-        create_program(gl, header, vertex_shader, frag_shader_video));
+        create_program(gl, header, vertex_shader,
+            get_section(tmp, src, "frag_video")));
 
     glCheckError(gl, "shader compilation");
 
