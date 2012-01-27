@@ -77,11 +77,14 @@ static const struct ao_driver * const audio_out_drivers[] = {
 #ifdef CONFIG_COREAUDIO
     &audio_out_coreaudio,
 #endif
-#ifdef CONFIG_OSS_AUDIO
-    &audio_out_oss,
+#ifdef CONFIG_PULSE
+    &audio_out_pulse,
 #endif
 #ifdef CONFIG_ALSA
     &audio_out_alsa,
+#endif
+#ifdef CONFIG_OSS_AUDIO
+    &audio_out_oss,
 #endif
 #ifdef CONFIG_ALSA5
     &audio_out_alsa5,
@@ -98,9 +101,6 @@ static const struct ao_driver * const audio_out_drivers[] = {
 #endif
 #ifdef CONFIG_ESD
     &audio_out_esd,
-#endif
-#ifdef CONFIG_PULSE
-    &audio_out_pulse,
 #endif
 #ifdef CONFIG_JACK
     &audio_out_jack,

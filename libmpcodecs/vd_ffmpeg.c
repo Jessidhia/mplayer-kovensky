@@ -334,8 +334,7 @@ static int init(sh_video_t *sh)
 
     mp_msg(MSGT_DECVIDEO, MSGL_INFO, "Using %d decoding thread%s.\n",
                     lavc_param->threads, lavc_param->threads == 1 ? "" : "s");
-    if (lavc_param->threads > 1)
-        avctx->thread_count = lavc_param->threads;
+    avctx->thread_count = lavc_param->threads;
 
     /* open it */
     if (avcodec_open(avctx, lavc_codec) < 0) {
