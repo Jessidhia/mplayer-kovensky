@@ -1800,13 +1800,26 @@ static int w32_initgl3(MPGLContext *ctx, int gl_version)
     int attribs[] = {
         WGL_CONTEXT_MAJOR_VERSION_ARB, MPGL_VER_GET_MAJOR(gl_version),
         WGL_CONTEXT_MINOR_VERSION_ARB, MPGL_VER_GET_MINOR(gl_version),
-        /* The commented out attrib froze wgl when uncommented (I blame nvidia, but who knows) */
-        /* WGL_CONTEXT_PROFILE_MASK_ARB, WGL_CONTEXT_CORE_PROFILE_BIT_ARB, */
         WGL_CONTEXT_FLAGS_ARB, WGL_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB,
+        WGL_CONTEXT_PROFILE_MASK_ARB, WGL_CONTEXT_CORE_PROFILE_BIT_ARB,
         0
     };
 
     *context = gl->wglCreateContextAttribsARB(windc, 0, attribs);
+    if (! *context) {
+        // NVidia, instead of ignoring WGL_CONTEXT_FLAGS_ARB, will error out if
+        // it's present on pre-3.2 contexts.
+        // Remove it from attribs and retry the context creation.
+        attribs[6] = attribs[7] = 0;
+        *context = gl->wglCreateContextAttribsARB(windc, 0, attribs);
+    }
+    if (! *context) {
+        int err = GetLastError();
+        mp_msg(MSGT_VO, MSGL_FATAL, "[gl] Could not create an OpenGL 3.x"
+                                    " context: error 0x%x\n", err);
+        return 0;
+    }
+
     wglMakeCurrent(NULL, NULL);
     wglDeleteContext(new_context);
 
