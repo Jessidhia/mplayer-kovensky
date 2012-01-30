@@ -50,6 +50,19 @@ static const vd_info_t info = {
 
 #include "libavcodec/avcodec.h"
 
+#if defined(__linux__) && defined(HAVE_PTHREADS)
+#include <sched.h>
+#elif defined(__BEOS__)
+#include <kernel/OS.h>
+#elif defined(__MACH__) || defined(__APPLE__) || defined(__FreeBSD__) || defined(__FreeBSD_kernel__)
+#include <sys/types.h>
+#include <sys/sysctl.h>
+#elif defined(__OpenBSD__)
+#include <sys/param.h>
+#include <sys/sysctl.h>
+#include <machine/cpu.h>
+#endif
+
 #if AVPALETTE_SIZE > 1024
 #error palette too large, adapt libmpcodecs/vf.c:vf_get_image
 #endif
@@ -96,6 +109,7 @@ const m_option_t lavc_decode_opts_conf[] = {
     OPT_INTRANGE("st", lavc_param.skip_top, 0, 0, 999),
     OPT_INTRANGE("sb", lavc_param.skip_bottom, 0, 0, 999),
     OPT_FLAG_CONSTANTS("fast", lavc_param.fast, 0, 0, CODEC_FLAG2_FAST),
+    OPT_FLAG_CONSTANTS("h264fast", lavc_param.h264fast, 0, 0, 1), // Automatically enables "fast" if the codec is H.264
     OPT_STRING("lowres", lavc_param.lowres_str, 0),
     OPT_STRING("skiploopfilter", lavc_param.skip_loop_filter_str, 0),
     OPT_STRING("skipidct", lavc_param.skip_idct_str, 0),
@@ -212,7 +226,10 @@ static int init(sh_video_t *sh)
     avctx->error_recognition = lavc_param->error_resilience;
     if (lavc_param->gray)
         avctx->flags |= CODEC_FLAG_GRAY;
-    avctx->flags2 |= lavc_param->fast;
+    if(lavc_param->h264fast && lavc_codec->id == CODEC_ID_H264)
+        avctx->flags2|= CODEC_FLAG2_FAST;
+    else
+        avctx->flags2|= lavc_param->fast;
     avctx->codec_tag = sh->format;
     avctx->stream_codec_tag = sh->video.fccHandler;
     avctx->idct_algo = lavc_param->idct_algo;
@@ -315,6 +332,8 @@ static int init(sh_video_t *sh)
     if (sh->bih)
         avctx->bits_per_coded_sample = sh->bih->biBitCount;
 
+    mp_msg(MSGT_DECVIDEO, MSGL_INFO, "Using %d decoding thread%s.\n",
+                    lavc_param->threads, lavc_param->threads == 1 ? "" : "s");
     avctx->thread_count = lavc_param->threads;
 
     /* open it */

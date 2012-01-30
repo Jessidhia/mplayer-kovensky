@@ -147,6 +147,8 @@ static inline int bstr_find0(struct bstr haystack, const char *needle)
 
 #endif
 
+// Create bstr compound literal from null-terminated string
+#define BSTR(s) (struct bstr){(char *)(s), (s) ? strlen(s) : 0}
 // create a pair (not single value!) for "%.*s" printf syntax
 #define BSTR_P(bstr) (int)((bstr).len), (bstr).start
 

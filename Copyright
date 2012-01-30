@@ -21,6 +21,14 @@ Copyright:  Many, see individual files for copyright notices.
 License:    GNU Lesser General Public License
 
 
+Name:       libdvdcss
+Version:    Subversion r237 + local changes
+URL:        http://developers.videolan.org/libdvdcss/
+Directory:  libdvdcss
+Copyright:  1998-2008 VideoLAN
+License:    GNU General Public License
+
+
 Name:       avifile DLL loader
 Version:    0.47 + patches + CVS updates
 URL:        http://avifile.sourceforge.net/

@@ -45,6 +45,7 @@
 #endif
 
 #ifndef bswap_16
+#define bswap_16 ff_bswap_16
 static av_always_inline av_const uint16_t bswap_16(uint16_t x)
 {
     x= (x>>8) | (x<<8);
@@ -53,6 +54,7 @@ static av_always_inline av_const uint16_t bswap_16(uint16_t x)
 #endif
 
 #ifndef bswap_32
+#define bswap_32 ff_bswap_32
 static av_always_inline av_const uint32_t bswap_32(uint32_t x)
 {
     x= ((x<<8)&0xFF00FF00) | ((x>>8)&0x00FF00FF);
@@ -62,6 +64,7 @@ static av_always_inline av_const uint32_t bswap_32(uint32_t x)
 #endif
 
 #ifndef bswap_64
+#define bswap_64 ff_bswap_64
 static inline uint64_t av_const bswap_64(uint64_t x)
 {
 #if 0

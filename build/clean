@@ -1,0 +1,21 @@
+#!/usr/bin/env python2
+
+import os
+from subprocess import check_call
+from script.helpers import GitWrapper
+
+def main():
+    git = GitWrapper()
+    check_call('rm -rf build_libs libav_build build-stamp configure-stamp'.split())
+    os.chdir('..')
+    check_call('git clean -x -d -f build/debian/'.split())
+    def cmd():
+        check_call('git clean -x -d -f'.split())
+    git.foreach_submodule(cmd)
+    os.chdir('..')
+    try:
+        check_call('gmake distclean'.split())
+    except:
+        check_call('make distclean'.split())
+
+main()

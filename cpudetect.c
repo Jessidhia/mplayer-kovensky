@@ -321,9 +321,9 @@ void GetCpuCaps( CpuCaps *caps)
         ptmpstr=tmpstr=GetCpuFriendlyName(regs, regs2);
         while(*ptmpstr == ' ')    // strip leading spaces
             ptmpstr++;
-        mp_msg(MSGT_CPUDETECT,MSGL_V,"CPU: %s ", ptmpstr);
+        mp_msg(MSGT_CPUDETECT,MSGL_INFO,"CPU: %s ", ptmpstr);
         free(tmpstr);
-        mp_msg(MSGT_CPUDETECT,MSGL_V,"(Family: %d, Model: %d, Stepping: %d)\n",
+        mp_msg(MSGT_CPUDETECT,MSGL_INFO,"(Family: %d, Model: %d, Stepping: %d)\n",
                caps->cpuType, caps->cpuModel, caps->cpuStepping);
 
     }
@@ -344,15 +344,14 @@ void GetCpuCaps( CpuCaps *caps)
         caps->cl_size  = regs2[2] & 0xFF;
     }
     mp_msg(MSGT_CPUDETECT,MSGL_V,"Detected cache-line size is %u bytes\n",caps->cl_size);
-#if 0
-    mp_msg(MSGT_CPUDETECT,MSGL_INFO,"cpudetect: MMX=%d MMX2=%d SSE=%d SSE2=%d 3DNow=%d 3DNowExt=%d\n",
+
+    mp_msg(MSGT_CPUDETECT,MSGL_V,"cpudetect: MMX=%d MMX2=%d SSE=%d SSE2=%d 3DNow=%d 3DNowExt=%d\n",
            gCpuCaps.hasMMX,
            gCpuCaps.hasMMX2,
            gCpuCaps.hasSSE,
            gCpuCaps.hasSSE2,
            gCpuCaps.has3DNow,
            gCpuCaps.has3DNowExt);
-#endif
 
 #if CONFIG_RUNTIME_CPUDETECT
         /* FIXME: Does SSE2 need more OS support, too? */

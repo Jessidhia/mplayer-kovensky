@@ -58,6 +58,9 @@ extern const struct ao_driver audio_out_pcm;
 extern const struct ao_driver audio_out_pss;
 
 static const struct ao_driver * const audio_out_drivers[] = {
+#ifdef CONFIG_OPENAL
+    &audio_out_openal,
+#endif
 // native:
 #ifdef CONFIG_DIRECTX
     &audio_out_dsound,
@@ -104,9 +107,6 @@ static const struct ao_driver * const audio_out_drivers[] = {
 #endif
 #ifdef CONFIG_NAS
     &audio_out_nas,
-#endif
-#ifdef CONFIG_OPENAL
-    &audio_out_openal,
 #endif
 #ifdef CONFIG_SDL
     &audio_out_sdl,

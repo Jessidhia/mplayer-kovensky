@@ -1,0 +1,61 @@
+This repository contains scripts to help build MPlayer together with
+some dependencies that many platforms will not have a new enough
+version of.
+
+
+Initializing the repo
+
+First you need to download the actual sources, using either:
+
+./init
+or
+./init --shallow
+
+The latter form creates only partial git repositories which do not
+have full history data. This reduces the amount of data you need to
+download but reduces the development-related functionality of the
+repositories. If you only want to simply build MPlayer it should
+usually be enough.
+
+
+
+Building
+
+You can build MPlayer with just 'make'. There is no separate
+configure step because the MPlayer configure depends on included
+library sources being configured _and_ built first. If you want to
+give configuration options see the section below.
+
+
+Enabling Multithreading
+
+FFmpeg-mt has been merged upstream into libav so there is no need for
+compiling the multithreaded branch anymore.
+
+
+Giving configure options to MPlayer and libav
+
+You can specify extra options that will be passed to MPlayer's
+configure script by placing them in a file called "mplayer_options" in
+this directory. There's a corresponding file called "libav_options"
+for libav. Options in file "common_options" will be passed to both
+MPlayer and libav; this mainly makes sense for generic options like
+"-cc=gcc-4.4'. Place each option on its own line without any quoting.
+
+
+
+Helper scripts included in this repo:
+
+./init
+Prepare the repository by downloading actual sources. You need to run
+this at least once before you can build anything. With the --shallow
+argument creates shallow git repositories that require less bandwidth
+to download.
+
+./update
+Download the latest version of the sources.
+
+./clean
+Remove all generated or extra files from build directories and
+restore them to their original state. Running this between builds is
+probably a good idea.

@@ -36,6 +36,27 @@
 
 #include "mp_msg.h"
 
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <io.h>
+short stdoutAttrs = 0;
+HANDLE hConOut = INVALID_HANDLE_VALUE;
+static const unsigned char ansi2win32[10]=
+{
+    0,
+    FOREGROUND_RED,
+    FOREGROUND_GREEN,
+    FOREGROUND_GREEN | FOREGROUND_RED,
+    FOREGROUND_BLUE,
+    FOREGROUND_BLUE  | FOREGROUND_RED,
+    FOREGROUND_BLUE  | FOREGROUND_GREEN,
+    FOREGROUND_BLUE  | FOREGROUND_GREEN | FOREGROUND_RED,
+    FOREGROUND_BLUE  | FOREGROUND_GREEN | FOREGROUND_RED,
+    FOREGROUND_BLUE  | FOREGROUND_GREEN | FOREGROUND_RED
+    };
+#endif
+
 /* maximum message length of mp_msg */
 #define MSGSIZE_MAX 3072
 
@@ -101,6 +122,27 @@ void mp_msg_init(void){
     bindtextdomain("mplayer", localedir);
     bind_textdomain_codeset("mplayer", "UTF-8");
 #endif
+#ifdef _WIN32
+    {
+        CONSOLE_SCREEN_BUFFER_INFO cinfo;
+        long cmode = 0;
+
+        hConOut = GetStdHandle(STD_OUTPUT_HANDLE);
+        if ((hConOut == NULL) || (hConOut == INVALID_HANDLE_VALUE))
+        {
+            hConOut = NULL;
+            fprintf(stderr, "Cannot get Console handle of stdout\n");
+            return;
+        }
+
+        GetConsoleMode(hConOut, &cmode);
+        cmode |= (ENABLE_PROCESSED_OUTPUT | ENABLE_WRAP_AT_EOL_OUTPUT);
+        SetConsoleMode(hConOut, cmode);
+
+        GetConsoleScreenBufferInfo(hConOut, &cinfo);
+        stdoutAttrs = cinfo.wAttributes;
+    }
+#endif
 }
 
 int mp_msg_test(int mod, int lev)
@@ -123,8 +165,14 @@ static void set_msg_color(FILE* stream, int lev)
         flag = 0;
     }
 #endif
+
+#ifdef _WIN32
+    if (mp_msg_color)
+        SetConsoleTextAttribute(hConOut, ansi2win32[c] | FOREGROUND_INTENSITY);
+#else
     if (mp_msg_color)
         fprintf(stream, "\033[%d;3%dm", c >> 3, c & 7);
+#endif
 }
 
 static void print_msg_module(FILE* stream, int mod)
@@ -178,14 +226,21 @@ static void print_msg_module(FILE* stream, int mod)
         "STATUSLINE",
     };
     int c2 = (mod + 1) % 15 + 1;
-
     if (!mp_msg_module)
         return;
+#ifdef _WIN32
+    if (mp_msg_color)
+        SetConsoleTextAttribute(hConOut, ansi2win32[c2&7] | FOREGROUND_INTENSITY);
+    fprintf(stream, "%9s", module_text[mod]);
+    if (mp_msg_color)
+        SetConsoleTextAttribute(hConOut, stdoutAttrs);
+#else
     if (mp_msg_color)
         fprintf(stream, "\033[%d;3%dm", c2 >> 3, c2 & 7);
     fprintf(stream, "%9s", module_text[mod]);
     if (mp_msg_color)
         fprintf(stream, "\033[0;37m");
+#endif
     fprintf(stream, ": ");
 }
 

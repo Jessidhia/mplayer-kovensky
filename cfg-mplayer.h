@@ -43,6 +43,7 @@ extern char *lirc_configfile;
 /* only used at startup (setting these values from configfile) */
 extern char *vo_geometry;
 extern int stop_xscreensaver;
+extern int stop_screensaver;
 
 extern char *unrar_executable;
 
@@ -809,6 +810,10 @@ const m_option_t mplayer_opts[]={
     {"stop-xscreensaver", &stop_xscreensaver, CONF_TYPE_FLAG, 0, 0, 1, NULL},
     {"nostop-xscreensaver", &stop_xscreensaver, CONF_TYPE_FLAG, 0, 1, 0, NULL},
     {"fstype", &vo_fstype_list, CONF_TYPE_STRING_LIST, 0, 0, 0, NULL},
+#endif
+#ifdef _WIN32
+	{"stop-screensaver", &stop_screensaver, CONF_TYPE_FLAG, 0, 0, 1, NULL},
+	{"nostop-screensaver", &stop_screensaver, CONF_TYPE_FLAG, 0, 1, 0, NULL},
 #endif
     {"heartbeat-cmd", &heartbeat_cmd, CONF_TYPE_STRING, 0, 0, 0, NULL},
     {"mouseinput", &vo_nomouse_input, CONF_TYPE_FLAG, 0, 1, 0, NULL},

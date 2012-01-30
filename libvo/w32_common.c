@@ -23,6 +23,7 @@
 
 // To get "#define vo_ontop global_vo->opts->vo_ontop" etc
 #include "old_vo_defines.h"
+#include "osdep/resource.h"
 #include "input/keycodes.h"
 #include "input/input.h"
 #include "mp_msg.h"
@@ -487,23 +488,22 @@ static char *get_display_name(void) {
  * \return 1 = Success, 0 = Failure
  */
 int vo_w32_init(void) {
-    HICON mplayerIcon = 0;
     char exedir[MAX_PATH];
     HINSTANCE user32;
+    HICON mplayerIcon = NULL;
+    HICON mplayerSmallIcon = NULL;
     char *dev;
 
     if (vo_window)
         return 1;
 
-    hInstance = GetModuleHandle(0);
+    hInstance = GetModuleHandle(NULL);
 
-    if (GetModuleFileName(0, exedir, MAX_PATH))
-        mplayerIcon = ExtractIcon(hInstance, exedir, 0);
-    if (!mplayerIcon)
-        mplayerIcon = LoadIcon(0, IDI_APPLICATION);
+    mplayerIcon = (HICON)LoadImage(hInstance, MAKEINTRESOURCE(IDI_APPICON), IMAGE_ICON, 0, 0, LR_DEFAULTSIZE | LR_SHARED);
+    mplayerSmallIcon = (HICON)LoadImage(hInstance, MAKEINTRESOURCE(IDI_APPICON), IMAGE_ICON, 16, 16, LR_SHARED);
 
   {
-    WNDCLASSEX wcex = { sizeof wcex, CS_OWNDC | CS_DBLCLKS, WndProc, 0, 0, hInstance, mplayerIcon, LoadCursor(0, IDC_ARROW), NULL, 0, classname, mplayerIcon };
+    WNDCLASSEX wcex = { sizeof wcex, CS_OWNDC | CS_DBLCLKS, WndProc, 0, 0, hInstance, mplayerIcon, LoadCursor(0, IDC_ARROW), NULL, 0, classname, mplayerSmallIcon };
 
     if (!RegisterClassEx(&wcex)) {
         mp_msg(MSGT_VO, MSGL_ERR, "vo: win32: unable to register window class!\n");

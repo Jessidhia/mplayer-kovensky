@@ -133,7 +133,7 @@ static int find_ordered_chapter_sources(struct MPContext *mpctx,
 
     int num_left = num_sources - 1;
     for (int i = 0; i < num_filenames && num_left > 0; i++) {
-        mp_msg(MSGT_CPLAYER, MSGL_INFO, "Checking file %s\n",
+        mp_msg(MSGT_CPLAYER, MSGL_V, "Checking file %s\n",
                filename_recode(filenames[i]));
         int format = 0;
         struct stream *s = open_stream(filenames[i], &mpctx->opts, &format);

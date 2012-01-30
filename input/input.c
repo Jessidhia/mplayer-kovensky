@@ -185,8 +185,11 @@ static const mp_cmd_t mp_cmds[] = {
   { MP_CMD_RUN, "run", 1, { {MP_CMD_ARG_STRING,{0}}, {-1,{0}} } },
   { MP_CMD_CAPTURING, "capturing", 0, { {-1,{0}} } },
   { MP_CMD_VF_CHANGE_RECTANGLE, "change_rectangle", 2, { {MP_CMD_ARG_INT,{0}}, {MP_CMD_ARG_INT,{0}}, {-1,{0}}}},
+  { MP_CMD_AF_EQ_SET, "af_eq_set_bands", 1, { {MP_CMD_ARG_STRING, {0}}, {-1,{0}}}}, //turbos
+#ifdef CONFIG_TV_TELETEXT
   { MP_CMD_TV_TELETEXT_ADD_DEC, "teletext_add_dec", 1, { {MP_CMD_ARG_STRING,{0}}, {-1,{0}} } },
   { MP_CMD_TV_TELETEXT_GO_LINK, "teletext_go_link", 1, { {MP_CMD_ARG_INT,{0}}, {-1,{0}} } },
+#endif
 
 #ifdef CONFIG_DVDNAV
   { MP_CMD_DVDNAV, "dvdnav", 1, { {MP_CMD_ARG_STRING, {0}}, {-1,{0}} } },
@@ -403,10 +406,12 @@ static const struct cmd_bind def_cmd_binds[] = {
   { { KEY_KP6, 0 }, "dvdnav right" },   // right
   { { KEY_KP5, 0 }, "dvdnav menu" },   // menu
   { { KEY_KPENTER, 0 }, "dvdnav select" },   // select
-  { { MOUSE_BTN0, 0 }, "dvdnav mouse" },   //select
+//  { { MOUSE_BTN0, 0 }, "dvdnav mouse" },   //select
   { { KEY_KP7, 0 }, "dvdnav prev" },   // previous menu
 #endif
 
+  { { MOUSE_BTN0, 0 }, "pause" },
+  { { MOUSE_BTN2, 0 }, "vo_fullscreen" },
   { { KEY_RIGHT, 0 }, "seek 10" },
   { {  KEY_LEFT, 0 }, "seek -10" },
   { { KEY_MODIFIER_SHIFT + KEY_RIGHT, 0 }, "seek  1 0 1" },
@@ -1171,13 +1176,9 @@ static mp_cmd_t *get_cmd_from_keys(struct input_ctx *ictx, int n, int *keys)
     if (ictx->default_bindings && cmd == NULL)
         cmd = find_bind_for_key(def_cmd_binds, n, keys);
 
-    if (cmd == NULL) {
-        char *key_buf = get_key_combo_name(keys, n);
-        mp_tmsg(MSGT_INPUT, MSGL_WARN,
-                "No bind found for key '%s'.\n", key_buf);
-        talloc_free(key_buf);
+    if (cmd == NULL)
         return NULL;
-    }
+
     if (strcmp(cmd, "ignore") == 0)
         return NULL;
     ret =  mp_input_parse_cmd(cmd);

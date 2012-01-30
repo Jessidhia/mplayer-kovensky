@@ -1,0 +1,20 @@
+#!/usr/bin/env python2
+
+import os
+from helpers import parse_configfile
+from subprocess import check_call
+
+def main():
+    mydir = os.getcwd().replace("\\", "/")
+    extra_args = parse_configfile('libass_options')
+
+    args = ['--prefix=%s/build_libs' % mydir,
+            '--enable-static', '--disable-shared']
+
+    os.chdir('libass')
+    executable = './autogen.sh'
+    if (os.path.exists('configure')):
+        executable = './configure'
+    check_call(['sh', executable] + args + extra_args)
+
+main()

@@ -1,0 +1,30 @@
+#!/usr/bin/env python2
+
+import os
+from helpers import parse_configfile
+from subprocess import check_call
+
+def main():
+    mydir = os.getcwd().replace("\\", "/")
+    extra_args = parse_configfile('common_options')
+    extra_args += parse_configfile('mplayer_options')
+
+    env = os.environ.copy()
+    pkg_config_path = env.get('PKG_CONFIG_PATH', '')
+    if len(pkg_config_path) > 0:
+        pkg_config_path = ':'.join(['', pkg_config_path])
+    env['PKG_CONFIG_PATH'] = '%s/build_libs/lib/pkgconfig%s' % (
+                             mydir, pkg_config_path)
+
+    # The --extra-cflags and --extra-ldflags parameters should not be
+    # necessary to find the libraries, but they're there to ensure those
+    # directories appear first in the search path in case there's another
+    # version of the library installed on the system.
+
+    args = ['--extra-cflags=-I%s/build_libs/include' % mydir,
+            '--extra-ldflags=-L%s/build_libs/lib' % mydir]
+
+    os.chdir('..')
+    check_call(['sh', './configure'] + args + extra_args, env=env)
+
+main()

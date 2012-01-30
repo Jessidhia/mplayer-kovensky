@@ -36,11 +36,17 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
-#elif defined(__MINGW32__)
+#elif defined(_WIN32) || defined(__CYGWIN__)
+#define _WIN32_IE 0x0500
 #include <windows.h>
-#elif defined(__CYGWIN__)
-#include <windows.h>
+#include <shlobj.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#endif
+#if defined(__CYGWIN__)
+#include <windef.h>
 #include <sys/cygwin.h>
+#define _stat stat
 #endif
 
 #include "talloc.h"
@@ -50,7 +56,7 @@
 char *get_path(const char *filename){
 	char *homedir;
 	char *buff;
-#ifdef __MINGW32__
+#if defined(_WIN32) && !defined(__CYGWIN__)
 	static char *config_dir = "/mplayer";
 #else
 	static char *config_dir = "/.mplayer";
@@ -68,16 +74,36 @@ char *get_path(const char *filename){
 	if ((homedir = getenv("MPLAYER_HOME")) != NULL)
 		config_dir = "";
 	else if ((homedir = getenv("HOME")) == NULL)
-#if defined(__MINGW32__) || defined(__CYGWIN__)
+#ifdef _WIN32
 	/* Hack to get fonts etc. loaded outside of Cygwin environment. */
 	{
 		int i,imax=0;
-		char exedir[260];
-		GetModuleFileNameA(NULL, exedir, 260);
-		for (i=0; i< strlen(exedir); i++)
+		struct _stat statBuffer;
+		char exedir[4096], config_path[4096];
+#ifndef __CYGWIN__
+		char appdata[4096];
+		if (SHGetSpecialFolderPathA(NULL, appdata, CSIDL_APPDATA, 1))
+			strncpy(exedir, appdata, strlen(appdata));
+		else
+#endif
+			GetModuleFileNameA(NULL, exedir, 4096);
+		int len = strlen(exedir);
+		for (i=0; i< len; i++)
 			if (exedir[i] =='\\')
-				{exedir[i]='/'; imax=i;}
-		exedir[imax]='\0';
+				exedir[i]='/';
+		
+		sprintf(config_path, "%s%s", exedir, config_dir);
+		int stat_res;
+		if ((stat_res = stat(config_path, &statBuffer)) < 0 ||
+				!(statBuffer.st_mode & S_IFDIR)) {
+			GetModuleFileNameA(NULL, exedir, 4096);
+			len = strlen(exedir);
+			for (i=0; i< len; i++)
+				if (exedir[i] =='\\')
+					{exedir[i]='/'; imax=i;}
+			exedir[imax]='\0';
+		}
+		
 		homedir = exedir;
 	}
 #elif defined(__OS2__)
@@ -164,7 +190,7 @@ void set_path_env(void)
 	/*make our codec dirs available for LoadLibraryA()*/
 	char win32path[MAX_PATH];
 #ifdef __CYGWIN__
-	cygwin_conv_to_full_win32_path(BINARY_CODECS_PATH, win32path);
+	cygwin_conv_path(CCP_POSIX_TO_WIN_A, BINARY_CODECS_PATH, win32path, MAX_PATH);
 #else /*__CYGWIN__*/
 	/* Expand to absolute path unless it's already absolute */
 	if (!strstr(BINARY_CODECS_PATH,":") && BINARY_CODECS_PATH[0] != '\\') {

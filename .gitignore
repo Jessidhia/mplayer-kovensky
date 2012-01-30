@@ -1,7 +1,10 @@
 *.o
 *.a
 *.d
+*.exe
+*~
 .depend
+.svn
 
 /config.h
 /config.mak

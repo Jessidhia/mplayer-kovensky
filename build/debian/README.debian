@@ -1,0 +1,13 @@
+mplayer for Debian
+----------------------
+
+  Most options are autodetected or configured during compilation thus
+  users are supposed to build this package themselves.
+
+  If you want do force some options, add them to mplayer_options in the top
+  directory.
+
+  Build the package using 'dpkg-buildpackage -b -j<number of jobs>'. For details
+  see dpkg-buildpackage documentation.
+
+-- Anton Khirnov <wyskas@gmail.com>, Sun Aug 23 10:25:34 CEST 2009

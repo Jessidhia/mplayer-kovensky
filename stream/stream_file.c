@@ -23,6 +23,9 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
+#ifndef __APPLE__
+#include <io.h>
+#endif
 
 #include "mp_msg.h"
 #include "stream.h"

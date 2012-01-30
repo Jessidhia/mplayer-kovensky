@@ -27,6 +27,7 @@
 
 #if defined(__MINGW32__) || defined(__CYGWIN__)
 #define _UWIN 1  /*disable Non-underscored versions of non-ANSI functions as otherwise int eof would conflict with eof()*/
+#define _WIN32_WINNT 0x0500 /* enable SetThreadExecutionState for disabling screensaver. Breaks binary compatibility with pre-win2000. */
 #include <windows.h>
 #endif
 #include <string.h>
@@ -101,11 +102,12 @@
 #include "input/input.h"
 
 int slave_mode = 0;
-int enable_mouse_movements = 0;
+int enable_mouse_movements = 1;
 float start_volume = -1;
 
 #include "osdep/priority.h"
 
+int stop_screensaver=1;
 char *heartbeat_cmd;
 
 #ifdef HAVE_RTC
@@ -863,7 +865,18 @@ static int cfg_include(m_option_t *conf, char *filename)
     return m_config_parse_config_file(conf->priv, filename);
 }
 
-#define DEF_CONFIG "# Write your default config options here!\n\n\n"
+#define DEF_CONFIG                                                              \
+  "# Default options for Kovensky's MPlayer (http://kovensky.project357.com)\n" \
+  "# Manual available at http://www.mplayerhq.hu/DOCS/man/en/mplayer.1.html\n"  \
+  "font=Arial\n\n"							        \
+                                                                                \
+  "# vo=xv is the default on X11-based systems\n"			        \
+  "# vo=directx is the default for pre-Vista OSes\n"			        \
+  "# vo=gl:yuv=2 is the default for Vista+\n\n"				        \
+                                                                                \
+  "# Allows taking screenshots with 's'\n"				        \
+  "vf=screenshot\n\n"
+
 
 static void parse_cfgfiles(struct MPContext *mpctx, m_config_t *conf)
 {
@@ -1645,6 +1658,25 @@ void set_osd_subtitle(struct MPContext *mpctx, subtitle *subs)
         }
     }
 }
+
+#ifdef _WIN32
+#include <io.h>
+static void term_osd_eraseline(void)
+{
+    DWORD wr;
+    COORD pos;
+    HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+    CONSOLE_SCREEN_BUFFER_INFO cinfo;
+    GetConsoleScreenBufferInfo(hOut, &cinfo);
+    pos.X = 0;
+    pos.Y = cinfo.dwCursorPosition.Y - 1;
+    FillConsoleOutputCharacter(hOut, ' ', cinfo.dwSize.X, pos, &wr);
+    FillConsoleOutputAttribute(hOut, cinfo.wAttributes, cinfo.dwSize.X, pos, &wr);
+    SetConsoleCursorPosition(hOut, pos);
+}
+#else
+#define term_osd_eraseline() printf("%s", opts->term_osd_esc)
+#endif
 
 /**
  * \brief Update the OSD message line.
@@ -3896,32 +3928,32 @@ static void print_version(const char *name)
     /* Test for CPU capabilities (and corresponding OS support) for optimizing */
     GetCpuCaps(&gCpuCaps);
 #if ARCH_X86
-    mp_msg(MSGT_CPLAYER, MSGL_V,
+    mp_msg(MSGT_CPLAYER, MSGL_INFO,
            "CPUflags:  MMX: %d MMX2: %d 3DNow: %d 3DNowExt: %d SSE: %d SSE2: %d SSSE3: %d\n",
            gCpuCaps.hasMMX, gCpuCaps.hasMMX2,
            gCpuCaps.has3DNow, gCpuCaps.has3DNowExt,
            gCpuCaps.hasSSE, gCpuCaps.hasSSE2, gCpuCaps.hasSSSE3);
 #if CONFIG_RUNTIME_CPUDETECT
-    mp_tmsg(MSGT_CPLAYER, MSGL_V, "Compiled with runtime CPU detection.\n");
+    mp_tmsg(MSGT_CPLAYER, MSGL_INFO, "Compiled with runtime CPU detection.\n");
 #else
-    mp_tmsg(MSGT_CPLAYER, MSGL_V, "Compiled for x86 CPU with extensions:");
+    mp_tmsg(MSGT_CPLAYER, MSGL_INFO, "Compiled for x86 CPU with extensions:");
     if (HAVE_MMX)
-        mp_msg(MSGT_CPLAYER, MSGL_V, " MMX");
+        mp_msg(MSGT_CPLAYER, MSGL_INFO, " MMX");
     if (HAVE_MMX2)
-        mp_msg(MSGT_CPLAYER, MSGL_V, " MMX2");
+        mp_msg(MSGT_CPLAYER, MSGL_INFO, " MMX2");
     if (HAVE_AMD3DNOW)
-        mp_msg(MSGT_CPLAYER, MSGL_V, " 3DNow");
+        mp_msg(MSGT_CPLAYER, MSGL_INFO, " 3DNow");
     if (HAVE_AMD3DNOWEXT)
-        mp_msg(MSGT_CPLAYER, MSGL_V, " 3DNowExt");
+        mp_msg(MSGT_CPLAYER, MSGL_INFO, " 3DNowExt");
     if (HAVE_SSE)
-        mp_msg(MSGT_CPLAYER, MSGL_V, " SSE");
+        mp_msg(MSGT_CPLAYER, MSGL_INFO, " SSE");
     if (HAVE_SSE2)
-        mp_msg(MSGT_CPLAYER, MSGL_V, " SSE2");
+        mp_msg(MSGT_CPLAYER, MSGL_INFO, " SSE2");
     if (HAVE_SSSE3)
-        mp_msg(MSGT_CPLAYER, MSGL_V, " SSSE3");
+        mp_msg(MSGT_CPLAYER, MSGL_INFO, " SSSE3");
     if (HAVE_CMOV)
-        mp_msg(MSGT_CPLAYER, MSGL_V, " CMOV");
-    mp_msg(MSGT_CPLAYER, MSGL_V, "\n");
+        mp_msg(MSGT_CPLAYER, MSGL_INFO, " CMOV");
+    mp_msg(MSGT_CPLAYER, MSGL_INFO, "\n");
 #endif /* CONFIG_RUNTIME_CPUDETECT */
 #endif /* ARCH_X86 */
     print_libav_versions();

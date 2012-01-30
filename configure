@@ -594,7 +594,7 @@ _pulse=auto
 _jack=auto
 _kai=auto
 _dart=auto
-_openal=no
+_openal=auto
 _libcdio=auto
 _mad=auto
 _tremor=auto
@@ -1257,21 +1257,25 @@ if test -z "$_target" ; then
     ;;
   esac
 else # if test -z "$_target"
-  system_name=$(echo $_target | cut -d '-' -f 2)
-  case "$(echo $system_name | tr A-Z a-z)" in
-    linux) system_name=Linux ;;
-    freebsd) system_name=FreeBSD ;;
-    gnu/kfreebsd) system_name=FreeBSD ;;
-    netbsd) system_name=NetBSD ;;
-    bsd/os) system_name=BSD/OS ;;
-    openbsd) system_name=OpenBSD ;;
-    dragonfly) system_name=DragonFly ;;
-    sunos) system_name=SunOS ;;
-    qnx) system_name=QNX ;;
-    morphos) system_name=MorphOS ;;
-    amigaos) system_name=AmigaOS ;;
-    mingw32*) system_name=MINGW32 ;;
-  esac
+  for i in 2 3; do
+    system_name=$(echo $_target | cut -d '-' -f $i)
+    case "$(echo $system_name | tr A-Z a-z)" in
+      linux) system_name=Linux ;;
+      freebsd) system_name=FreeBSD ;;
+      gnu/kfreebsd) system_name=FreeBSD ;;
+      netbsd) system_name=NetBSD ;;
+      bsd/os) system_name=BSD/OS ;;
+      openbsd) system_name=OpenBSD ;;
+      dragonfly) system_name=DragonFly ;;
+      sunos) system_name=SunOS ;;
+      qnx) system_name=QNX ;;
+      morphos) system_name=MorphOS ;;
+      amigaos) system_name=AmigaOS ;;
+      mingw32*) system_name=MINGW32 ;;
+      *) continue ;;
+    esac
+    break
+  done
   # We need to convert underscores so that values like k6-2 and pentium-mmx can be passed
   host_arch=$(echo $_target | cut -d '-' -f 1)
   if test $(echo $host_arch) != "x86_64" ; then
@@ -2977,7 +2981,7 @@ cat > $TMPC << EOF
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
-int main(void) { gethostbyname2("", AF_INET); return 0; }
+int main(void) { struct hostent hp = *gethostbyname2("", AF_INET); return 0; }
 EOF
   _gethostbyname2=no
   if cc_check ; then
@@ -3121,6 +3125,7 @@ if ! hpux ; then
     # for crosscompilation, we cannot execute the program, be happy if we can link statically
     cc_check $THREAD_CFLAGS $_ld_tmp && (tmp_run || test "$_ld_static") && _ld_pthread="$_ld_tmp" && _pthreads=yes && break
   done
+  # static pthreads on mingw32
   if test "$_pthreads" = no && mingw32 ; then
     _ld_tmp="-lpthreadGC2 -lws2_32"
     cc_check $_ld_tmp -DPTW32_STATIC_LIB && (tmp_run || test "$_ld_static") && _ld_pthread="$_ld_tmp" && _pthreads=yes && CFLAGS="$CFLAGS -DPTW32_STATIC_LIB"
@@ -3128,7 +3133,7 @@ if ! hpux ; then
 fi
 fi
 if test "$_pthreads" = yes ; then
-  test $_ld_pthread && res_comment="using $_ld_pthread"
+  test -n "$_ld_pthread" && res_comment="using $_ld_pthread"
   def_pthreads='#define HAVE_PTHREADS 1'
   def_threads='#define HAVE_THREADS 1'
   extra_cflags="$extra_cflags $THREAD_CFLAGS"
@@ -3608,16 +3613,27 @@ fi
 echores "$_apple_ir"
 fi #if linux
 
-echocheck "pkg-config"
-_pkg_config=pkg-config
+echocheck "$_target-pkg-config"
+_pkg_config=$_target-pkg-config
 if $($_pkg_config --version > /dev/null 2>&1); then
   if test "$_ld_static"; then
     _pkg_config="$_pkg_config --static"
   fi
   echores "yes"
 else
-  _pkg_config=false
+  _pkg_config=pkg-config
   echores "no"
+
+  echocheck "pkg-config"
+  if $($_pkg_config --version > /dev/null 2>&1); then
+    if test "$_ld_static"; then
+      _pkg_config="$_pkg_config --static"
+    fi
+    echores "yes"
+  else
+    _pkg_config=false
+    echores "no"
+  fi
 fi
 
 
@@ -4004,7 +4020,6 @@ else
   novomodules="3dfx $novomodules"
 fi
 echores "$_3dfx"
-
 
 echocheck "GGI"
 if test "$_ggi" = auto ; then
@@ -5382,7 +5397,7 @@ if test "$_iconv" = no ; then
 fi
 
 if test "$_freetype" = auto ; then
-    if ( $_freetypeconfig --version ) >/dev/null 2>&1 ; then
+    if $_pkg_config --version >/dev/null 2>&1 || $_freetypeconfig --version >/dev/null 2>&1; then
         cat > $TMPC << EOF
 #include <stdio.h>
 #include <ft2build.h>
@@ -5397,7 +5412,11 @@ int main(void) {
 }
 EOF
         _freetype=no
-        cc_check $($_freetypeconfig --cflags) $($_freetypeconfig --libs) && _freetype=yes
+        if $_pkg_config --exists freetype2; then
+            cc_check $($_pkg_config --cflags freetype2) $($_pkg_config --libs freetype2) && _freetype=yes && _res_comment="pkg-config"
+        else
+            cc_check $($_freetypeconfig --cflags) $($_freetypeconfig --libs) && _freetype=yes && _res_comment="$_freetypeconfig"
+        fi
     else
         _freetype=no
     fi
@@ -5407,8 +5426,13 @@ EOF
 fi
 if test "$_freetype" = yes ; then
     def_freetype='#define CONFIG_FREETYPE 1'
-    extra_cflags="$extra_cflags $($_freetypeconfig --cflags)"
-    extra_ldflags="$extra_ldflags $($_freetypeconfig --libs)"
+    if $_pkg_config --exists freetype2; then
+        extra_cflags="$extra_cflags $($_pkg_config --cflags freetype2)"
+        extra_ldflags="$extra_ldflags $($_pkg_config --libs freetype2)"
+    else
+        extra_cflags="$extra_cflags $($_freetypeconfig --cflags)"
+        extra_ldflags="$extra_ldflags $($_freetypeconfig --libs)"
+    fi
 else
     def_freetype='#undef CONFIG_FREETYPE'
 fi
@@ -5458,7 +5482,10 @@ else
 fi
 echores "$_fontconfig"
 
-
+if test "$_freetype" = no; then
+    _ass=no
+    _res_comment="FreeType support needed"
+fi
 echocheck "SSA/ASS support"
 if test "$_ass" = auto -o "$_ass" = yes ; then
         if $_pkg_config libass; then

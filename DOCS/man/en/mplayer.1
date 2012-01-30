@@ -3351,6 +3351,11 @@ If your screensaver supports neither the XSS nor XResetScreenSaver
 API please use \-heartbeat\-cmd instead.
 .
 .TP
+.B \-stop\-screensaver (Windows only)
+Disables the windows screensaver by repeatedly resetting the timeout
+during playback.
+.
+.TP
 .B \-title (also see \-use\-filename\-title)
 Set the window title.
 Supported by X11-based video output drivers.
@@ -4647,6 +4652,8 @@ Enable optimizations which do not comply to the specification and might
 potentially cause problems, like simpler dequantization, simpler motion
 compensation, assuming use of the default quantization matrix, assuming
 YUV 4:2:0 and skipping a few checks to detect damaged bitstreams.
+.IPs "h264fast"
+Like '\-lavdopts fast', but only on H.264 video.
 .IPs "gray\ "
 grayscale only decoding (a bit faster than with color)
 .IPs "idct=<0\-99> (see \-lavcopts)"
@@ -6817,6 +6824,11 @@ Threshold to detect temporal change of a field.
 Default is 128.
 .IPs sad_thres=<n>
 Sum of Absolute Difference threshold, default is 64.
+.IPs vfr=<n>
+If n is nonzero, attempt to output meaningful PTS values, and try to discard
+only frames that are duplicates in telecine sequences. Experimental, should
+be used in mencoder with -noskip, in which case output must be used with
+tcdump filter and an external tool to apply the timestamps to frames.
 .RE
 .
 .TP
@@ -7456,6 +7468,12 @@ from modifying pixels near detailed regions (default: 16).
 .RE
 .
 .TP
+.B tcdump[=filename]
+Dump frame timecodes to a file, in the v2 external timecode file used by
+mkvmerge. With proper post-processing, this could be used to produce VFR
+files with mplayer/mencoder. Note that mencoder does not pass timestamps
+to the filter chain, and will not work with this filter. If none is given,
+the default filename is "timecodesv2.txt".
 .B fixpts[=options]
 Fixes the presentation timestamps (PTS) of the frames.
 By default, the PTS passed to the next filter is dropped, but the following

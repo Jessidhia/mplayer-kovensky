@@ -469,6 +469,7 @@ static uint32_t Directx_ManageDisplay(void)
     DDOVERLAYFX     ovfx;
     DWORD           dwUpdateFlags=0;
     int width,height;
+    int cw, ch;
 
     rd.left = vo_dx - xinerama_x;
     rd.top  = vo_dy - xinerama_y;
@@ -483,7 +484,6 @@ static uint32_t Directx_ManageDisplay(void)
     height = FFMIN(height, vo_screenheight);
     rd.left += (vo_dwidth  - width ) / 2;
     rd.top  += (vo_dheight - height) / 2;
-
     rd.right=rd.left+width;
     rd.bottom=rd.top+height;
 

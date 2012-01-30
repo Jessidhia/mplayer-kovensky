@@ -20,6 +20,7 @@
 
 #include <winver.h>
 #include "version.h"
+#include "resource.h"
 
 1 VERSIONINFO
 FILEVERSION 2,0,0,0
@@ -35,7 +36,7 @@ FILETYPE VFT_APP
             VALUE "CompanyName", "\000"
             VALUE "FileDescription", "mplayer2 - Movie Player\000"
             VALUE "FileVersion",VERSION
-            VALUE "LegalCopyright", " (C) 2000-2011 MPlayer Team\000"
+            VALUE "LegalCopyright", " (C) 2000-2012 MPlayer Team\000"
             //VALUE "LegalTrademarks"," \000";
             VALUE "OriginalFilename", "mplayer.exe\000"
             VALUE "ProductName", "mplayer2 - The Movie Player\000"
@@ -49,7 +50,7 @@ FILETYPE VFT_APP
     }
 }
 
-IDI_ICON1 ICON DISCARDABLE  "etc/mplayer.ico"
+IDI_APPICON ICON DISCARDABLE  "etc/mplayer.ico"
 
 // for some reason RT_MANIFEST does not work
 1 24 "mplayer.exe.manifest"

@@ -1,0 +1,21 @@
+# You can place options for FFmpeg configure in this file.
+
+# Place each option on its own line. Empty lines and lines starting with '#'
+# are ignored. The options do not need quoting, so you can have for example
+# --extra-libs=-lfoo -lbar
+# (and NOT --extra-libs='-lfoo -lbar').
+--cpu=pentium2
+--enable-memalign-hack
+--enable-nonfree
+--enable-avisynth
+--enable-libdirac
+--enable-libmp3lame
+--enable-libspeex
+--enable-libtheora
+--enable-libvorbis
+--enable-libx264
+--enable-libxvid
+--enable-version3
+--enable-libopencore-amrnb
+--enable-libopencore-amrwb
+--enable-runtime-cpudetect

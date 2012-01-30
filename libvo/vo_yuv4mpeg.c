@@ -131,7 +131,11 @@ static int config(uint32_t width, uint32_t height, uint32_t d_width,
 	write_bytes = image_width * image_height * 3 / 2;
 	image = malloc(write_bytes);
 
-	yuv_out = fopen(yuv_filename, "wb");
+	if (!strcmp(yuv_filename,"-"))
+		yuv_out = freopen(NULL, "wb", stdout);
+	else
+		yuv_out = fopen(yuv_filename, "wb");
+
 	if (!yuv_out || image == 0)
 	{
 		mp_tmsg(MSGT_VO,MSGL_FATAL,

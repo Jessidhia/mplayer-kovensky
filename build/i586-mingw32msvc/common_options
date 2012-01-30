@@ -1,0 +1,14 @@
+# You can place options common for both MPlayer and FFmpeg configure in
+# this file. This mainly makes sense for generic things like --cc.
+
+# Place each option on its own line. Empty lines and lines starting with '#'
+# are ignored. The options do not need quoting, so you can have for example
+# --extra-libs=-lfoo -lbar
+# (and NOT --extra-libs='-lfoo -lbar').
+--enable-cross-compile
+--cc=i586-mingw32msvc-gcc
+--as=i586-mingw32msvc-as
+--nm=i586-mingw32msvc-nm
+--host-cc=x86_64-linux-gnu-gcc
+--extra-cflags=-DPTW32_STATIC_LIB -DLIBTWOLAME_STATIC -Dspeex_header_free=av_free -fno-common -O3 -march=pentium2 -mtune=i686
+--extra-libs=-lx264 -lpthread -lws2_32 -lz -lm -lfontconfig -lexpat -lfreetype

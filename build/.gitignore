@@ -1,0 +1,12 @@
+*.pyc
+/build_libs
+/common_options
+/libav_options
+/mplayer_options
+/libass_options
+/libav_build
+# Debian package build creates random files under debian/.
+# Ignore the whole directory even though that will cause some problems.
+/debian
+/build-stamp
+/configure-stamp

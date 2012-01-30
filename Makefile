@@ -347,6 +347,7 @@ SRCS_COMMON = asxparser.c \
               libmpcodecs/vf_stereo3d.c \
               libmpcodecs/vf_softskip.c \
               libmpcodecs/vf_swapuv.c \
+              libmpcodecs/vf_tcdump.c \
               libmpcodecs/vf_telecine.c \
               libmpcodecs/vf_test.c \
               libmpcodecs/vf_tfields.c \
@@ -416,6 +417,7 @@ SRCS_COMMON = asxparser.c \
               stream/stream_mf.c \
               stream/stream_null.c \
               stream/url.c \
+              sub/dec_sub.c \
               sub/av_sub.c \
               sub/sub.c \
               sub/sub_cc.c \

@@ -44,6 +44,9 @@
 #ifdef CONFIG_X11
 #include "x11_common.h"
 #endif
+#ifdef CONFIG_GL_WIN32
+#include <windows.h>
+#endif
 
 int xinerama_screen = -1;
 int xinerama_x;
@@ -418,6 +421,7 @@ struct vo *init_best_video_out(struct MPOpts *opts, struct vo_x11_state *x11,
     if (vo_list && vo_list[0])
         while (vo_list[0][0]) {
             char *name = strdup(vo_list[0]);
+
             vo_subdevice = strchr(name,':');
             if (!strcmp(name, "pgm"))
                 mp_tmsg(MSGT_CPLAYER, MSGL_ERR, "The pgm video output driver has been replaced by -vo pnm:pgmyuv.\n");
@@ -447,6 +451,25 @@ struct vo *init_best_video_out(struct MPOpts *opts, struct vo_x11_state *x11,
             if (!(vo_list[0]))
                 return NULL; // do NOT fallback to others
 	}
+
+#ifdef CONFIG_GL_WIN32
+    OSVERSIONINFO winver;
+    memset(&winver, 0, sizeof(OSVERSIONINFO));
+    winver.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
+    GetVersionEx(&winver);
+
+    if(winver.dwMajorVersion >= 6) {    // If Vista+
+        vo_subdevice = strdup("yuv=2"); // Use -vo gl:yuv=2 by default
+        *vo = initial_values;           // Since directdraw is deprecated
+        vo->driver = &video_out_gl;     // And direct3d is buggy
+        if (!vo_preinit(vo, vo_subdevice)) {
+            free(vo_subdevice);
+            return vo; // it works!
+        }
+        talloc_free_children(vo);
+    }
+#endif
+
     // now try the rest...
     vo_subdevice = NULL;
     for (i = 0; video_out_drivers[i]; i++) {

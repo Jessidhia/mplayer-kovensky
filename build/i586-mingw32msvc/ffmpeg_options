@@ -1,0 +1,25 @@
+# You can place options for FFmpeg configure in this file.
+
+# Place each option on its own line. Empty lines and lines starting with '#'
+# are ignored. The options do not need quoting, so you can have for example
+# --extra-libs=-lfoo -lbar
+# (and NOT --extra-libs='-lfoo -lbar').
+--cross-prefix=i586-mingw32msvc-
+--target-os=mingw32
+--target-exec=wine
+--arch=x86
+--cpu=i686
+--enable-memalign-hack
+--enable-nonfree
+--enable-avisynth
+--enable-libdirac
+--enable-libspeex
+--enable-libtheora
+--enable-libvorbis
+--enable-libx264
+--enable-libxvid
+--enable-version3
+--enable-libopencore-amrnb
+--enable-libopencore-amrwb
+--enable-runtime-cpudetect
+--enable-ffmpeg

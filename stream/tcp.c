@@ -51,7 +51,13 @@
 #include "libavutil/avstring.h"
 
 /* IPv6 options */
-int   network_prefer_ipv4 = 0;
+int   network_prefer_ipv4 =
+#ifdef _WIN32
+1
+#else
+0
+#endif
+;
 
 // Converts an address family constant to a string
 

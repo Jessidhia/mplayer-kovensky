@@ -1,0 +1,18 @@
+# You can place options for MPlayer configure in this file.
+
+# Place each option on its own line. Empty lines and lines starting with '#'
+# are ignored. The options do not need quoting, so you can have for example
+# --extra-libs=-lfoo -lbar
+# (and NOT --extra-libs='-lfoo -lbar').
+--prefix=/usr/i586-mingw32msvc
+--enable-menu
+--target=i586-mingw32msvc
+--enable-static
+--enable-fontconfig
+--ranlib=i586-mingw32msvc-ranlib
+--ar=i586-mingw32msvc-ar
+--windres=i586-mingw32msvc-windres
+--enable-x264
+--enable-matrixview
+--disable-tremor-internal
+--enable-runtime-cpudetection

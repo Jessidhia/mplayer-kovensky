@@ -112,6 +112,7 @@ extern const vf_info_t vf_info_yadif;
 extern const vf_info_t vf_info_blackframe;
 extern const vf_info_t vf_info_geq;
 extern const vf_info_t vf_info_ow;
+extern const vf_info_t vf_info_tcdump;
 extern const vf_info_t vf_info_fixpts;
 extern const vf_info_t vf_info_stereo3d;
 
@@ -200,6 +201,7 @@ static const vf_info_t *const filter_list[] = {
     &vf_info_yadif,
     &vf_info_blackframe,
     &vf_info_ow,
+    &vf_info_tcdump,
     &vf_info_fixpts,
     &vf_info_stereo3d,
     NULL
