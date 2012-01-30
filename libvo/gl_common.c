@@ -1769,10 +1769,18 @@ static void *w32gpa(const GLubyte *procName)
     return GetProcAddress(oglmod, procName);
 }
 
-static int w32_initgl3(MPGLContext *ctx, int gl_version)
-{
-    HWND win = vo_w32_window;
+static int create_window_w32_gl3(struct MPGLContext *ctx, int gl_flags,
+                                 int gl_version, uint32_t d_width,
+                                 uint32_t d_height, uint32_t flags) {
+    if (!vo_w32_config(d_width, d_height, flags))
+        return -1;
+
     HGLRC *context = &ctx->context.w32;
+
+    if (*context) // reuse existing context
+        return 0; // not reusing it breaks gl3!
+
+    HWND win = vo_w32_window;
     HDC windc = vo_w32_get_dc(win);
     HGLRC new_context = 0;
     GL *gl = ctx->gl;
@@ -1780,7 +1788,7 @@ static int w32_initgl3(MPGLContext *ctx, int gl_version)
     new_context = wglCreateContext(windc);
     if (!new_context) {
         mp_msg(MSGT_VO, MSGL_FATAL, "[gl] Could not create GL context!\n");
-        return 0;
+        return -1;
     }
 
     // set context
@@ -1817,7 +1825,7 @@ static int w32_initgl3(MPGLContext *ctx, int gl_version)
         int err = GetLastError();
         mp_msg(MSGT_VO, MSGL_FATAL, "[gl] Could not create an OpenGL 3.x"
                                     " context: error 0x%x\n", err);
-        return 0;
+        goto out;
     }
 
     wglMakeCurrent(NULL, NULL);
@@ -1826,24 +1834,16 @@ static int w32_initgl3(MPGLContext *ctx, int gl_version)
     if (!wglMakeCurrent(windc, *context)) {
         mp_msg(MSGT_VO, MSGL_FATAL, "[gl] Could not set GL3 context!\n");
         wglDeleteContext(*context);
-        return 0;
+        return -1;
     }
 
     /* update function pointers */
     getFunctions(ctx->gl, w32gpa, NULL, true);
 
-    return 1;
+    return 0;
 out:
     wglDeleteContext(new_context);
-    return 0;
-}
-
-static int create_window_w32_gl3(struct MPGLContext *ctx, int gl_flags,
-                                 int gl_version, uint32_t d_width,
-                                 uint32_t d_height, uint32_t flags) {
-    if (!vo_w32_config(d_width, d_height, flags))
-        return -1;
-    return w32_initgl3(ctx, gl_version) ? 0 : -1;
+    return -1;
 }
 
 static int setGlWindow_w32(MPGLContext *ctx)
